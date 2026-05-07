@@ -27,4 +27,14 @@ RSpec.describe Xbookmark::Scheduler::Launchd do
     expect(plist).to include("<key>StandardOutPath</key>")
     expect(plist).to include("/Users/me/Library/Logs/xbookmark/sync.log")
   end
+
+  it "rejects out-of-range times like 99:99 at parse time" do
+    sched = described_class.new(config: config)
+    expect { sched.install(time: "99:99", dry_run: true) }
+      .to raise_error(Xbookmark::Error, /invalid time/)
+    expect { sched.install(time: "24:00", dry_run: true) }
+      .to raise_error(Xbookmark::Error, /invalid time/)
+    expect { sched.install(time: "12:60", dry_run: true) }
+      .to raise_error(Xbookmark::Error, /invalid time/)
+  end
 end

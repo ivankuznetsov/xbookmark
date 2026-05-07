@@ -22,7 +22,12 @@ module Xbookmark
       def parse_time(time)
         m = time.to_s.match(/\A(\d{1,2}):(\d{2})\z/)
         raise Xbookmark::Error, "invalid time #{time.inspect}, expected HH:MM" unless m
-        [m[1].to_i, m[2].to_i]
+        hour = m[1].to_i
+        minute = m[2].to_i
+        unless (0..23).cover?(hour) && (0..59).cover?(minute)
+          raise Xbookmark::Error, "invalid time #{time.inspect}, expected HH:MM with HH in 00-23 and MM in 00-59"
+        end
+        [hour, minute]
       end
     end
   end
