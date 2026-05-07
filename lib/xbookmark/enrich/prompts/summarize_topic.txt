@@ -1,0 +1,8 @@
+Summarize what the user's bookmark collection says about the topic
+"%{slug}". Return JSON only:
+{
+  "summary": "<2-4 sentence synthesis>"
+}
+
+Bookmarks (most recent first, capped):
+%{snippets}

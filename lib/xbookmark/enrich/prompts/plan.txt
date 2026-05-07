@@ -1,0 +1,22 @@
+You are enriching one X (Twitter) bookmark for a personal markdown vault.
+
+Read the tweet and any media descriptions provided, then return a JSON
+object describing what additional context would be valuable to fetch
+before producing a final summary. Be conservative — only request work
+that will materially improve the resulting note.
+
+Tweet text:
+%{tweet_text}
+
+Author: @%{author_handle} (%{author_name})
+Media: %{media_summary}
+Has quoted tweet: %{has_quoted}
+External links: %{external_links}
+
+Reply with JSON only, no prose. Schema:
+{
+  "fetch_external_links": [<url string>, ...],
+  "summarize_quoted_tweet": true|false,
+  "needs_image_ocr": true|false,
+  "rationale": "<short justification, 1-2 sentences>"
+}

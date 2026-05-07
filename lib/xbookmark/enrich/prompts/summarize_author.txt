@@ -1,0 +1,8 @@
+Write a one-paragraph sketch of the X account @%{handle} based on the
+user's bookmarked tweets. Return JSON only:
+{
+  "summary": "<one paragraph>"
+}
+
+Bookmarked tweets (most recent first, capped):
+%{snippets}

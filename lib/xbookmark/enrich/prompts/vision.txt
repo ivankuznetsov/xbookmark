@@ -1,0 +1,5 @@
+Look at the attached image(s) and return JSON only:
+{
+  "captions": { "<image_path>": "<one-sentence visual caption>" },
+  "ocr": { "<image_path>": "<verbatim text visible in image, or empty>" }
+}
