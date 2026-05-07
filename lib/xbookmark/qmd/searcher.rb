@@ -2,6 +2,7 @@
 
 require "open3"
 require "json"
+require_relative "registrar"
 
 module Xbookmark
   module Qmd

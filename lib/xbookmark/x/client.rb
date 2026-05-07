@@ -3,6 +3,7 @@
 require "faraday"
 require "faraday/retry"
 require "json"
+require_relative "auth"
 require_relative "expansions"
 
 module Xbookmark
