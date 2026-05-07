@@ -27,6 +27,18 @@ RSpec.describe Xbookmark::Enrich::Codex do
       .to raise_error(Xbookmark::CodexError, /schema validation/)
   end
 
+  it "parses JSONL event streams emitted by codex --json" do
+    fake = FakeCodex.new
+    # Push a raw multi-line stream where the final line carries the body.
+    body = '{"tags":["a"],"topics":["b"],"entities":["c"]}'
+    stream = "{\"event\":\"start\"}\n{\"event\":\"progress\"}\n#{body}\n"
+    fake.push(stream)
+    codex = described_class.new(bin: "codex", runner: fake)
+    schema = { "type" => "object", "required" => %w[tags topics entities] }
+    result = codex.run(prompt: "x", json_schema: schema)
+    expect(result).to include("tags" => ["a"], "topics" => ["b"], "entities" => ["c"])
+  end
+
   it "passes images as discrete --image argv entries" do
     fake = FakeCodex.new.push({ "tags" => ["a"], "topics" => ["b"], "entities" => ["c"] })
     codex = described_class.new(bin: "codex", runner: fake)

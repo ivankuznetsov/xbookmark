@@ -58,15 +58,23 @@ module Xbookmark
       end
 
       def parse_json!(raw)
-        # codex --json prints structured events; we accept either a single
-        # JSON object on stdout or a stream of newline-delimited events
-        # whose `message_complete` carries the body. Keep it simple here:
-        # try to find the last well-formed JSON object in the output.
+        # codex --json prints structured events as newline-delimited JSON.
+        # Walk lines from the end and return the last one that parses as a
+        # JSON object — the model body lives in a late event. Fall back to
+        # parsing the whole stream as a single JSON object only when it
+        # really is one (no embedded newlines between objects).
+        lines = raw.lines.reverse_each.select { |l| l.strip.start_with?("{") }
+        lines.each do |line|
+          begin
+            return JSON.parse(line)
+          rescue JSON::ParserError
+            next
+          end
+        end
+
         candidate = raw.strip
         return JSON.parse(candidate) if candidate.start_with?("{")
-        candidate = candidate.lines.reverse.find { |l| l.strip.start_with?("{") }
-        raise Xbookmark::CodexError, "codex stdout was not JSON: #{raw[0, 200]}" unless candidate
-        JSON.parse(candidate)
+        raise Xbookmark::CodexError, "codex stdout was not JSON: #{raw[0, 200]}"
       rescue JSON::ParserError => e
         raise Xbookmark::CodexError, "codex stdout JSON parse failed: #{e.message}"
       end

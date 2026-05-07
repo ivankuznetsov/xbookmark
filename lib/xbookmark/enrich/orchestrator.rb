@@ -8,7 +8,7 @@ module Xbookmark
   module Enrich
     EnrichmentResult = Struct.new(
       :summary, :tags, :topics, :entities, :links,
-      :image_captions, :image_ocr, :partial,
+      :image_captions, :image_ocr, :partial, :link_blobs,
       keyword_init: true
     ) do
       def partial?
@@ -87,7 +87,8 @@ module Xbookmark
           links: Array(final["links"] || []),
           image_captions: final["image_captions"] || vision["captions"] || {},
           image_ocr: final["image_ocr"] || vision["ocr"] || {},
-          partial: partial
+          partial: partial,
+          link_blobs: link_blobs
         )
       end
 

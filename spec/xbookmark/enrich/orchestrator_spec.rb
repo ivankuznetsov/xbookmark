@@ -48,6 +48,10 @@ RSpec.describe Xbookmark::Enrich::Orchestrator do
     expect(result.topics).to eq(["ozempic"])
     expect(result.entities).to eq(["novo-nordisk"])
     expect(result.partial?).to be(false)
+    # Fetched link blobs are returned so the renderer can build the
+    # "Linked Articles" section without re-fetching.
+    expect(result.link_blobs.size).to eq(1)
+    expect(result.link_blobs.first[:url]).to eq("https://example.com/a")
   end
 
   it "marks result partial when retry still has empty required fields" do

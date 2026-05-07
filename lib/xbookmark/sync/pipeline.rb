@@ -43,7 +43,7 @@ module Xbookmark
         # Move scratch media into the final vault location.
         media_records = move_media_into_vault(bookmark, media_records)
 
-        markdown = @renderer.render(bookmark, enrichment, media_records: media_records, transcripts: transcripts)
+        markdown = @renderer.render(bookmark, enrichment, media_records: media_records, transcripts: transcripts, link_blobs: Array(enrichment.link_blobs))
         markdown_path = @renderer.write(bookmark, markdown)
         digest = @renderer.digest(enrichment, bookmark)
 
