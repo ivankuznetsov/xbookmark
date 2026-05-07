@@ -1,0 +1,26 @@
+# frozen_string_literal: true
+
+module Xbookmark
+  class Error < StandardError; end
+  class ConfigError < Error; end
+  class AuthError < Error; end
+  class RateLimited < Error
+    attr_reader :reset_at
+
+    def initialize(message, reset_at: nil)
+      super(message)
+      @reset_at = reset_at
+    end
+  end
+
+  class TransientError < Error; end
+  class PermanentError < Error; end
+  class MediaError < TransientError; end
+  class WhisperUnavailable < TransientError; end
+  class CodexError < TransientError; end
+  class UnsupportedPlatform < Error; end
+end
+
+require_relative "xbookmark/version"
+require_relative "xbookmark/paths"
+require_relative "xbookmark/config"

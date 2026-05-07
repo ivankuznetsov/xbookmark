@@ -1,0 +1,71 @@
+# frozen_string_literal: true
+
+require "thor"
+require_relative "../xbookmark"
+
+module Xbookmark
+  class CLI < Thor
+    package_name "xbookmark"
+
+    class_option :vault, type: :string, desc: "Override the vault path"
+    class_option :verbose, type: :boolean, default: false, desc: "Verbose output"
+
+    def self.exit_on_failure?
+      true
+    end
+
+    desc "version", "Print xbookmark version"
+    def version
+      puts Xbookmark::VERSION
+    end
+  end
+end
+
+require_relative "cli/auth"
+require_relative "cli/sync"
+require_relative "cli/find"
+require_relative "cli/doctor"
+require_relative "cli/install"
+
+module Xbookmark
+  class CLI
+    desc "auth SUBCOMMAND ...ARGS", "Authenticate to X"
+    subcommand "auth", Xbookmark::CLI::Auth
+
+    desc "backfill [--limit N]", "Backfill X bookmarks. With --limit N performs a test backfill."
+    method_option :limit, type: :numeric, desc: "Limit number of bookmarks (test backfill mode)"
+    def backfill
+      Xbookmark::CLI::Sync.new([], options).backfill_run
+    end
+
+    desc "sync", "Incremental sync of new X bookmarks"
+    method_option :"from-scheduler", type: :boolean, default: false, desc: "Invoked from scheduler (skip-if-recent applies)"
+    def sync
+      Xbookmark::CLI::Sync.new([], options).sync_run
+    end
+
+    desc "resync TWEET_ID", "Force re-enrichment of a single bookmark"
+    def resync(tweet_id)
+      Xbookmark::CLI::Sync.new([], options).resync_run(tweet_id)
+    end
+
+    desc "find QUERY", "Search the bookmark vault via QMD"
+    method_option :limit, type: :numeric, default: 20
+    def find(*query)
+      Xbookmark::CLI::Find.new([], options).find_run(query.join(" "))
+    end
+
+    desc "doctor", "Check that codex / whisper / qmd / X auth are wired up"
+    def doctor
+      Xbookmark::CLI::Doctor.new([], options).run
+    end
+
+    desc "install", "Install the daily scheduler unit (systemd on Linux, launchd on macOS)"
+    method_option :time, type: :string, desc: "HH:MM time of day (default 06:00)"
+    method_option :"dry-run", type: :boolean, default: false
+    method_option :uninstall, type: :boolean, default: false
+    def install
+      Xbookmark::CLI::Install.new([], options).run
+    end
+  end
+end
