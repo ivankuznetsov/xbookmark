@@ -4,7 +4,7 @@ require "dotenv"
 
 module Xbookmark
   class Config
-    REQUIRED_KEYS = %w[X_CLIENT_ID].freeze
+    REQUIRED_KEYS = %w[X_CLIENT_ID X_USER_ID].freeze
 
     Struct.new(
       "XbookmarkConfig",
@@ -70,10 +70,12 @@ module Xbookmark
       end
 
       def load_env_files!(cwd:, env:)
+        explicit = env["XBOOKMARK_ENV_FILE"]
         candidates = [
+          (explicit unless explicit.to_s.strip.empty?),
           Paths.project_env_path(cwd: cwd),
           Paths.user_env_path
-        ].uniq
+        ].compact.uniq
 
         loaded = []
         candidates.each do |path|

@@ -21,7 +21,7 @@ RSpec.describe Xbookmark::Config do
   it "uses XDG_DATA_HOME on Linux when set" do
     stub_platform_linux
     Dir.mktmpdir do |cwd|
-      File.write(File.join(cwd, ".env"), "X_CLIENT_ID=abc\n")
+      File.write(File.join(cwd, ".env"), "X_CLIENT_ID=abc\nX_USER_ID=42\n")
       config = described_class.load(cwd: cwd, env: { "XDG_DATA_HOME" => "/data/xdg" })
       expect(config.vault_path).to eq("/data/xdg/xbookmark-vault")
     end
@@ -31,7 +31,7 @@ RSpec.describe Xbookmark::Config do
     stub_platform_linux
     with_tmp_home do |home|
       Dir.mktmpdir do |cwd|
-        File.write(File.join(cwd, ".env"), "X_CLIENT_ID=abc\n")
+        File.write(File.join(cwd, ".env"), "X_CLIENT_ID=abc\nX_USER_ID=42\n")
         config = described_class.load(cwd: cwd, env: {})
         expect(config.vault_path).to eq(File.join(home, ".local", "share", "xbookmark-vault"))
       end
@@ -42,7 +42,7 @@ RSpec.describe Xbookmark::Config do
     stub_platform_macos
     with_tmp_home do |home|
       Dir.mktmpdir do |cwd|
-        File.write(File.join(cwd, ".env"), "X_CLIENT_ID=abc\n")
+        File.write(File.join(cwd, ".env"), "X_CLIENT_ID=abc\nX_USER_ID=42\n")
         config = described_class.load(cwd: cwd, env: {})
         expect(config.vault_path).to eq(File.join(home, "Library", "Application Support", "xbookmark-vault"))
       end
@@ -51,7 +51,7 @@ RSpec.describe Xbookmark::Config do
 
   it "honors XBOOKMARK_VAULT and CLI vault override" do
     Dir.mktmpdir do |cwd|
-      File.write(File.join(cwd, ".env"), "X_CLIENT_ID=abc\nXBOOKMARK_VAULT=/custom/vault\n")
+      File.write(File.join(cwd, ".env"), "X_CLIENT_ID=abc\nX_USER_ID=42\nXBOOKMARK_VAULT=/custom/vault\n")
       config = described_class.load(cwd: cwd, env: {})
       expect(config.vault_path).to eq("/custom/vault")
 
