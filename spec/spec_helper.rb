@@ -12,6 +12,8 @@ $LOAD_PATH.unshift(File.expand_path("../lib", __dir__))
 
 require "xbookmark"
 
+Dir[File.expand_path("support/**/*.rb", __dir__)].sort.each { |f| require f }
+
 RSpec.configure do |config|
   config.example_status_persistence_file_path = ".rspec_status"
   config.disable_monkey_patching!
