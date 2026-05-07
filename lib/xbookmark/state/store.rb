@@ -99,6 +99,7 @@ module Xbookmark
           UPDATE bookmarks
              SET ingested_at = ?,
                  status = ?,
+                 attempts = 0,
                  last_error = NULL,
                  markdown_path = ?,
                  enrichment_digest = ?

@@ -26,7 +26,22 @@ RSpec.describe Xbookmark::State::Store do
     row = store.find_bookmark("1")
     expect(row[:status]).to eq("done")
     expect(row[:last_error]).to be_nil
+    expect(row[:attempts]).to eq(0)
     expect(row[:markdown_path]).to eq("/v/1.md")
+  end
+
+  it "resets attempts on success so a later failure starts from zero again" do
+    store.upsert_pending(tweet_id: "1", author_handle: "alice", bookmarked_at: "2026-01-01T00:00:00Z")
+    2.times { store.record_failure(tweet_id: "1", error: "boom") }
+    expect(store.find_bookmark("1")[:attempts]).to eq(2)
+
+    store.record_success(tweet_id: "1", markdown_path: "/v/1.md", digest: "abc")
+    expect(store.find_bookmark("1")[:attempts]).to eq(0)
+
+    store.record_failure(tweet_id: "1", error: "later transient")
+    row = store.find_bookmark("1")
+    expect(row[:attempts]).to eq(1)
+    expect(row[:status]).to eq("needs_retry")
   end
 
   it "promotes to permanent_error after 3 failed attempts" do
