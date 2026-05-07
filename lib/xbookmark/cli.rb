@@ -57,7 +57,7 @@ module Xbookmark
 
     desc "doctor", "Check that codex / whisper / qmd / X auth are wired up"
     def doctor
-      Xbookmark::CLI::Doctor.new([], options).run
+      Xbookmark::CLI::Doctor.new([], options).execute
     end
 
     desc "install", "Install the daily scheduler unit (systemd on Linux, launchd on macOS)"
@@ -65,7 +65,7 @@ module Xbookmark
     method_option :"dry-run", type: :boolean, default: false
     method_option :uninstall, type: :boolean, default: false
     def install
-      Xbookmark::CLI::Install.new([], options).run
+      Xbookmark::CLI::Install.new([], options).execute
     end
   end
 end

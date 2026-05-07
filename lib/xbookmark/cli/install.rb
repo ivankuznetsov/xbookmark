@@ -12,7 +12,7 @@ module Xbookmark
         @options = options
       end
 
-      def run
+      def execute
         require_relative "../config"
         require_relative "../scheduler/factory"
         require_relative "../qmd/registrar"
