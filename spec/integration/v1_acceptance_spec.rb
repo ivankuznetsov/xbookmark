@@ -149,9 +149,15 @@ RSpec.describe "v1 acceptance" do
       config: config, store: store, orchestrator: orchestrator, renderer: renderer,
       downloader: fake_downloader, whisper: fake_whisper
     )
+    fake_registrar = Class.new do
+      attr_reader :index_calls
+      def initialize; @index_calls = 0; end
+      def index!; @index_calls += 1; end
+    end.new
     runner = Xbookmark::Sync::Runner.new(
       config: config, store: store, x_client: fake_x_client,
-      orchestrator: orchestrator, renderer: renderer, pipeline: pipeline
+      orchestrator: orchestrator, renderer: renderer, pipeline: pipeline,
+      registrar: fake_registrar
     )
 
     report = runner.run(mode: :backfill_limited, limit: 10)
@@ -185,5 +191,8 @@ RSpec.describe "v1 acceptance" do
     }
     hits = Xbookmark::Qmd::Searcher.new(config: config, runner: qmd_runner).search("ozempic")
     expect(hits.first[:path]).to eq(md_files.first)
+
+    # qmd index! is called after a successful sync so search results stay fresh.
+    expect(fake_registrar.index_calls).to eq(1)
   end
 end

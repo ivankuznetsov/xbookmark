@@ -8,17 +8,19 @@ require_relative "../x/expansions"
 require_relative "../enrich/codex"
 require_relative "../enrich/orchestrator"
 require_relative "../render/bookmark_renderer"
+require_relative "../qmd/registrar"
 
 module Xbookmark
   module Sync
     class Runner
-      def initialize(config:, store:, x_client:, orchestrator: nil, renderer: nil, pipeline: nil)
+      def initialize(config:, store:, x_client:, orchestrator: nil, renderer: nil, pipeline: nil, registrar: nil)
         @config = config
         @store = store
         @x_client = x_client
         @renderer = renderer || Xbookmark::Render::BookmarkRenderer.new(vault_path: config.vault_path)
         @orch = orchestrator || default_orchestrator
         @pipeline = pipeline || Xbookmark::Sync::Pipeline.new(config: config, store: store, orchestrator: @orch, renderer: @renderer)
+        @registrar = registrar
       end
 
       # mode: :backfill_limited | :backfill_full | :sync | :resync
@@ -43,10 +45,18 @@ module Xbookmark
         end
 
         @store.mark_sync_finished!
+        reindex_qmd if report.synced.positive?
         report
       end
 
       private
+
+      def reindex_qmd
+        registrar = @registrar || Xbookmark::Qmd::Registrar.new(config: @config)
+        registrar.index!
+      rescue StandardError => e
+        warn "[xbookmark] qmd reindex failed: #{e.message}"
+      end
 
       def default_orchestrator
         codex = Xbookmark::Enrich::Codex.new(bin: @config.codex_bin)

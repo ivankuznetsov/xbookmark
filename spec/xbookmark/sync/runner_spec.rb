@@ -33,6 +33,18 @@ class FakePipeline
   end
 end
 
+class FakeRegistrar
+  attr_reader :index_calls
+
+  def initialize
+    @index_calls = 0
+  end
+
+  def index!
+    @index_calls += 1
+  end
+end
+
 RSpec.describe Xbookmark::Sync::Runner do
   let(:store) { Xbookmark::State::Store.new(":memory:") }
   let(:vault) { Dir.mktmpdir }
@@ -51,12 +63,15 @@ RSpec.describe Xbookmark::Sync::Runner do
     )
   end
 
+  let(:registrar) { FakeRegistrar.new }
+
   it "fresh + sync mode prints the bootstrap message and reports a permanent error" do
     fake_client = FakeXClient.new(pages: [])
     pipeline = FakePipeline.new(->(_) { Xbookmark::Sync::Pipeline::Outcome.new(status: :done, markdown_path: "/x", digest: "d") })
-    runner = described_class.new(config: config, store: store, x_client: fake_client, pipeline: pipeline)
+    runner = described_class.new(config: config, store: store, x_client: fake_client, pipeline: pipeline, registrar: registrar)
     expect { @report = runner.run(mode: :sync) }.to output(/backfill --limit 100/).to_stdout
     expect(@report.permanent_errors).to eq(1)
+    expect(registrar.index_calls).to eq(0)
   end
 
   it "backfill --limit 100 stops at exactly N items even when API returns more" do
@@ -68,10 +83,11 @@ RSpec.describe Xbookmark::Sync::Runner do
 
     pipeline = FakePipeline.new(->(_) { Xbookmark::Sync::Pipeline::Outcome.new(status: :done, markdown_path: "/x", digest: "d") })
     runner = described_class.new(config: config, store: store, x_client: FakeXClient.new(pages: [page]),
-                                 pipeline: pipeline)
+                                 pipeline: pipeline, registrar: registrar)
     report = runner.run(mode: :backfill_limited, limit: 100)
     expect(report.synced).to eq(100)
     expect(store.mode).to eq(Xbookmark::State::Store::MODE_TEST_BACKFILLED)
+    expect(registrar.index_calls).to eq(1)
   end
 
   it "transitions a failure on attempt 1 to success on retry, ordered failed-first on next run" do
@@ -91,7 +107,7 @@ RSpec.describe Xbookmark::Sync::Runner do
       end
     })
 
-    runner = described_class.new(config: config, store: store, x_client: client, pipeline: fail_then_pass)
+    runner = described_class.new(config: config, store: store, x_client: client, pipeline: fail_then_pass, registrar: registrar)
     r1 = runner.run(mode: :backfill_limited, limit: 1)
     expect(r1.failed).to eq(1)
 
@@ -103,7 +119,7 @@ RSpec.describe Xbookmark::Sync::Runner do
   it "skip-if-recent: --from-scheduler exits 0 when the previous finish was < threshold" do
     store.mark_sync_finished!(Time.now.utc - 60) # 1m ago
     pipeline = FakePipeline.new(->(_) { Xbookmark::Sync::Pipeline::Outcome.new(status: :done, markdown_path: "/x", digest: "d") })
-    runner = described_class.new(config: config, store: store, x_client: FakeXClient.new(pages: []), pipeline: pipeline)
+    runner = described_class.new(config: config, store: store, x_client: FakeXClient.new(pages: []), pipeline: pipeline, registrar: registrar)
     expect { @r = runner.run(mode: :sync, from_scheduler: true) }.to output(/skipping/).to_stdout
     expect(@r.synced).to eq(0)
   end
@@ -112,7 +128,7 @@ RSpec.describe Xbookmark::Sync::Runner do
     store.mode = Xbookmark::State::Store::MODE_INCREMENTAL
     store.mark_sync_finished!(Time.now.utc - 60)
     pipeline = FakePipeline.new(->(_) { Xbookmark::Sync::Pipeline::Outcome.new(status: :done, markdown_path: "/x", digest: "d") })
-    runner = described_class.new(config: config, store: store, x_client: FakeXClient.new(pages: []), pipeline: pipeline)
+    runner = described_class.new(config: config, store: store, x_client: FakeXClient.new(pages: []), pipeline: pipeline, registrar: registrar)
     runner.run(mode: :sync, from_scheduler: false)
     # No skip output, no error — manual sync runs even when recent.
     expect(store.mode).to eq(Xbookmark::State::Store::MODE_INCREMENTAL)
