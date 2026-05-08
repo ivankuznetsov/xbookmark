@@ -44,15 +44,27 @@ module Xbookmark
           raise ArgumentError, "unknown mode: #{mode}"
         end
 
-        @store.mark_sync_finished!
+        # Only stamp last_sync_finished_at on a real run — a rejected
+        # bootstrap (e.g. fresh-mode incremental sync) would otherwise pin
+        # the throttle window and cause the next scheduled invocation to
+        # skip even though no actual sync happened.
+        @store.mark_sync_finished! if real_run?(report)
         reindex_qmd if report.synced.positive?
         report
+      end
+
+      def real_run?(report)
+        report.synced.positive? || report.permanent_errors.zero?
       end
 
       private
 
       def reindex_qmd
         registrar = @registrar || Xbookmark::Qmd::Registrar.new(config: @config)
+        # Make sync self-healing wrt registration so a clean install can
+        # search a freshly-indexed collection without requiring
+        # `xbookmark install` to have run first.
+        registrar.ensure_registered! if registrar.respond_to?(:ensure_registered!)
         registrar.index!
       rescue StandardError => e
         warn "[xbookmark] qmd reindex failed: #{e.message}"
