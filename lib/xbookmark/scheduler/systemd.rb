@@ -6,9 +6,14 @@ require_relative "base"
 module Xbookmark
   module Scheduler
     class Systemd < Base
-      UNIT_DIR = File.join(Dir.home, ".config/systemd/user")
       SERVICE = "xbookmark-sync.service"
       TIMER   = "xbookmark-sync.timer"
+
+      # Compute lazily — capturing Dir.home at load time would lock in the
+      # original $HOME and ignore subsequent test setup that re-points it.
+      def self.unit_dir
+        File.join(Dir.home, ".config/systemd/user")
+      end
 
       def install(time:, dry_run: false)
         hour, minute = parse_time(time)
@@ -18,14 +23,14 @@ module Xbookmark
         log_path = File.join(log_dir, "sync.log")
 
         if dry_run
-          puts "# #{File.join(UNIT_DIR, SERVICE)}\n#{service}\n# #{File.join(UNIT_DIR, TIMER)}\n#{timer}"
+          puts "# #{File.join(self.class.unit_dir, SERVICE)}\n#{service}\n# #{File.join(self.class.unit_dir, TIMER)}\n#{timer}"
           return
         end
 
-        FileUtils.mkdir_p(UNIT_DIR)
+        FileUtils.mkdir_p(self.class.unit_dir)
         FileUtils.mkdir_p(log_dir)
-        File.write(File.join(UNIT_DIR, SERVICE), service)
-        File.write(File.join(UNIT_DIR, TIMER), timer)
+        File.write(File.join(self.class.unit_dir, SERVICE), service)
+        File.write(File.join(self.class.unit_dir, TIMER), timer)
         run("systemctl", "--user", "daemon-reload")
         run("systemctl", "--user", "enable", "--now", TIMER)
         warn "[xbookmark] systemd timer installed. Logs: #{log_path}"
@@ -35,12 +40,12 @@ module Xbookmark
       def uninstall(time: nil, dry_run: false)
         if dry_run
           puts "# would: systemctl --user disable --now #{TIMER}"
-          puts "# would: rm #{File.join(UNIT_DIR, SERVICE)} #{File.join(UNIT_DIR, TIMER)}"
+          puts "# would: rm #{File.join(self.class.unit_dir, SERVICE)} #{File.join(self.class.unit_dir, TIMER)}"
           return
         end
         run("systemctl", "--user", "disable", "--now", TIMER)
-        File.delete(File.join(UNIT_DIR, SERVICE)) if File.exist?(File.join(UNIT_DIR, SERVICE))
-        File.delete(File.join(UNIT_DIR, TIMER)) if File.exist?(File.join(UNIT_DIR, TIMER))
+        File.delete(File.join(self.class.unit_dir, SERVICE)) if File.exist?(File.join(self.class.unit_dir, SERVICE))
+        File.delete(File.join(self.class.unit_dir, TIMER)) if File.exist?(File.join(self.class.unit_dir, TIMER))
         run("systemctl", "--user", "daemon-reload")
       end
 

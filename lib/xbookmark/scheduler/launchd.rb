@@ -1,25 +1,31 @@
 # frozen_string_literal: true
 
+require "cgi"
 require "fileutils"
 require_relative "base"
 
 module Xbookmark
   module Scheduler
     class Launchd < Base
-      AGENT_DIR = File.join(Dir.home, "Library/LaunchAgents")
       LABEL = "io.xbookmark.sync"
       PLIST_NAME = "#{LABEL}.plist"
+
+      # Compute lazily — capturing Dir.home at load time would lock in the
+      # original $HOME and ignore subsequent test setup that re-points it.
+      def self.agent_dir
+        File.join(Dir.home, "Library/LaunchAgents")
+      end
 
       def install(time:, dry_run: false)
         hour, minute = parse_time(time)
         plist = render_plist(hour, minute)
         if dry_run
-          puts "# #{File.join(AGENT_DIR, PLIST_NAME)}\n#{plist}"
+          puts "# #{File.join(self.class.agent_dir, PLIST_NAME)}\n#{plist}"
           return
         end
-        FileUtils.mkdir_p(AGENT_DIR)
+        FileUtils.mkdir_p(self.class.agent_dir)
         FileUtils.mkdir_p(@config.logs_dir)
-        path = File.join(AGENT_DIR, PLIST_NAME)
+        path = File.join(self.class.agent_dir, PLIST_NAME)
         File.write(path, plist)
         system("launchctl", "unload", path)
         system("launchctl", "load", "-w", path)
@@ -27,7 +33,7 @@ module Xbookmark
       end
 
       def uninstall(time: nil, dry_run: false)
-        path = File.join(AGENT_DIR, PLIST_NAME)
+        path = File.join(self.class.agent_dir, PLIST_NAME)
         if dry_run
           puts "# would: launchctl unload #{path}"
           puts "# would: rm #{path}"
@@ -43,10 +49,10 @@ module Xbookmark
       end
 
       def render_plist(hour, minute)
-        log = File.join(@config.logs_dir, "sync.log")
-        bin = xbookmark_bin
+        log = xml_escape(File.join(@config.logs_dir, "sync.log"))
+        bin = xml_escape(xbookmark_bin)
         envs = (@config.env_file ? { "XBOOKMARK_ENV_FILE" => @config.env_file } : {})
-        env_xml = envs.map { |k, v| "      <key>#{k}</key><string>#{v}</string>" }.join("\n")
+        env_xml = envs.map { |k, v| "      <key>#{xml_escape(k)}</key><string>#{xml_escape(v)}</string>" }.join("\n")
         <<~PLIST
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -71,6 +77,12 @@ module Xbookmark
           </dict>
           </plist>
         PLIST
+      end
+
+      private
+
+      def xml_escape(value)
+        CGI.escapeHTML(value.to_s)
       end
     end
   end
