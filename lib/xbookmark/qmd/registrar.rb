@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "fileutils"
 require "open3"
 require "json"
 
@@ -22,7 +23,12 @@ module Xbookmark
       def registered?
         out, _err, status = capture(@config.qmd_bin, "list")
         return false unless status_success?(status)
-        out.lines.any? { |l| l.include?(COLLECTION_NAME) }
+        # Exact field match — substring matching let "old-bookmarks"
+        # falsely report the canonical "bookmarks" collection as already
+        # registered.
+        out.lines.any? do |line|
+          line.split(/\s+/).any? { |field| field == COLLECTION_NAME }
+        end
       rescue Errno::ENOENT
         false
       end

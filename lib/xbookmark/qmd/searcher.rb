@@ -57,8 +57,12 @@ module Xbookmark
             snippet: r["snippet"] || r["context"]
           }
         end
-      rescue JSON::ParserError
-        []
+      rescue JSON::ParserError => e
+        # Surfacing this as a diagnostic — silently returning [] hid qmd
+        # output-format breakage as "no matches" for users.
+        warn "[xbookmark] qmd output was not JSON: #{e.message}"
+        warn "[xbookmark] qmd raw output: #{body[0, 500]}"
+        raise
       end
     end
   end
