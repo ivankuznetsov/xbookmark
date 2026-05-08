@@ -51,7 +51,13 @@ module Xbookmark
           in_reply_to_tweet_id: replied_id,
           conversation_id: t["conversation_id"],
           urls: extract_urls(t),
-          bookmarked_at: t["created_at"], # X returns bookmark order via API; created_at is the only timestamp present
+          # NOTE: X's bookmarks endpoint does not expose a true bookmark
+          # timestamp — only the tweet's `created_at` is available. We
+          # copy it into `bookmarked_at` so downstream code (e.g. the
+          # YYYY/MM/DD vault sharding in BookmarkRenderer#bookmark_date)
+          # has a stable date, but it is the *tweet creation* date, not
+          # the date the user actually bookmarked it.
+          bookmarked_at: t["created_at"],
           raw: t
         )
       end

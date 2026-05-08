@@ -54,13 +54,13 @@ module Xbookmark
       end
 
       def which(cmd)
-        exts = ENV.fetch("PATHEXT", "").split(File::PATH_SEPARATOR)
-        exts << ""
+        # PATHEXT is Windows-only; xbookmark only ships scheduler
+        # integration for Linux (systemd) and macOS (launchd), so the
+        # extension loop is dead weight that triggered one false-positive
+        # `cmd` lookup per PATH entry.
         ENV.fetch("PATH", "").split(File::PATH_SEPARATOR).each do |dir|
-          exts.each do |ext|
-            full = File.join(dir, "#{cmd}#{ext}")
-            return full if File.executable?(full) && !File.directory?(full)
-          end
+          full = File.join(dir, cmd)
+          return full if File.executable?(full) && !File.directory?(full)
         end
         nil
       end
