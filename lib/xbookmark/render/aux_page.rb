@@ -19,6 +19,8 @@ module Xbookmark
         @orch = orchestrator
       end
 
+      PLACEHOLDER_SUMMARY = "(no summary yet)"
+
       # Ensures the page exists. Inputs is an array of strings (text used
       # as the LLM input set); regenerate the summary only when its
       # canonical SHA256 differs from the stored digest.
@@ -34,13 +36,21 @@ module Xbookmark
                     existing && File.exist?(path) ? extract_existing_summary(path) : nil
                   end
 
+        # Don't let the placeholder string become the persisted summary —
+        # otherwise we'd round-trip "(no summary yet)" back into the page
+        # and stamp the digest as if a real summary materialized.
+        summary = nil if summary.to_s.strip == PLACEHOLDER_SUMMARY
+
         content = render(slug: slug, label: label, summary: summary)
         AtomicWriter.write(path, content)
+
+        # Only stamp the digest when a real summary materialized; leaving
+        # it nil means the next run with the same inputs will retry.
         @store.upsert_page(
           kind: self.class::KIND,
           slug: slug,
           path: relativize(path),
-          summary_input_digest: digest,
+          summary_input_digest: summary ? digest : nil,
           summarized_at: regenerate && summary ? Time.now.utc : nil
         )
         path
@@ -55,7 +65,6 @@ module Xbookmark
         when "author" then "authors"
         when "topic"  then "topics"
         when "entity" then "entities"
-        when "link"   then "links"
         when "thread" then "threads"
         end
       end
@@ -78,7 +87,7 @@ module Xbookmark
           "xbookmark_schema" => SCHEMA_VERSION
         }
         front_yaml = front.to_yaml(line_width: -1).sub(/^---\n?/, "")
-        body = "# #{label || slug}\n\n## Summary\n\n#{summary || "(no summary yet)"}\n\n## References\n\n_Use Obsidian's Backlinks panel to see every bookmark referencing this page._\n"
+        body = "# #{label || slug}\n\n## Summary\n\n#{summary || PLACEHOLDER_SUMMARY}\n\n## References\n\n_Use Obsidian's Backlinks panel to see every bookmark referencing this page._\n"
         "---\n#{front_yaml}---\n\n#{body}"
       end
 
@@ -124,23 +133,6 @@ module Xbookmark
         @orch.summarize_topic(slug: slug, snippets: inputs.first(50))
       rescue StandardError
         nil
-      end
-    end
-
-    class LinkPage < AuxPage
-      KIND = "link"
-
-      # For link pages we render the article extract directly (no LLM).
-      def render(slug:, label:, summary:)
-        front = {
-          "kind" => "link",
-          "slug" => slug,
-          "label" => label,
-          "xbookmark_schema" => SCHEMA_VERSION
-        }
-        front_yaml = front.to_yaml(line_width: -1).sub(/^---\n?/, "")
-        body = "# #{label || slug}\n\n#{summary || "(no extract yet)"}\n"
-        "---\n#{front_yaml}---\n\n#{body}"
       end
     end
 
