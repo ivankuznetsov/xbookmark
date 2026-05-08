@@ -9,6 +9,7 @@ module Xbookmark
     class Whisper
       CANDIDATE_BINS = %w[whisper-cli whisper-cpp whisper faster-whisper].freeze
       MIN_DURATION_MS = 1500
+      DEFAULT_TIMEOUT = 300 # seconds — bound the whisper subprocess
 
       class << self
         # Probes the configured / PATH for a known whisper binary.
@@ -35,10 +36,11 @@ module Xbookmark
         end
       end
 
-      def initialize(binary: nil, model: "base.en", runner: nil)
+      def initialize(binary: nil, model: "base.en", runner: nil, timeout: DEFAULT_TIMEOUT)
         @binary = binary
         @model = model
         @runner = runner # injectable for tests
+        @timeout = timeout
       end
 
       # Returns transcript text. Writes <media_path>.transcript.txt next to media.
@@ -60,11 +62,36 @@ module Xbookmark
           return @runner.call(bin, media_path, @model)
         end
         argv = build_argv(bin, media_path)
-        out, err, status = Open3.capture3(*argv)
+        out, err, status = run_with_timeout(argv, @timeout)
         unless status.success?
-          raise CodexError, "whisper failed (#{status.exitstatus}): #{err}"
+          # Whisper failures belong in the WhisperUnavailable taxonomy —
+          # the previous CodexError tag misled logs into blaming the LLM
+          # subsystem for a transcription crash.
+          raise Xbookmark::WhisperUnavailable, "whisper failed (#{status.exitstatus}): #{err}"
         end
         out
+      end
+
+      def run_with_timeout(argv, timeout)
+        Open3.popen3(*argv) do |stdin, stdout, stderr, wait_thr|
+          stdin.close
+          out_reader = Thread.new { stdout.read }
+          err_reader = Thread.new { stderr.read }
+
+          if wait_thr.join(timeout).nil?
+            pid = wait_thr.pid
+            Process.kill("TERM", pid) rescue nil
+            50.times do
+              break unless wait_thr.alive?
+              sleep 0.1
+            end
+            Process.kill("KILL", pid) rescue nil if wait_thr.alive?
+            wait_thr.join
+            raise Xbookmark::WhisperUnavailable, "whisper exceeded timeout of #{timeout}s"
+          end
+
+          [out_reader.value, err_reader.value, wait_thr.value]
+        end
       end
 
       def build_argv(bin, media_path)
