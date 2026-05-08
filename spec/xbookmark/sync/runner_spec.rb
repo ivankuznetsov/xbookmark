@@ -59,7 +59,7 @@ RSpec.describe Xbookmark::Sync::Runner do
       x_token_expires_at: nil, codex_bin: "codex",
       whisper_bin: nil, whisper_model: "base.en", qmd_bin: "qmd",
       daily_sync_time: "06:00", min_run_interval_hours: 20.0,
-      concurrency: 1, env_file: nil, verbose: false
+      env_file: nil, verbose: false
     )
   end
 

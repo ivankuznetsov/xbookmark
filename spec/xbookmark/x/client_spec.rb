@@ -22,7 +22,6 @@ RSpec.describe Xbookmark::X::Client do
       qmd_bin: "qmd",
       daily_sync_time: "06:00",
       min_run_interval_hours: 20.0,
-      concurrency: 3,
       env_file: "/tmp/.env",
       verbose: false
     )

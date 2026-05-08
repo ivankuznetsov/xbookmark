@@ -25,7 +25,6 @@ module Xbookmark
       :qmd_bin,
       :daily_sync_time,
       :min_run_interval_hours,
-      :concurrency,
       :env_file,
       :verbose,
       keyword_init: true
@@ -52,7 +51,7 @@ module Xbookmark
           scratch_dir: scratch_dir,
           x_client_id: merged["X_CLIENT_ID"],
           x_client_secret: merged["X_CLIENT_SECRET"],
-          x_redirect_uri: merged["X_REDIRECT_URI"] || "http://127.0.0.1:7799/callback",
+          x_redirect_uri: merged["X_REDIRECT_URI"] || default_redirect_uri,
           x_user_id: merged["X_USER_ID"],
           x_access_token: merged["X_ACCESS_TOKEN"],
           x_refresh_token: merged["X_REFRESH_TOKEN"],
@@ -63,7 +62,6 @@ module Xbookmark
           qmd_bin: merged["QMD_BIN"] || "qmd",
           daily_sync_time: merged["XBOOKMARK_DAILY_TIME"] || "06:00",
           min_run_interval_hours: (merged["XBOOKMARK_MIN_RUN_INTERVAL_HOURS"] || "20").to_f,
-          concurrency: (merged["XBOOKMARK_CONCURRENCY"] || "3").to_i,
           env_file: loaded_env_files.first,
           verbose: verbose
         )
@@ -111,6 +109,13 @@ module Xbookmark
         else
           File.join(Paths.home, ".local", "share", "xbookmark-vault")
         end
+      end
+
+      def default_redirect_uri
+        # Single source of truth for the local OAuth callback port —
+        # mirroring this string drifts out of sync with Auth::LOCAL_PORT.
+        require_relative "x/auth"
+        "http://127.0.0.1:#{Xbookmark::X::Auth::LOCAL_PORT}/callback"
       end
 
       def default_logs_dir(env)

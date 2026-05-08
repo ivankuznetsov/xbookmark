@@ -23,7 +23,6 @@ RSpec.describe Xbookmark::X::Auth do
       qmd_bin: "qmd",
       daily_sync_time: "06:00",
       min_run_interval_hours: 20.0,
-      concurrency: 3,
       env_file: env_path,
       verbose: false
     )

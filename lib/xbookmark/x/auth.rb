@@ -17,6 +17,7 @@ module Xbookmark
       TOKEN_URL  = "https://api.twitter.com/2/oauth2/token"
       SCOPES     = %w[tweet.read users.read bookmark.read offline.access].freeze
       LOCAL_PORT = 7799
+      DEFAULT_CALLBACK_TIMEOUT = 600 # seconds — bound the OAuth callback wait
 
       AuthResult = Struct.new(:env_file, :access_token, :refresh_token, :expires_at, keyword_init: true)
 
@@ -110,7 +111,7 @@ module Xbookmark
         # Headless / SSH — printed URL is the fallback.
       end
 
-      def wait_for_callback(state:)
+      def wait_for_callback(state:, timeout: DEFAULT_CALLBACK_TIMEOUT)
         port = URI(@config.x_redirect_uri).port || LOCAL_PORT
         host = URI(@config.x_redirect_uri).host || "127.0.0.1"
         captured = nil
@@ -134,8 +135,25 @@ module Xbookmark
           end
           server.shutdown
         end
-        trap_int = Thread.new { server.start }
-        trap_int.join
+
+        prev_int_handler = Signal.trap("INT") do
+          warn "[xbookmark] auth login interrupted; shutting down callback server."
+          server.shutdown
+        end
+
+        timed_out = false
+        begin
+          server_thread = Thread.new { server.start }
+          if server_thread.join(timeout).nil?
+            timed_out = true
+            server.shutdown
+            server_thread.join(5)
+          end
+        ensure
+          Signal.trap("INT", prev_int_handler) if prev_int_handler
+        end
+
+        raise AuthError, "OAuth callback timed out after #{timeout}s — re-run `xbookmark auth login`." if timed_out
         raise AuthError, "OAuth flow returned no code." unless captured
         captured
       end
@@ -161,7 +179,12 @@ module Xbookmark
           raise AuthError, "Token exchange failed (#{res.status}): #{res.body}"
         end
 
-        JSON.parse(res.body)
+        body = JSON.parse(res.body)
+        if body.is_a?(Hash) && body["error"] && (!body["access_token"] || body["access_token"].to_s.empty?)
+          detail = body["error_description"] || body["error"]
+          raise AuthError, "Token exchange returned error: #{detail}"
+        end
+        body
       end
 
       def write_tokens!(token, preserve_refresh: false)
@@ -220,8 +243,13 @@ module Xbookmark
           out_lines << "#{k}=#{updates[k]}\n"
         end
         tmp = "#{path}.tmp.#{Process.pid}.#{rand(10_000)}"
-        File.write(tmp, out_lines.join)
+        # Tighten permissions BEFORE writing secrets so OAuth tokens never
+        # touch disk under the default 0644 umask.
+        File.open(tmp, File::WRONLY | File::CREAT | File::TRUNC, 0o600) do |f|
+          f.write(out_lines.join)
+        end
         File.rename(tmp, path)
+        File.chmod(0o600, path)
       end
 
       def which(cmd)
