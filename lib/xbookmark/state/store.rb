@@ -112,7 +112,6 @@ module Xbookmark
           row = @db.get_first_row("SELECT attempts FROM bookmarks WHERE tweet_id = ?", [tweet_id.to_s])
           attempts = ((row && row["attempts"]) || 0).to_i + 1
           status = permanent || attempts >= 3 ? STATUS_PERMANENT : STATUS_NEEDS_RETRY
-          status = STATUS_NEEDS_RETRY unless permanent || attempts >= 3
           @db.execute(<<~SQL, [status, attempts, error.to_s[0, 4000], tweet_id.to_s])
             UPDATE bookmarks
                SET status = ?,
@@ -139,8 +138,11 @@ module Xbookmark
       end
 
       def reset_to_pending!(tweet_id)
+        # Resetting a previously-failed row needs to clear attempts too —
+        # otherwise old retry counts carry over and the next failure can
+        # tip the row straight into permanent_error.
         @db.execute(<<~SQL, [STATUS_PENDING, tweet_id.to_s])
-          UPDATE bookmarks SET status = ?, last_error = NULL WHERE tweet_id = ?
+          UPDATE bookmarks SET status = ?, attempts = 0, last_error = NULL WHERE tweet_id = ?
         SQL
       end
 
