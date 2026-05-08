@@ -19,12 +19,12 @@ RSpec.describe Xbookmark::Enrich::Codex do
     expect { codex.run(prompt: "x") }.to raise_error(Xbookmark::CodexError, /exited 2/)
   end
 
-  it "raises CodexError when output fails schema" do
+  it "raises PermanentError when output fails schema (consistently wrong shape is not transient)" do
     fake = FakeCodex.new.push({ "tags" => ["a"] })
     codex = described_class.new(bin: "codex", runner: fake)
     schema = { "type" => "object", "required" => %w[tags topics] }
     expect { codex.run(prompt: "x", json_schema: schema) }
-      .to raise_error(Xbookmark::CodexError, /schema validation/)
+      .to raise_error(Xbookmark::PermanentError, /schema validation/)
   end
 
   it "parses JSONL event streams emitted by codex --json" do

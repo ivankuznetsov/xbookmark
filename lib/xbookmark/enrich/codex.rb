@@ -12,6 +12,16 @@ module Xbookmark
     class Codex
       DEFAULT_TIMEOUT = 120
 
+      # Wrapper events emitted by `codex exec --json`. The model body is
+      # carried separately (either as a `model_message`/`agent_message`
+      # event or as a plain JSON object without a wrapper type).
+      WRAPPER_EVENT_TYPES = %w[
+        turn_start turn_end telemetry start progress event finish
+        thinking agent_reasoning tool_call tool_result
+      ].freeze
+
+      MODEL_MESSAGE_TYPES = %w[model_message agent_message].freeze
+
       attr_reader :bin
 
       def initialize(bin: "codex", runner: nil)
@@ -32,7 +42,12 @@ module Xbookmark
         if json_schema
           parsed = parse_json!(out)
           errors = JSON::Validator.fully_validate(json_schema, parsed)
-          raise Xbookmark::CodexError, "codex output failed schema validation: #{errors.join("; ")}" if errors.any?
+          if errors.any?
+            # Schema mismatch is not transient — the model consistently
+            # produces the wrong shape. Raise PermanentError so the
+            # pipeline doesn't burn retry budget on it.
+            raise Xbookmark::PermanentError, "codex output failed schema validation: #{errors.join("; ")}"
+          end
           parsed
         else
           out
@@ -50,32 +65,78 @@ module Xbookmark
       private
 
       def invoke(argv, timeout:)
-        if @runner
-          return @runner.call(argv, timeout)
+        return @runner.call(argv, timeout) if @runner
+        invoke_with_timeout(argv, timeout)
+      end
+
+      def invoke_with_timeout(argv, timeout)
+        Open3.popen3(*argv) do |stdin, stdout, stderr, wait_thr|
+          stdin.close
+          out_reader = Thread.new { stdout.read }
+          err_reader = Thread.new { stderr.read }
+
+          if wait_thr.join(timeout).nil?
+            pid = wait_thr.pid
+            kill_subprocess(pid, wait_thr)
+            raise Xbookmark::CodexError, "codex exceeded timeout of #{timeout}s"
+          end
+
+          [out_reader.value, err_reader.value, wait_thr.value]
         end
-        out, err, status = Open3.capture3(*argv)
-        [out, err, status]
+      end
+
+      def kill_subprocess(pid, wait_thr)
+        Process.kill("TERM", pid) rescue nil
+        50.times do
+          break unless wait_thr.alive?
+          sleep 0.1
+        end
+        Process.kill("KILL", pid) rescue nil if wait_thr.alive?
+        wait_thr.join
       end
 
       def parse_json!(raw)
-        # codex --json prints structured events as newline-delimited JSON.
-        # Walk lines from the end and return the last one that parses as a
-        # JSON object — the model body lives in a late event. Fall back to
-        # parsing the whole stream as a single JSON object only when it
-        # really is one (no embedded newlines between objects).
-        lines = raw.lines.reverse_each.select { |l| l.strip.start_with?("{") }
-        lines.each do |line|
+        events = []
+        raw.each_line do |line|
+          stripped = line.strip
+          next if stripped.empty? || !stripped.start_with?("{")
           begin
-            return JSON.parse(line)
+            events << JSON.parse(stripped)
           rescue JSON::ParserError
             next
           end
+        end
+
+        # `codex exec --json` emits typed event envelopes. Skip well-known
+        # wrapper types (turn_start, turn_end, telemetry, ...) and return
+        # the model body — either a plain JSON object without a wrapper
+        # type, or the unwrapped content of a model_message/agent_message
+        # envelope.
+        events.reverse_each do |event|
+          next unless event.is_a?(Hash)
+          type = (event["type"] || event["event"]).to_s
+
+          next if WRAPPER_EVENT_TYPES.include?(type)
+
+          if MODEL_MESSAGE_TYPES.include?(type)
+            inner = event["content"] || event["message"] || event["body"]
+            return inner if inner.is_a?(Hash)
+            if inner.is_a?(String) && inner.strip.start_with?("{")
+              parsed_inner = JSON.parse(inner) rescue nil
+              return parsed_inner if parsed_inner.is_a?(Hash)
+            end
+            next
+          end
+
+          # No wrapper type — this event is the model body itself.
+          return event if type.empty?
         end
 
         candidate = raw.strip
         return JSON.parse(candidate) if candidate.start_with?("{")
         raise Xbookmark::CodexError, "codex stdout was not JSON: #{raw[0, 200]}"
       rescue JSON::ParserError => e
+        # Reached only by the fallback `JSON.parse(candidate)` above.
         raise Xbookmark::CodexError, "codex stdout JSON parse failed: #{e.message}"
       end
 

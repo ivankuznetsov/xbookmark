@@ -42,6 +42,8 @@ module Xbookmark
         }
       }.freeze
 
+      attr_writer :existing_slugs
+
       def initialize(codex:, link_fetcher: nil, existing_slugs: [])
         @codex = codex
         @link_fetcher = link_fetcher || LinkFetcher.new
@@ -142,7 +144,10 @@ module Xbookmark
                        "Re-derive both from the tweet, transcripts, vision, and link extracts. " \
                        "Return JSON only with the same schema."
         @codex.run(prompt: build_retry_prompt(bookmark, **args, extra: prompt_extra), images: args[:image_paths], json_schema: FINAL_SCHEMA)
-      rescue Xbookmark::CodexError
+      rescue Xbookmark::CodexError, Xbookmark::PermanentError
+        # Best-effort second pass — fall back to the first call's partial
+        # result. A schema mismatch on the retry still leaves the original
+        # response usable.
         nil
       end
 
