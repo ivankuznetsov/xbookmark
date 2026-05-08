@@ -57,7 +57,10 @@ module Xbookmark
       def bookmark_date(bookmark)
         Time.parse(bookmark.bookmarked_at.to_s).utc
       rescue ArgumentError
-        Time.now.utc
+        # Fall back to created_at instead of Time.now — using "now" placed
+        # the same bookmark in different YYYY/MM/DD directories on retry,
+        # orphaning earlier files. created_at is stable across retries.
+        Time.parse(bookmark.created_at.to_s).utc
       end
 
       def frontmatter(bookmark, enrichment, media_records)
@@ -118,13 +121,9 @@ module Xbookmark
       def media_section(records, enrichment)
         items = records.map do |m|
           rel = relativize(m[:path])
-          if m[:kind] == "video"
-            %(<video src="#{rel}" controls></video>)
-          elsif m[:kind] == "animated_gif"
-            %(<video src="#{rel}" controls loop autoplay muted></video>)
-          else
-            "![[#{rel}]]"
-          end
+          # Obsidian's editing mode previews wikilink embeds (`![[…]]`)
+          # natively for video/audio/images; raw <video> tags don't render.
+          "![[#{rel}]]"
         end
         out = ["## Media", *items]
         captions = enrichment.image_captions
