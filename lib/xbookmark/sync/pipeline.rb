@@ -36,8 +36,7 @@ module Xbookmark
 
         media_records = bookmark.media.empty? ? [] : @downloader.download(bookmark.media, media_scratch)
         transcripts = transcribe_videos(media_records)
-        existing_slugs = @store.all_topic_slugs
-        @orch.instance_variable_set(:@existing_slugs, existing_slugs)
+        @orch.existing_slugs = @store.all_topic_slugs if @orch.respond_to?(:existing_slugs=)
         enrichment = @orch.enrich(bookmark, transcripts: transcripts, image_paths: image_paths(media_records))
 
         # Move scratch media into the final vault location.
@@ -51,17 +50,23 @@ module Xbookmark
 
         FileUtils.rm_rf(scratch)
         Outcome.new(status: :done, markdown_path: markdown_path, digest: digest)
-      rescue Xbookmark::WhisperUnavailable, Xbookmark::CodexError, Xbookmark::MediaError, Xbookmark::TransientError, Xbookmark::RateLimited => e
+      rescue Xbookmark::TransientError, Xbookmark::RateLimited => e
+        # WhisperUnavailable, MediaError, and CodexError already inherit
+        # from TransientError — the rescue list above covers all of them.
         FileUtils.rm_rf(scratch) if scratch
         Outcome.new(status: :needs_retry, error: e)
       rescue Xbookmark::PermanentError => e
         FileUtils.rm_rf(scratch) if scratch
         Outcome.new(status: :permanent_error, error: e)
       rescue StandardError => e
+        # Coding bugs (NoMethodError, TypeError, SQLite3::Exception, ...)
+        # are NOT transient — log the class and backtrace so they aren't
+        # silently retried 3× against live X/codex APIs, then promote
+        # straight to a permanent error.
         FileUtils.rm_rf(scratch) if scratch
-        # Default unknown errors to transient retry; the runner can promote
-        # to permanent_error after 3 attempts.
-        Outcome.new(status: :needs_retry, error: e)
+        warn "[xbookmark] pipeline crashed for tweet #{bookmark.tweet_id}: #{e.class}: #{e.message}"
+        warn e.backtrace.first(20).join("\n") if e.backtrace
+        Outcome.new(status: :permanent_error, error: e)
       end
 
       private
