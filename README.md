@@ -354,6 +354,8 @@ Pull requests should be small and focused — one logical change per PR — and 
 
 ## Credits
 
+xbookmark stands on the shoulders of [codex](https://github.com/openai/codex), [whisper.cpp](https://github.com/ggerganov/whisper.cpp), [faster-whisper](https://github.com/SYSTRAN/faster-whisper), QMD, [Obsidian](https://obsidian.md), and the X API team — without them this would be a much larger project.
+
 ## Security
 
 ## License
