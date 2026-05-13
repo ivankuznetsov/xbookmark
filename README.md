@@ -32,7 +32,7 @@ bin/xbookmark find 'rails'
 - Full-text search over the vault via a local QMD index.
 - LLM enrichment of each bookmark (summary, tags) through the `codex` CLI.
 - Local Whisper transcription of audio and video linked from a bookmark.
-- Official X API v2 only, via OAuth 2.0 with PKCE. No cookie scraping.
+- Official X API v2 only, via OAuth 2.0 with PKCE.
 - MIT-licensed and runs entirely on your machine.
 
 ## Installation
@@ -259,11 +259,9 @@ Every subcommand accepts `--help`. The top-level `bin/xbookmark --help` lists al
 xbookmark talks to the X API v2 to fetch your bookmarks, writes each one as a markdown file with YAML frontmatter into your vault, then runs an enrichment pass (LLM summaries and tags via `codex`) and, for any linked audio or video, a local Whisper transcription. A QMD index over the vault gives you fast full-text search through `bin/xbookmark find`.
 
 ```
-                                +------------------+
-   X API v2  -->  Ingest  -->   |  Enrich (codex)  |  -->  Markdown vault  -->  QMD index
-                     |          +------------------+
-                     |                  ^
-                     +-->  Whisper -----+
+   X API v2  -->  Ingest  -->  Enrich (codex)  -->  Markdown vault  -->  QMD
+                     |                ^
+                     +-->  Whisper ---+
                           (linked media)
 ```
 
@@ -289,7 +287,7 @@ tags: ["rails", "framework", "release-notes"]
 > Rails 8.0 ships today. Solid Cache, Solid Queue, Solid Cable are all
 > defaults now. Authentication generator. Propshaft by default.
 
-## Summary
+### Summary
 
 Release announcement for Rails 8.0. Highlights the Solid trio as new
 defaults, a built-in authentication generator, and Propshaft replacing
