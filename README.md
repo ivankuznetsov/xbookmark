@@ -256,6 +256,17 @@ Every subcommand accepts `--help`. The top-level `bin/xbookmark --help` lists al
 
 ## How it works
 
+xbookmark talks to the X API v2 to fetch your bookmarks, writes each one as a markdown file with YAML frontmatter into your vault, then runs an enrichment pass (LLM summaries and tags via `codex`) and, for any linked audio or video, a local Whisper transcription. A QMD index over the vault gives you fast full-text search through `bin/xbookmark find`.
+
+```
+                                +------------------+
+   X API v2  -->  Ingest  -->   |  Enrich (codex)  |  -->  Markdown vault  -->  QMD index
+                     |          +------------------+
+                     |                  ^
+                     +-->  Whisper -----+
+                          (linked media)
+```
+
 ## Obsidian integration
 
 ## Scheduling
