@@ -161,6 +161,99 @@ Set `OBSIDIAN_VAULT_PATH` to a directory you want to use as your vault. xbookmar
 
 ## Usage
 
+### auth
+
+Manage X API credentials.
+
+```bash
+bin/xbookmark auth login     # browser PKCE flow, stores tokens locally
+bin/xbookmark auth logout    # delete stored tokens
+bin/xbookmark auth status    # show the current account and token expiry
+```
+
+Example output:
+
+```
+Signed in as @ikuznetsov (id 1234567890). Access token expires in 1h 58m.
+```
+
+### backfill
+
+Pull historical bookmarks into the vault.
+
+```bash
+bin/xbookmark backfill [--limit N] [--since DATE] [--dry-run]
+```
+
+Example:
+
+```bash
+bin/xbookmark backfill --limit 100
+```
+
+Example output:
+
+```
+Fetched 100 bookmarks. Wrote 100 markdown files to ~/Vaults/xbookmark/bookmarks/.
+```
+
+### find
+
+Full-text search across the vault.
+
+```bash
+bin/xbookmark find '<query>' [--limit N] [--json]
+```
+
+Example:
+
+```bash
+bin/xbookmark find 'rails'
+```
+
+Example output:
+
+```
+2026/05/1789012345.md  "Rails 8.0 ships with..."  @dhh
+2026/04/1788123456.md  "A small Rails tip..."     @rosa
+```
+
+### enrich
+
+Run the LLM enrichment pass.
+
+```bash
+bin/xbookmark enrich [--bookmark ID | --all] [--force]
+```
+
+Example:
+
+```bash
+bin/xbookmark enrich --all
+```
+
+Example output:
+
+```
+Enriched 42 bookmarks. Skipped 8 (already enriched). 0 failures.
+```
+
+### schedule
+
+Install, remove, or inspect the daily ingest job.
+
+```bash
+bin/xbookmark schedule install --daily
+bin/xbookmark schedule uninstall
+bin/xbookmark schedule status
+```
+
+See [Scheduling](#scheduling) for the per-OS artifact and log locations.
+
+### --help
+
+Every subcommand accepts `--help`. The top-level `bin/xbookmark --help` lists all subcommands and global flags.
+
 ## How it works
 
 ## Obsidian integration
