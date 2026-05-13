@@ -335,6 +335,15 @@ Under `$OBSIDIAN_VAULT_PATH/bookmarks/YYYY/MM/<id>.md`. The `bin/xbookmark find`
 
 ## Roadmap
 
+No commitments, no timeline — just the directions we expect to take next.
+
+- Publish as a RubyGem so installation is `gem install xbookmark`.
+- Ship an AUR package for Arch users.
+- Ship a Homebrew tap for macOS users.
+- Add Threads and Bluesky as adjacent bookmark providers.
+- Encrypt the stored credentials file at rest.
+- Expose a plugin API for custom enrichers (translation, sentiment, fact-check).
+
 ## Contributing
 
 ## Credits
