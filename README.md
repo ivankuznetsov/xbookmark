@@ -346,6 +346,12 @@ No commitments, no timeline — just the directions we expect to take next.
 
 ## Contributing
 
+Dev setup is the same as a user install: `git clone`, `bundle install`, `cp .env.example .env`, and confirm with `bin/xbookmark --version`.
+
+Tests run with `bundle exec rake test`. The default suite uses minitest. Integration tests hit the real X API in a recording mode, so a working `.env` is required to regenerate fixtures.
+
+Pull requests should be small and focused — one logical change per PR — and pass `bundle exec rake test` plus the configured linters before pushing. Link any related issue in the PR description.
+
 ## Credits
 
 ## Security
