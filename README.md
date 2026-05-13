@@ -110,6 +110,55 @@ A published gem is on the [Roadmap](#roadmap); until then, clone-and-bundle is t
 
 ## Configuration
 
+xbookmark reads a single `.env` file at the repo root. Copy the example and fill in the values:
+
+```bash
+cp .env.example .env
+```
+
+### Configuration file
+
+```bash
+# X API (OAuth 2.0 with PKCE)
+X_CLIENT_ID=
+X_CLIENT_SECRET=
+X_REDIRECT_URI=http://127.0.0.1:8765/callback
+
+# Where the markdown vault lives
+OBSIDIAN_VAULT_PATH=~/Vaults/xbookmark
+
+# Whisper transcription
+WHISPER_BACKEND=whisper.cpp   # or faster-whisper
+WHISPER_MODEL=base.en
+
+# codex CLI profile for enrichment
+CODEX_PROFILE=default
+```
+
+### Set up X API access
+
+1. Sign in at <https://developer.x.com> and create a project, then create an app inside it.
+2. Enable OAuth 2.0 on the app. Set the callback URL to `http://127.0.0.1:8765/callback` so it matches xbookmark's default loopback port.
+3. Request the scopes `bookmark.read`, `users.read`, and `tweet.read`.
+4. Copy the Client ID into `X_CLIENT_ID`. If your app type also issues a secret, copy it into `X_CLIENT_SECRET`.
+5. Run `bin/xbookmark auth login`. The CLI opens your browser, completes the PKCE handshake, and stores tokens in `~/.config/xbookmark/credentials.json`.
+
+### What this will cost
+
+xbookmark uses the official paid X API. See <https://developer.x.com/en/portal/products> for the current Basic-tier monthly price and bookmark lookup quota. Use the published rate and quota on that page to estimate your own cost per 1000 bookmarks — pricing changes too often to quote a stable number here.
+
+### codex authentication
+
+Install the [`codex` CLI](https://github.com/openai/codex), run `codex login` once, point `CODEX_PROFILE` at the profile you want xbookmark to use, and confirm with `codex whoami`.
+
+### Whisper backend
+
+`whisper.cpp` is the default. It runs fast on a modern CPU and needs a one-time C++ build. `faster-whisper` is a good alternative if you have a CUDA GPU and prefer the Python runtime. Switch by setting `WHISPER_BACKEND` to either value and ensuring the matching binary is on your `PATH`.
+
+### Obsidian vault path
+
+Set `OBSIDIAN_VAULT_PATH` to a directory you want to use as your vault. xbookmark will create it on first run if it does not already exist. See [Obsidian integration](#obsidian-integration) for how to open it in Obsidian.
+
 ## Usage
 
 ## How it works
