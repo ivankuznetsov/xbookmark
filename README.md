@@ -17,6 +17,8 @@ It is built for people who keep notes in Obsidian or any markdown-first system a
   <img src="docs/assets/demo.gif" alt="xbookmark backfill and find demo">
 </p>
 
+Before running `auth login`, complete [Configuration → Set up X API access](#set-up-x-api-access) to obtain an `X_CLIENT_ID`.
+
 ```bash
 git clone https://github.com/ivankuznetsov/xbookmark.git
 cd xbookmark
@@ -144,7 +146,7 @@ CODEX_PROFILE=default
 
 ### Set up X API access
 
-1. Sign in at the [X developer portal](https://developer.x.com) and create a project, then create an app inside it. (Portal/account URLs live on `developer.x.com`; technical reference docs live on `docs.x.com`.)
+1. Sign in at the [X developer portal](https://developer.x.com) and create a project, then create an app inside it.
 2. Enable OAuth 2.0 on the app. Set the callback URL to `http://127.0.0.1:8765/callback` so it matches xbookmark's default loopback port.
 3. Request the scopes `bookmark.read`, `users.read`, `tweet.read`, and `offline.access` (the last one is required so xbookmark can refresh access tokens without re-prompting).
 4. Copy the Client ID into `X_CLIENT_ID`. `X_CLIENT_SECRET` is only required if your app type is a confidential client that issues a secret; PKCE public-client apps leave it blank.
@@ -164,7 +166,7 @@ Set `WHISPER_BACKEND` to either `whisper.cpp` (default, fast on CPU, one-time C+
 
 ### Obsidian vault path
 
-Set `OBSIDIAN_VAULT_PATH` to a directory you want to use as your vault. xbookmark will create it on first run if it does not already exist. See [Obsidian integration](#obsidian-integration) for how to open it in Obsidian.
+Set `OBSIDIAN_VAULT_PATH` to a directory you want to use as your vault. On first run xbookmark creates the directory if it is missing, including any missing parent directories, with mode `0700` (owner-only access). If the path already exists but is not a directory, xbookmark exits non-zero without modifying it. See [Obsidian integration](#obsidian-integration) for how to open it in Obsidian.
 
 ## Usage
 
@@ -183,6 +185,8 @@ Example output:
 ```
 Signed in as @ikuznetsov (id 1234567890). Access token expires in 1h 58m.
 ```
+
+When the access token has already lapsed, `auth status` reports it as expired and silently refreshes it using the stored refresh token before printing the new expiry. If the refresh token itself has been revoked or has expired, `auth status` exits non-zero and prompts you to re-run `auth login`.
 
 ### backfill
 
@@ -223,9 +227,11 @@ bin/xbookmark find 'rails'
 Example output:
 
 ```
-2026/05/1789012345678901234.md  "Rails 8.0 ships with..."  @dhh
-2026/04/1788123456789012345.md  "A small Rails tip..."     @rosa
+bookmarks/2026/05/1789012345678901234.md  "Rails 8.0 ships with..."  @dhh
+bookmarks/2026/04/1788123456789012345.md  "A small Rails tip..."     @rosa
 ```
+
+`find` searches the entire vault, so matches can span multiple month partitions in a single result set.
 
 ### enrich
 
