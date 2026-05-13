@@ -37,6 +37,77 @@ bin/xbookmark find 'rails'
 
 ## Installation
 
+xbookmark is installed from source. There is no published gem, AUR package, or Homebrew tap yet.
+
+### Prerequisites
+
+Every supported platform needs:
+
+- Ruby 3.3 or newer.
+- `ffmpeg` for media extraction.
+- A Whisper backend — either `whisper.cpp` (the default, fast on CPU) or `faster-whisper` (Python, GPU-friendly).
+- The [`codex` CLI](https://github.com/openai/codex) for LLM enrichment.
+- `git`.
+
+### Arch Linux
+
+```bash
+sudo pacman -S ruby ffmpeg sqlite base-devel git
+yay -S whisper.cpp-git   # or build whisper.cpp from source
+
+git clone https://github.com/ikuznetsov/xbookmark.git
+cd xbookmark
+bundle install
+bin/xbookmark --version
+```
+
+### Ubuntu / Debian
+
+```bash
+sudo apt install ruby ruby-dev build-essential libsqlite3-dev ffmpeg git
+
+# Ubuntu < 24.04 and Debian 12 ship a Ruby older than 3.3.
+# Install a modern Ruby with rbenv or mise if `ruby -v` reports < 3.3.
+
+# whisper.cpp from source
+git clone https://github.com/ggerganov/whisper.cpp.git && (cd whisper.cpp && make)
+
+git clone https://github.com/ikuznetsov/xbookmark.git
+cd xbookmark
+bundle install
+bin/xbookmark --version
+```
+
+### Fedora
+
+```bash
+sudo dnf install ruby ruby-devel @development-tools sqlite-devel ffmpeg git
+
+# whisper.cpp from source
+git clone https://github.com/ggerganov/whisper.cpp.git && (cd whisper.cpp && make)
+
+git clone https://github.com/ikuznetsov/xbookmark.git
+cd xbookmark
+bundle install
+bin/xbookmark --version
+```
+
+### macOS
+
+```bash
+brew install ruby ffmpeg sqlite git whisper-cpp
+
+# If `ruby -v` still shows the system Ruby, prepend Homebrew's Ruby to PATH:
+#   echo 'export PATH="$(brew --prefix ruby)/bin:$PATH"' >> ~/.zshrc
+
+git clone https://github.com/ikuznetsov/xbookmark.git
+cd xbookmark
+bundle install
+bin/xbookmark --version
+```
+
+A published gem is on the [Roadmap](#roadmap); until then, clone-and-bundle is the supported install path.
+
 ## Configuration
 
 ## Usage
