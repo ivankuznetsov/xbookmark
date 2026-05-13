@@ -1,0 +1,29 @@
+You are producing the structured enrichment for one X (Twitter) bookmark.
+
+Tweet text:
+%{tweet_text}
+
+Author: @%{author_handle}
+Quoted tweet (if any): %{quoted_text}
+Transcripts (if any):
+%{transcripts}
+Image OCR / captions (if any):
+%{vision_blob}
+Linked article extracts (if any):
+%{link_blobs}
+Existing topic/entity slugs already in the vault (use these instead of
+creating near-duplicates when meaning matches):
+%{existing_slugs}
+
+Return JSON only with this schema:
+{
+  "summary": "<one or two sentences, optional>",
+  "tags": ["<short snake-or-kebab tags>", ...],            // REQUIRED, non-empty
+  "topics": ["<kebab-case topic slugs>", ...],              // REQUIRED, non-empty
+  "entities": ["<kebab-case proper-noun slugs>", ...],     // REQUIRED, non-empty
+  "links": [
+    { "url": "...", "title": "...", "summary": "..." }
+  ],
+  "image_captions": { "<media_path>": "<caption>", ... },
+  "image_ocr": { "<media_path>": "<extracted text>", ... }
+}

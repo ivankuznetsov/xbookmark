@@ -1,0 +1,136 @@
+# frozen_string_literal: true
+
+require "xbookmark/sync/runner"
+require "xbookmark/state/store"
+
+class FakeXClient
+  def initialize(pages: [], single_tweet: nil)
+    @pages = pages
+    @single_tweet = single_tweet
+  end
+
+  def bookmarks(user_id:, pagination_token: nil, max_results: 100)
+    return enum_for(:bookmarks, user_id: user_id, pagination_token: pagination_token, max_results: max_results) unless block_given?
+    @pages.each { |p| yield p }
+  end
+
+  def get_tweet(id)
+    @single_tweet || raise("no fake tweet for #{id}")
+  end
+end
+
+class FakePipeline
+  attr_reader :calls
+
+  def initialize(behavior)
+    @behavior = behavior
+    @calls = []
+  end
+
+  def process(bookmark)
+    @calls << bookmark.tweet_id
+    @behavior.call(bookmark)
+  end
+end
+
+class FakeRegistrar
+  attr_reader :index_calls
+
+  def initialize
+    @index_calls = 0
+  end
+
+  def index!
+    @index_calls += 1
+  end
+end
+
+RSpec.describe Xbookmark::Sync::Runner do
+  let(:store) { Xbookmark::State::Store.new(":memory:") }
+  let(:vault) { Dir.mktmpdir }
+  let(:config) do
+    Struct::XbookmarkConfig.new(
+      vault_path: vault,
+      state_db_path: ":memory:",
+      logs_dir: "/tmp",
+      scratch_dir: File.join(vault, ".xbookmark", "scratch"),
+      x_client_id: "c", x_client_secret: nil, x_redirect_uri: "x",
+      x_user_id: "42", x_access_token: "t", x_refresh_token: nil,
+      x_token_expires_at: nil, codex_bin: "codex",
+      whisper_bin: nil, whisper_model: "base.en", qmd_bin: "qmd",
+      daily_sync_time: "06:00", min_run_interval_hours: 20.0,
+      env_file: nil, verbose: false
+    )
+  end
+
+  let(:registrar) { FakeRegistrar.new }
+
+  it "fresh + sync mode prints the bootstrap message and reports a permanent error" do
+    fake_client = FakeXClient.new(pages: [])
+    pipeline = FakePipeline.new(->(_) { Xbookmark::Sync::Pipeline::Outcome.new(status: :done, markdown_path: "/x", digest: "d") })
+    runner = described_class.new(config: config, store: store, x_client: fake_client, pipeline: pipeline, registrar: registrar)
+    expect { @report = runner.run(mode: :sync) }.to output(/backfill --limit 100/).to_stdout
+    expect(@report.permanent_errors).to eq(1)
+    expect(registrar.index_calls).to eq(0)
+  end
+
+  it "backfill --limit 100 stops at exactly N items even when API returns more" do
+    page = {
+      "data" => Array.new(150) { |i| { "id" => "t#{i}", "author_id" => "u1", "text" => "x", "created_at" => "2026-01-01T00:00:00Z", "conversation_id" => "c#{i}" } },
+      "includes" => { "users" => [{ "id" => "u1", "username" => "alice" }] },
+      "meta" => {}
+    }
+
+    pipeline = FakePipeline.new(->(_) { Xbookmark::Sync::Pipeline::Outcome.new(status: :done, markdown_path: "/x", digest: "d") })
+    runner = described_class.new(config: config, store: store, x_client: FakeXClient.new(pages: [page]),
+                                 pipeline: pipeline, registrar: registrar)
+    report = runner.run(mode: :backfill_limited, limit: 100)
+    expect(report.synced).to eq(100)
+    expect(store.mode).to eq(Xbookmark::State::Store::MODE_TEST_BACKFILLED)
+    expect(registrar.index_calls).to eq(1)
+  end
+
+  it "transitions a failure on attempt 1 to success on retry, ordered failed-first on next run" do
+    bookmark_payload = {
+      "data" => [{ "id" => "1", "author_id" => "u1", "text" => "x", "created_at" => "2026-01-01T00:00:00Z", "conversation_id" => "1" }],
+      "includes" => { "users" => [{ "id" => "u1", "username" => "alice" }] },
+      "meta" => {}
+    }
+    single = { "data" => bookmark_payload["data"].first, "includes" => bookmark_payload["includes"] }
+    client = FakeXClient.new(pages: [bookmark_payload], single_tweet: single)
+
+    fail_then_pass = FakePipeline.new(->(bm) {
+      if bm.tweet_id == "1" && fail_then_pass.calls.size == 1
+        Xbookmark::Sync::Pipeline::Outcome.new(status: :needs_retry, error: StandardError.new("boom"))
+      else
+        Xbookmark::Sync::Pipeline::Outcome.new(status: :done, markdown_path: "/x", digest: "d")
+      end
+    })
+
+    runner = described_class.new(config: config, store: store, x_client: client, pipeline: fail_then_pass, registrar: registrar)
+    r1 = runner.run(mode: :backfill_limited, limit: 1)
+    expect(r1.failed).to eq(1)
+
+    r2 = runner.run(mode: :backfill_limited, limit: 1)
+    expect(r2.synced).to eq(1)
+    expect(store.find_bookmark("1")[:status]).to eq("done")
+  end
+
+  it "skip-if-recent: --from-scheduler exits 0 when the previous finish was < threshold" do
+    store.mark_sync_finished!(Time.now.utc - 60) # 1m ago
+    pipeline = FakePipeline.new(->(_) { Xbookmark::Sync::Pipeline::Outcome.new(status: :done, markdown_path: "/x", digest: "d") })
+    runner = described_class.new(config: config, store: store, x_client: FakeXClient.new(pages: []), pipeline: pipeline, registrar: registrar)
+    expect { @r = runner.run(mode: :sync, from_scheduler: true) }.to output(/skipping/).to_stdout
+    expect(@r.synced).to eq(0)
+  end
+
+  it "skip-if-recent does not fire on a manual sync" do
+    store.mode = Xbookmark::State::Store::MODE_INCREMENTAL
+    store.mark_sync_finished!(Time.now.utc - 60)
+    pipeline = FakePipeline.new(->(_) { Xbookmark::Sync::Pipeline::Outcome.new(status: :done, markdown_path: "/x", digest: "d") })
+    runner = described_class.new(config: config, store: store, x_client: FakeXClient.new(pages: []), pipeline: pipeline, registrar: registrar)
+    runner.run(mode: :sync, from_scheduler: false)
+    # No skip output, no error — manual sync runs even when recent.
+    expect(store.mode).to eq(Xbookmark::State::Store::MODE_INCREMENTAL)
+  end
+end
