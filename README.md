@@ -318,6 +318,21 @@ The artifact written depends on your OS:
 
 ## FAQ
 
+**How much will this cost?**
+xbookmark uses the official paid X API; see [What this will cost](#what-this-will-cost) in Configuration. Local LLM enrichment and Whisper transcription are free per-call, but you pay for whatever provider you point `codex` at.
+
+**Whisper transcription is slow.**
+Switch to a smaller model (try `WHISPER_MODEL=tiny.en` first), or switch backend to `faster-whisper` and run it on a GPU. The [whisper.cpp build docs](https://github.com/ggerganov/whisper.cpp#quick-start) cover Metal, CUDA, and OpenBLAS acceleration.
+
+**codex auth expired.**
+Run `codex login` again. The next `bin/xbookmark enrich` will resume from the first bookmark that failed.
+
+**X API rate-limited me.**
+`backfill` respects the published bookmark.read rate limits but a long backfill can still hit the daily cap. Lower `--limit` and re-run later, or schedule a daily ingest instead. The X [rate-limit reference](https://docs.x.com/x-api/fundamentals/rate-limits) lists the current numbers.
+
+**Where are my markdown files?**
+Under `$OBSIDIAN_VAULT_PATH/bookmarks/YYYY/MM/<id>.md`. The `bin/xbookmark find` output prints these paths so you can `cd` to them directly.
+
 ## Roadmap
 
 ## Contributing
