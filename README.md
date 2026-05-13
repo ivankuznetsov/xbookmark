@@ -26,6 +26,15 @@ bin/xbookmark find 'rails'
 
 ## Features
 
+- One-shot backfill of your entire X bookmark history into a local markdown vault.
+- Daily incremental ingest via a built-in scheduler (systemd, launchd, or cron).
+- Obsidian-friendly markdown output with YAML frontmatter and stable file naming.
+- Full-text search over the vault via a local QMD index.
+- LLM enrichment of each bookmark (summary, tags) through the `codex` CLI.
+- Local Whisper transcription of audio and video linked from a bookmark.
+- Official X API v2 only, via OAuth 2.0 with PKCE. No cookie scraping.
+- MIT-licensed and runs entirely on your machine.
+
 ## Installation
 
 ## Configuration
