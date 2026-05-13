@@ -269,6 +269,33 @@ xbookmark talks to the X API v2 to fetch your bookmarks, writes each one as a ma
 
 ## Obsidian integration
 
+To open your vault in Obsidian, choose "Open folder as vault" from the Obsidian launcher and pick the directory you configured as `OBSIDIAN_VAULT_PATH`. Bookmarks land under `bookmarks/YYYY/MM/<id>.md`.
+
+The graph view picks up wiki-links and tags from each bookmark's frontmatter, so re-tagging in `codex` enrichment automatically reshapes the graph.
+
+A typical bookmark file looks like this:
+
+```markdown
+---
+id: "1789012345"
+url: "https://x.com/dhh/status/1789012345"
+author: "@dhh"
+created_at: "2026-05-12T08:14:00Z"
+bookmarked_at: "2026-05-12T19:22:10Z"
+enriched_at: "2026-05-12T19:23:01Z"
+tags: ["rails", "framework", "release-notes"]
+---
+
+> Rails 8.0 ships today. Solid Cache, Solid Queue, Solid Cable are all
+> defaults now. Authentication generator. Propshaft by default.
+
+## Summary
+
+Release announcement for Rails 8.0. Highlights the Solid trio as new
+defaults, a built-in authentication generator, and Propshaft replacing
+Sprockets in new apps.
+```
+
 ## Scheduling
 
 ## FAQ
