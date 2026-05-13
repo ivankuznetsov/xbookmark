@@ -361,3 +361,5 @@ xbookmark stands on the shoulders of [codex](https://github.com/openai/codex), [
 Please report security issues privately to <ike@rabata.io> rather than opening a public GitHub issue. We acknowledge reports within 3 business days and coordinate a fix and disclosure timeline from there.
 
 ## License
+
+MIT, Copyright (c) 2026 Ivan Kuznetsov. See [LICENSE](LICENSE) for the full text.
