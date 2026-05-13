@@ -298,6 +298,24 @@ Sprockets in new apps.
 
 ## Scheduling
 
+xbookmark installs its own daily ingest job using the native scheduler on each OS, so you do not need a separate cron config file.
+
+```bash
+bin/xbookmark schedule install --daily
+bin/xbookmark schedule status
+bin/xbookmark schedule uninstall
+```
+
+The artifact written depends on your OS:
+
+| OS                  | Artifact                                                       | Logs                                              |
+| ------------------- | -------------------------------------------------------------- | ------------------------------------------------- |
+| macOS               | `~/Library/LaunchAgents/com.xbookmark.daily.plist`             | `~/Library/Logs/xbookmark.log`                    |
+| Linux (systemd)     | `~/.config/systemd/user/xbookmark-daily.{service,timer}`       | `journalctl --user -u xbookmark-daily`            |
+| Linux (no systemd)  | A user crontab entry calling `bin/xbookmark backfill`          | `~/.local/state/xbookmark/cron.log`               |
+
+`bin/xbookmark schedule uninstall` removes whichever artifact was created on this machine.
+
 ## FAQ
 
 ## Roadmap
