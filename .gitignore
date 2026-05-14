@@ -11,3 +11,5 @@
 .DS_Store
 spec/tmp/
 .rspec_status
+.qmd/
+/.llm-wiki/qmd-cache/
