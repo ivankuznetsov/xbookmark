@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash -lc if\\ \\[\\ -f\\ wiki/index.md\\ \\]\\;\\ then'\n'\\ \\ printf\\ \\'\\\\n\\[llm-wiki\\ index\\]\\\\n\\''\n'\\ \\ sed\\ -n\\ \\'1,160p\\'\\ wiki/index.md'\n'fi'\n'if\\ \\[\\ -f\\ wiki/log.md\\ \\]\\;\\ then'\n'\\ \\ printf\\ \\'\\\\n\\[llm-wiki\\ recent\\ log\\]\\\\n\\''\n'\\ \\ sed\\ -n\\ \\'1,80p\\'\\ wiki/log.md'\n'fi # LLM WIKI SESSION START"
+          }
+        ]
+      }
+    ]
+  }
+}
