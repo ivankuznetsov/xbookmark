@@ -1,20 +1,20 @@
 ---
 title: Architecture
 type: architecture
-source: git ls-files; git worktree list; .hive-state/config.yml; ../xbookmark.worktrees/i-want-to-create-a-260504-1253/lib/xbookmark/**/*.rb; ../xbookmark.worktrees/create-proper-readme-md-for-260513-2ba1/README.md
+source: git ls-files; git worktree list; .hive-state/config.yml; ../xbookmark.worktrees/i-want-to-create-a-260504-1253/lib/xbookmark/**/*.rb; ../xbookmark.worktrees/create-proper-readme-md-for-260513-2ba1/README.md; ../xbookmark.worktrees/create-proper-readme-md-for-260513-2ba1/.env.example; ../xbookmark.worktrees/create-proper-readme-md-for-260513-2ba1/.llm-wiki/*
 created: 2026-05-14
 updated: 2026-05-14
 tags: [architecture]
 ---
 
-**TLDR**: `xbookmark` has a minimal `main` branch today, plus Hive-managed worktrees containing an unmerged Ruby CLI implementation and a separate README/spec branch.
+**TLDR**: `xbookmark` has a minimal `main` branch today, plus Hive-managed worktrees containing an unmerged Ruby CLI implementation and a README/spec branch whose public contract is ahead of the implementation.
 
 ## Repository Shape
 
-- `main` currently tracks only `.gitignore` and `LICENSE`; the working tree also has untracked LLM wiki and agent context files.
+- `main` currently tracks only `.gitignore` and `LICENSE`; wiki, agent context, README, env template, and demo files are branch-scoped until merged.
 - `.hive-state/config.yml` identifies the project as `xbookmark`, default branch `main`, worktree root `/home/asterio/Dev/xbookmark.worktrees`, and Hive review settings.
 - The completed worktree branch `i-want-to-create-a-260504-1253` contains the Ruby CLI implementation.
-- The active review worktree branch `create-proper-readme-md-for-260513-2ba1` contains README and demo asset work only.
+- The active review worktree branch `create-proper-readme-md-for-260513-2ba1` contains README/spec work, `.env.example`, `.gitignore`, a demo asset, and restored managed wiki/agent context.
 
 Branch-scoped claims below are intentionally labeled; do not assume they have landed on `main`.
 
@@ -50,7 +50,9 @@ Per-bookmark work uses a scratch directory and atomic writes before updating sta
 
 ## README Review Worktree
 
-The README branch describes a more polished public-facing spec with install sections, configuration, command examples, scheduling docs, and a demo GIF. It is not tracked on `main` yet and has its own review/fix history in Hive stage `5-review`.
+The README branch describes a more polished public-facing spec with install sections, configuration, command examples, scheduling docs, and a demo GIF. Commit `8e6ad0e` further pinned contracts for auth refresh, config discovery, backfill idempotency, QMD find behavior, scheduling, credential paths, Whisper models, and contributor checks.
+
+Those README contracts are not all visible in the implementation branch. The largest command/API differences are cataloged in [[commands]] and [[api]], and unresolved reconciliation work is tracked in [[gaps]].
 
 ## Cross-Project Wiki Context
 
@@ -60,4 +62,4 @@ Configured main wiki path `/home/asterio/wikis/master/wiki` exists. A search for
 
 Managed LLM wiki context lives in `.llm-wiki/config.json`, `AGENTS.md`, `CLAUDE.md`, and `wiki/`.
 
-Related: [[dependencies]], [[active-areas]], [[commands]], [[data-model]], [[gaps]].
+Related: [[dependencies]], [[active-areas]], [[commands]], [[api]], [[data-model]], [[gaps]].

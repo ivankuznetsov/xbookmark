@@ -36,3 +36,12 @@ Append-only log of meaningful wiki updates.
 **Action:** Restored wiki context into the README review worktree and updated the command mismatch note after the README changed `auth status` to read-only with an explicit `auth refresh`.
 **Pages updated:** wiki/commands.md, wiki/log.md
 **Source:** README review worktree fix pass 04.
+
+## [2026-05-14T19:43:18Z] command-api refresh
+
+**Action:** Refreshed command and API surface coverage after commit `8e6ad0e` expanded README contracts for auth, config discovery, backfill idempotency, QMD find behavior, scheduling, credential paths, Whisper models, and contributor checks.
+**Pages created:** wiki/api.md
+**Pages updated:** wiki/commands.md, wiki/architecture.md, wiki/decisions.md, wiki/dependencies.md, wiki/active-areas.md, wiki/gaps.md, wiki/index.md, wiki/log.md
+**Main wiki:** searched `/home/asterio/wikis/master/wiki`; no xbookmark-specific page found. Read relevant OAuth, command execution, and SSRF notes from master wiki context.
+**QMD:** not run; the post-commit wrapper owns bounded qmd maintenance for this refresh.
+**Source:** latest committed diff `8e6ad0e`, README branch `README.md`, `.env.example`, `.gitignore`, Hive review task file, implementation branch `bin/xbookmark`, `lib/xbookmark/cli*.rb`, `lib/xbookmark/config.rb`, `lib/xbookmark/x/auth.rb`, `lib/xbookmark/x/client.rb`, `lib/xbookmark/qmd/searcher.rb`, scheduler files, and gem manifests.

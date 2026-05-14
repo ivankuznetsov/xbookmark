@@ -1,13 +1,13 @@
 ---
 title: Decisions
 type: decisions
-source: git log; git worktree list; .hive-state/config.yml; ../xbookmark.worktrees/i-want-to-create-a-260504-1253/lib/xbookmark/**/*.rb; ../xbookmark.worktrees/create-proper-readme-md-for-260513-2ba1/README.md
+source: git log; git worktree list; .hive-state/config.yml; ../xbookmark.worktrees/i-want-to-create-a-260504-1253/lib/xbookmark/**/*.rb; ../xbookmark.worktrees/create-proper-readme-md-for-260513-2ba1/README.md; ../xbookmark.worktrees/create-proper-readme-md-for-260513-2ba1/.env.example
 created: 2026-05-14
 updated: 2026-05-14
 tags: [decisions]
 ---
 
-**TLDR**: Current durable decisions are split between `main` repository setup, Hive workflow state, and unmerged worktree implementation choices.
+**TLDR**: Current durable decisions are split between `main` repository setup, Hive workflow state, unmerged implementation choices, and README branch contracts that still need reconciliation.
 
 ## Repository and Workflow Decisions
 
@@ -33,12 +33,25 @@ These are branch-scoped to `i-want-to-create-a-260504-1253` until merged:
 
 ## README Review Branch Decisions
 
-Branch `create-proper-readme-md-for-260513-2ba1` is a README/spec branch in Hive review. It documents a public-facing install/config/usage story and includes `docs/assets/demo.gif`. Several details are not yet guaranteed to match the implementation branch; see [[gaps]].
+Branch `create-proper-readme-md-for-260513-2ba1` is a README/spec branch in Hive review. It documents a public-facing install/config/usage story, includes `docs/assets/demo.gif`, and now restores managed wiki/agent context files.
+
+Commit `8e6ad0e` intentionally ratified README-level contracts for:
+
+- Explicit `auth refresh` and read-only `auth status`.
+- Config discovery through `--config`, `XBOOKMARK_CONFIG`, repo `.env`, and user config `.env`.
+- Backfill idempotency and `--overwrite`.
+- QMD lexical/vector/HyDE find behavior and JSON output shape.
+- `schedule` commands with scheduler selection and config path.
+- Credential path and permission claims.
+- Accepted Whisper model names.
+- Contributor checks including `rubocop` and `brakeman`.
+
+Several of these contracts are not present in the implementation branch source read during this refresh; see [[commands]], [[api]], and [[gaps]] before treating them as runtime decisions.
 
 ## Recent History Signals
 
 - `main`: `99559b4 chore: ignore .hive-state worktree`.
 - Implementation worktree: latest visible commits are fixes around bookmark date fallback/media embeds, sync timestamps/QMD registration, and README clarification.
-- README worktree: latest visible commits apply review triage fixes to `.env.example`, `.gitignore`, `README.md`, and the demo asset.
+- README worktree: latest visible commits apply review triage fixes to `.env.example`, `.gitignore`, `README.md`, the demo asset, and restored managed wiki/agent context. `8e6ad0e` is the latest commit read for this refresh.
 
-Related: [[architecture]], [[commands]], [[data-model]], [[active-areas]], [[gaps]].
+Related: [[architecture]], [[commands]], [[api]], [[data-model]], [[active-areas]], [[gaps]].
