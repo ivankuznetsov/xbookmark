@@ -36,7 +36,7 @@ Global options visible in `Xbookmark::CLI` are `--vault` and `--verbose`.
 
 ## README Branch Mismatch
 
-The README review branch documents additional or different public CLI details, including `schedule install/uninstall`, `enrich`, `auth logout`, `auth status` auto-refresh behavior, JSON find output, and config keys such as `OBSIDIAN_VAULT_PATH`. Those are not all visible in the implementation branch command files read during this refresh.
+The README review branch documents additional or different public CLI details, including `schedule install/uninstall`, `enrich`, `auth logout`, explicit `auth refresh`, read-only `auth status`, JSON find output, and config keys such as `OBSIDIAN_VAULT_PATH`. Those are not all visible in the implementation branch command files read during this refresh.
 
 Record any reconciliation work in [[gaps]] before claiming the README and implementation are aligned.
 

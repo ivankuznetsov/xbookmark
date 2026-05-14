@@ -1,2 +1,16 @@
 /.hive-state/
 /.env
+/.bundle/
+/vendor/bundle/
+/coverage/
+/tmp/
+*.gem
+.env
+.env.local
+*.log
+*.swp
+.DS_Store
+spec/tmp/
+.rspec_status
+.qmd/
+/.llm-wiki/qmd-cache/
