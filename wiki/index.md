@@ -9,13 +9,14 @@ tags: [index, wiki]
 
 **TLDR**: Catalog of the LLM-maintained wiki for `xbookmark`.
 
-Page count: 9
+Page count: 10
 Updated: 2026-05-14
 
 ## Core Pages
 
 - [[architecture]] - Branch-aware project architecture: minimal `main`, implementation worktree, README review worktree.
-- [[commands]] - CLI command surface from the implementation worktree plus README mismatch notes.
+- [[api]] - External API, OAuth callback, X API, and QMD search surfaces with README/implementation mismatches.
+- [[commands]] - CLI command surface from the implementation worktree plus README v1 contract mismatch notes.
 - [[data-model]] - SQLite state schema, vault layout, statuses, modes, and transactional behavior.
 - [[dependencies]] - Ruby gem dependencies, external CLIs, X API, and local scheduler dependencies.
 - [[decisions]] - Repository, workflow, implementation, and README branch decisions grounded in code/history.

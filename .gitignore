@@ -1,4 +1,5 @@
 /.hive-state/
+/.env
 /.bundle/
 /vendor/bundle/
 /coverage/

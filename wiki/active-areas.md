@@ -7,7 +7,7 @@ updated: 2026-05-14
 tags: [activity]
 ---
 
-**TLDR**: `main` has almost no source activity, but Hive worktrees show active CLI implementation and README/spec review work.
+**TLDR**: `main` has almost no source activity, but Hive worktrees show active CLI implementation and README/spec review work with recent wiki context restoration.
 
 ## Main Branch
 
@@ -34,19 +34,20 @@ Recent visible commits on that branch include:
 
 ## Active README Review Worktree
 
-Branch `create-proper-readme-md-for-260513-2ba1` is in `.hive-state/stages/5-review/...` and `task.md` records `REVIEW_ERROR phase=fix reason=fix_failed pass=4`.
+Branch `create-proper-readme-md-for-260513-2ba1` is in `.hive-state/stages/5-review/...` and reached a pass-4 fix-guardrail wait after commit `8e6ad0e`.
 
 Recent visible commits on that branch include:
 
+- `8e6ad0e docs(readme): resolve pass 04 review findings`
 - `7d9fd00 docs(env): warn that .env.example must stay credential-free`
 - `66dd62c docs(readme): apply triage fix pass 04`
 - `b9a6482 fix(gitignore): ignore /.env to prevent X credential leaks`
 - Prior commits build the README sections and add `docs/assets/demo.gif`.
 
-`git diff main...HEAD` in that worktree reports README, `.env.example`, `.gitignore`, and demo asset changes only.
+`git diff main...HEAD` in that worktree reports README, `.env.example`, `.gitignore`, demo asset, managed `.llm-wiki/` scripts/config, agent context files, `raw/notes/.gitkeep`, and wiki pages.
 
 ## Current Working Tree
 
-The main checkout has untracked wiki/agent files and `.gitignore` modifications from LLM wiki bootstrap/refresh. These were preserved and updated in place.
+After unsetting wrapper-provided `GIT_DIR`/`GIT_INDEX_FILE`, `git status --short --untracked-files=all` in the README review worktree showed only this refresh's wiki edits.
 
-Related: [[architecture]], [[commands]], [[dependencies]], [[gaps]].
+Related: [[architecture]], [[commands]], [[api]], [[dependencies]], [[gaps]].
