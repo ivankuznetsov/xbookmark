@@ -52,6 +52,24 @@ bookmarks/2026/04/1788123456789012345.md  "A small Rails tip..."     @rosa
 - Official X API v2 only, via OAuth 2.0 with PKCE.
 - MIT-licensed and runs entirely on your machine.
 
+## Quick install with an AI agent
+
+If you use Claude Code, Cursor, Codex, ChatGPT, or any other AI assistant, paste the prompt below and let it install and configure xbookmark for you. Agents with shell access run the steps; chat-only agents walk you through them.
+
+```text
+Install and configure xbookmark from https://github.com/ivankuznetsov/xbookmark on this machine.
+
+1. Read README.md from that repo and follow the Installation section that matches my operating system.
+2. Follow the Configuration section: copy .env.example to .env, ask me for my X developer Client ID and Obsidian vault path, and fill them in. Leave X_CLIENT_SECRET blank unless I say my X app is a confidential client.
+3. Run `bin/xbookmark auth login` so I can sign in to X in my browser.
+4. Ask me whether to install the daily scheduler (`bin/xbookmark schedule install --daily`).
+5. Verify with `bin/xbookmark --version` and `bin/xbookmark auth status`, then report the output.
+
+Stop and ask me before installing system packages with sudo, and before any step that would overwrite a file in my home directory.
+```
+
+Manual instructions follow if you prefer to run the steps yourself.
+
 ## Installation
 
 xbookmark is installed from source. There is no published gem, AUR package, or Homebrew tap yet.
@@ -463,7 +481,7 @@ xbookmark builds on the [`codex`](https://github.com/openai/codex) CLI for enric
 
 ## Security
 
-Please report security issues privately to <ike@rabata.io> rather than opening a public GitHub issue. I aim to acknowledge reports within 3 business days and coordinate a fix and disclosure timeline from there.
+Please report security issues privately to <ivan@ikuznetsov.com> rather than opening a public GitHub issue. I aim to acknowledge reports within 3 business days and coordinate a fix and disclosure timeline from there.
 
 ## License
 
