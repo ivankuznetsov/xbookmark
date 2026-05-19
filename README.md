@@ -41,17 +41,6 @@ bookmarks/2026/05/1789012345678901234.md  "Rails 8.0 ships with..."  @dhh
 bookmarks/2026/04/1788123456789012345.md  "A small Rails tip..."     @rosa
 ```
 
-## Features
-
-- One-shot backfill of your entire X bookmark history into a local markdown vault.
-- Daily incremental ingest via a built-in scheduler (systemd or cron on Linux, launchd on macOS).
-- Obsidian-friendly markdown output with YAML frontmatter and stable file naming.
-- Full-text search over the vault via a local QMD index (a markdown full-text search engine).
-- LLM enrichment (summary, tags) via the [`codex`](https://github.com/openai/codex) CLI.
-- Local Whisper transcription of audio and video linked from a bookmark.
-- Official X API v2 only, via OAuth 2.0 with PKCE.
-- MIT-licensed and runs entirely on your machine.
-
 ## Quick install with an AI agent
 
 If you use Claude Code, Cursor, Codex, ChatGPT, or any other AI assistant, paste the prompt below and let it install and configure xbookmark for you. Agents with shell access run the steps; chat-only agents walk you through them.
@@ -68,7 +57,18 @@ Install and configure xbookmark from https://github.com/ivankuznetsov/xbookmark 
 Stop and ask me before installing system packages with sudo, and before any step that would overwrite a file in my home directory.
 ```
 
-Manual instructions follow if you prefer to run the steps yourself.
+If you prefer to run the steps yourself, jump to [Installation](#installation) and [Configuration](#configuration) below.
+
+## Features
+
+- One-shot backfill of your entire X bookmark history into a local markdown vault.
+- Daily incremental ingest via a built-in scheduler (systemd or cron on Linux, launchd on macOS).
+- Obsidian-friendly markdown output with YAML frontmatter and stable file naming.
+- Full-text search over the vault via a local QMD index (a markdown full-text search engine).
+- LLM enrichment (summary, tags) via the [`codex`](https://github.com/openai/codex) CLI.
+- Local Whisper transcription of audio and video linked from a bookmark.
+- Official X API v2 only, via OAuth 2.0 with PKCE.
+- MIT-licensed and runs entirely on your machine.
 
 ## Installation
 
