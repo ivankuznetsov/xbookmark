@@ -26,6 +26,7 @@ require_relative "cli/sync"
 require_relative "cli/find"
 require_relative "cli/doctor"
 require_relative "cli/install"
+require_relative "cli/setup"
 
 module Xbookmark
   class CLI
@@ -67,6 +68,11 @@ module Xbookmark
     method_option :uninstall, type: :boolean, default: false
     def install
       Xbookmark::CLI::Install.new([], options).execute
+    end
+
+    desc "setup", "Interactive first-run wizard (keystore + scheduler)"
+    def setup
+      Xbookmark::CLI::Setup.new([], options).execute
     end
   end
 end
