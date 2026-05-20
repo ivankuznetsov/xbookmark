@@ -1,0 +1,36 @@
+# Maintainer: Ivan Kuznetsov <ivan@ikuznetsov.com>
+#
+# Note: this PKGBUILD distributes a prebuilt Tebako binary, not a
+# source-built Ruby application.  AUR convention reserves the `-bin`
+# suffix for prebuilt-binary packages; the unsuffixed `xbookmark` name
+# is used intentionally per the v1 distribution plan because the only
+# supported install path is the Tebako binary.
+#
+# Placeholders __VERSION__ / __REPO__ / __SHA256__ are substituted by
+# the release workflow's `update-aur` job before publication.
+pkgname=xbookmark
+pkgver=__VERSION__
+pkgrel=1
+pkgdesc="Sync X (Twitter) bookmarks into a local Obsidian + QMD vault"
+arch=('x86_64')
+url="https://github.com/__REPO__"
+license=('MIT')
+depends=()
+optdepends=(
+  'ffmpeg: media transcoding for embedded video'
+  'whisper-cpp: local transcription of bookmarked clips'
+  'qmd: vector search over the bookmark vault'
+  'codex: LLM enrichment of bookmark cards'
+)
+provides=('xbookmark')
+conflicts=('xbookmark-git' 'xbookmark-bin')
+source=("xbookmark-${pkgver}::https://github.com/__REPO__/releases/download/v${pkgver}/xbookmark-x86_64-linux"
+        "LICENSE-${pkgver}::https://raw.githubusercontent.com/__REPO__/v${pkgver}/LICENSE")
+sha256sums=('__SHA256__'
+            'SKIP')
+install=xbookmark.install
+
+package() {
+  install -Dm755 "${srcdir}/xbookmark-${pkgver}" "${pkgdir}/usr/bin/xbookmark"
+  install -Dm644 "${srcdir}/LICENSE-${pkgver}" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+}
