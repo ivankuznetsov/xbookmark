@@ -1,0 +1,10 @@
+#!/bin/sh
+set -e
+
+cat <<'MSG'
+Tip: run `xbookmark uninstall --purge` BEFORE removing this package
+to clear the scheduler unit, libsecret entries, and ~/.config/xbookmark.
+The .deb itself only removes /usr/bin/xbookmark.
+MSG
+
+exit 0

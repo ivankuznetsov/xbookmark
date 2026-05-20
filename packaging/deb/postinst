@@ -1,0 +1,12 @@
+#!/bin/sh
+set -e
+
+cat <<'MSG'
+xbookmark is installed.  Run:
+  xbookmark
+to launch the interactive setup wizard, or:
+  xbookmark doctor
+to verify the host has ffmpeg / qmd / whisper available.
+MSG
+
+exit 0
