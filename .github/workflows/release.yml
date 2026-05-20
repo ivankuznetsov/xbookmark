@@ -148,6 +148,7 @@ jobs:
         env:
           XBOOKMARK_TAG: ${{ github.ref_name }}
           XBOOKMARK_REPO: ${{ github.repository }}
+          XBOOKMARK_FORCE_BINARY: "1" # gem is not published in this pipeline
         run: sh ./install.sh
       - name: Smoke
         run: |

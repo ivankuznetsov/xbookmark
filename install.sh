@@ -25,6 +25,9 @@ XBOOKMARK_TAG="${XBOOKMARK_TAG:-latest}"
 XBOOKMARK_PREFIX="${XBOOKMARK_PREFIX:-$HOME/.local}"
 XBOOKMARK_FORCE="${XBOOKMARK_FORCE:-0}"
 XBOOKMARK_RELEASE_BASE="${XBOOKMARK_RELEASE_BASE:-https://github.com/${XBOOKMARK_REPO}/releases}"
+# Force the prebuilt-binary path even when a compatible system Ruby is
+# present.  Used by CI smoke tests because the gem is not published.
+XBOOKMARK_FORCE_BINARY="${XBOOKMARK_FORCE_BINARY:-0}"
 
 say()  { printf '%s\n'   "[xbookmark] $*"; }
 warn() { printf '%s\n'   "[xbookmark] $*" >&2; }
@@ -182,7 +185,7 @@ main() {
   arch="$(detect_arch)"
   say "detected platform: $arch"
 
-  if have_compatible_ruby; then
+  if [ "$XBOOKMARK_FORCE_BINARY" != "1" ] && have_compatible_ruby; then
     install_via_gem
   else
     say "no compatible system Ruby (>= 3.1) found; installing Tebako binary."
