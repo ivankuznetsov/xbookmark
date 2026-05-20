@@ -27,6 +27,7 @@ require_relative "cli/find"
 require_relative "cli/doctor"
 require_relative "cli/install"
 require_relative "cli/setup"
+require_relative "cli/uninstall"
 
 module Xbookmark
   class CLI
@@ -73,6 +74,15 @@ module Xbookmark
     desc "setup", "Interactive first-run wizard (keystore + scheduler)"
     def setup
       Xbookmark::CLI::Setup.new([], options).execute
+    end
+
+    desc "uninstall", "Remove scheduler unit, keystore entries, and config dir (requires --purge)"
+    method_option :purge, type: :boolean, default: false, desc: "Confirm full removal"
+    method_option :yes, type: :boolean, default: false, desc: "Skip confirmation prompt"
+    method_option :"dry-run", type: :boolean, default: false
+    def uninstall
+      code = Xbookmark::CLI::Uninstall.new([], options).execute
+      exit(code) unless code == 0
     end
   end
 end
