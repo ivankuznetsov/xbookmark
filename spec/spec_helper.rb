@@ -29,10 +29,16 @@ RSpec.configure do |config|
       XBOOKMARK_MIN_RUN_INTERVAL_HOURS
       CODEX_BIN WHISPER_BIN WHISPER_MODEL QMD_BIN
     ].each { |k| @__test_envs__[k] = ENV[k]; ENV.delete(k) }
+
+    # Always run tests against an empty in-memory keystore so they
+    # don't read or write the developer's real keychain / libsecret.
+    require "xbookmark/keystore"
+    Xbookmark::Keystore.instance_variable_set(:@default, Xbookmark::Keystore.new(backend: Xbookmark::Keystore::Memory.new))
   end
 
   config.after(:each) do
     @__test_envs__.each { |k, v| v.nil? ? ENV.delete(k) : ENV[k] = v } if @__test_envs__
+    Xbookmark::Keystore.reset_default! if defined?(Xbookmark::Keystore)
   end
 
   WebMock.disable_net_connect!(allow_localhost: true)

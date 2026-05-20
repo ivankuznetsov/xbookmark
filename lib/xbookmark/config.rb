@@ -31,8 +31,9 @@ module Xbookmark
     ) unless defined?(Struct::XbookmarkConfig)
 
     class << self
-      def load(vault_override: nil, cwd: Dir.pwd, env: ENV.to_h.dup, verbose: false)
+      def load(vault_override: nil, cwd: Dir.pwd, env: ENV.to_h.dup, verbose: false, keystore: :auto)
         loaded_env_files = load_env_files!(cwd: cwd, env: env)
+        hydrate_from_keystore!(env, keystore: keystore)
         merged = env
 
         validate_required!(merged)
@@ -85,6 +86,31 @@ module Xbookmark
           loaded << path
         end
         loaded
+      end
+
+      # Pull any KNOWN_KEYS values out of the keystore that are not
+      # already set in `env`.  `keystore:` may be:
+      #   :auto  — pick the default backend (libsecret / Keychain / env_file)
+      #   nil    — skip keystore hydration entirely
+      #   Object — any object responding to `hydrate(env)`
+      def hydrate_from_keystore!(env, keystore:)
+        return if keystore.nil?
+        store =
+          if keystore == :auto
+            require_relative "keystore"
+            begin
+              Xbookmark::Keystore.default
+            rescue StandardError
+              return
+            end
+          else
+            keystore
+          end
+        store.hydrate(env)
+      rescue StandardError
+        # The keystore is best-effort; never let a backend failure
+        # block config loading.  The fallback chain in `validate_required!`
+        # will surface the real "missing key" message instead.
       end
 
       def validate_required!(env)
