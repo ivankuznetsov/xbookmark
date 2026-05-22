@@ -112,4 +112,73 @@ RSpec.describe Xbookmark::Config do
       expect(described_class.load(cwd: cwd, env: {}).aux_summaries).to be(true)
     end
   end
+
+  it "loads an explicit env file before project/user files without overriding existing process values" do
+    with_tmp_home do |home|
+      explicit_dir = Dir.mktmpdir
+      cwd = Dir.mktmpdir
+      explicit = File.join(explicit_dir, ".xbookmark.env")
+      user_env = File.join(home, ".config", "xbookmark", ".env")
+      FileUtils.mkdir_p(File.dirname(user_env))
+      File.write(explicit, "X_CLIENT_ID=explicit\nX_USER_ID=from-explicit\nXBOOKMARK_WIKI_PATH=/explicit/wiki\n")
+      File.write(File.join(cwd, ".env"), "X_CLIENT_ID=project\nX_USER_ID=from-project\n")
+      File.write(user_env, "X_USER_ID=from-user\n")
+
+      config = described_class.load(
+        cwd: cwd,
+        env: { "XBOOKMARK_ENV_FILE" => explicit, "X_CLIENT_ID" => "process" },
+        verbose: true
+      )
+
+      expect(config.x_client_id).to eq("process")
+      expect(config.x_user_id).to eq("from-explicit")
+      expect(config.vault_path).to eq("/explicit/wiki")
+      expect(config.env_file).to eq(explicit)
+      expect(config.verbose).to be(true)
+    end
+  end
+
+  it "parses optional values defensively and applies macOS log defaults" do
+    stub_platform_macos
+    with_tmp_home do |home|
+      Dir.mktmpdir do |cwd|
+        File.write(File.join(cwd, ".env"), <<~ENV)
+          X_CLIENT_ID=abc
+          X_USER_ID=42
+          X_TOKEN_EXPIRES_AT=not-an-int
+          XBOOKMARK_MIN_RUN_INTERVAL_HOURS=1.5
+          XBOOKMARK_AUX_SUMMARIES=YES
+        ENV
+
+        config = described_class.load(cwd: cwd, env: {})
+
+        expect(config.x_token_expires_at).to be_nil
+        expect(config.min_run_interval_hours).to eq(1.5)
+        expect(config.aux_summaries).to be(true)
+        expect(config.logs_dir).to eq(File.join(home, "Library", "Logs", "xbookmark"))
+      end
+    end
+  end
+
+  it "honors XDG_STATE_HOME for default logs" do
+    stub_platform_linux
+    Dir.mktmpdir do |cwd|
+      File.write(File.join(cwd, ".env"), "X_CLIENT_ID=abc\nX_USER_ID=42\n")
+      config = described_class.load(cwd: cwd, env: { "XDG_STATE_HOME" => "/state" })
+      expect(config.logs_dir).to eq("/state/xbookmark")
+    end
+  end
+
+  it "hydrates from an explicitly supplied keystore object" do
+    store = double("keystore")
+    env = {}
+    expect(store).to receive(:hydrate) do |target|
+      target["X_CLIENT_ID"] = "abc"
+      target["X_USER_ID"] = "42"
+    end
+
+    described_class.hydrate_from_keystore!(env, keystore: store)
+
+    expect(env).to include("X_CLIENT_ID" => "abc", "X_USER_ID" => "42")
+  end
 end

@@ -136,5 +136,95 @@ RSpec.describe Xbookmark::Transcribe::Whisper do
   it "detect returns nil when override does not exist and PATH has no candidate" do
     stub_const("ENV", ENV.to_hash.merge("PATH" => "/nonexistent"))
     expect(described_class.detect("/no/such/file")).to be_nil
+    expect(described_class.detect).to be_nil
+  end
+
+  it "detects explicit PATH overrides, candidate binaries, and absolute executables" do
+    Dir.mktmpdir do |dir|
+      override = File.join(dir, "custom-whisper")
+      candidate = File.join(dir, "whisper")
+      File.write(override, "")
+      File.write(candidate, "")
+      File.chmod(0o755, override)
+      File.chmod(0o755, candidate)
+      stub_const("ENV", ENV.to_hash.merge("PATH" => dir))
+
+      expect(described_class.detect("custom-whisper")).to eq("custom-whisper")
+      expect(described_class.detect).to eq(candidate)
+      expect(described_class.which(override)).to eq(override)
+    end
+  end
+
+  it "raises when ffmpeg is unavailable or extraction fails for video input" do
+    Dir.mktmpdir do |dir|
+      bin = File.join(dir, "whisper")
+      video = File.join(dir, "clip.mp4")
+      File.write(bin, "")
+      File.chmod(0o755, bin)
+      File.write(video, "fake")
+
+      allow(described_class).to receive(:which).with("ffmpeg").and_return(nil)
+      whisper = described_class.new(binary: bin, model: "base.en")
+      expect { whisper.transcribe(video, duration_ms: 5000) }
+        .to raise_error(Xbookmark::WhisperUnavailable, /ffmpeg not found/)
+
+      allow(described_class).to receive(:which).with("ffmpeg").and_return("/usr/bin/ffmpeg")
+      status = instance_double(Process::Status, success?: false, exitstatus: 1)
+      allow(whisper).to receive(:run_with_timeout).and_return(["", "codec exploded", status])
+      expect { whisper.transcribe(video, duration_ms: 5000) }
+        .to raise_error(Xbookmark::WhisperUnavailable, /audio extraction failed: codec exploded/)
+    end
+  end
+
+  it "raises when the whisper subprocess fails" do
+    Dir.mktmpdir do |dir|
+      bin = File.join(dir, "whisper")
+      audio = File.join(dir, "clip.wav")
+      File.write(bin, "")
+      File.chmod(0o755, bin)
+      File.write(audio, "fake")
+      status = instance_double(Process::Status, success?: false, exitstatus: 9)
+      whisper = described_class.new(binary: bin, model: "base.en")
+      allow(whisper).to receive(:run_with_timeout).and_return(["", "bad model", status])
+
+      expect { whisper.transcribe(audio, duration_ms: 5000) }
+        .to raise_error(Xbookmark::WhisperUnavailable, /whisper failed \(9\): bad model/)
+    end
+  end
+
+  it "times out long-running subprocesses" do
+    whisper = described_class.new(binary: RbConfig.ruby)
+
+    out, err, status = whisper.send(:run_with_timeout, [RbConfig.ruby, "-e", "STDOUT.write 'ok'; STDERR.write 'warn'"], 2)
+    expect([out, err, status.success?]).to eq(["ok", "warn", true])
+
+    expect do
+      whisper.send(:run_with_timeout, [RbConfig.ruby, "-e", "sleep 5"], 0.01)
+    end.to raise_error(Xbookmark::WhisperUnavailable, /exceeded timeout/)
+  end
+
+  it "builds argv for every supported whisper backend and model form" do
+    Dir.mktmpdir do |dir|
+      explicit_model = File.join(dir, "model.bin")
+      File.write(explicit_model, "model")
+      faster = File.join(dir, "faster-whisper")
+      openai = File.join(dir, "whisper")
+      cpp = File.join(dir, "whisper-cpp")
+      cli = File.join(dir, "whisper-cli")
+      [faster, openai, cpp, cli].each { |path| File.write(path, ""); File.chmod(0o755, path) }
+
+      whisper = described_class.new(binary: cli, model: explicit_model)
+      expect(whisper.send(:build_argv, faster, "a.mp3")).to eq([faster, "--model", explicit_model, "--output", "-", "a.mp3"])
+      expect(whisper.send(:build_argv, openai, "a.mp3")).to eq([openai, "--model", explicit_model, "--output_format", "txt", "--output_dir", "-", "a.mp3"])
+      expect(whisper.send(:build_argv, cpp, "a.mp3")).to include(cpp, "--model", explicit_model, "--threads")
+      expect(whisper.send(:build_argv, cli, "a.mp3")).to include(cli, "-m", explicit_model, "-nt", "-np", "-f", "a.mp3")
+    end
+  end
+
+  it "honors WHISPER_THREADS when positive" do
+    stub_const("ENV", ENV.to_hash.merge("WHISPER_THREADS" => "3"))
+    whisper = described_class.new(binary: "/usr/bin/whisper-cli")
+
+    expect(whisper.send(:whisper_threads)).to eq(3)
   end
 end

@@ -168,4 +168,113 @@ RSpec.describe Xbookmark::Sync::Runner do
     expect(report.synced).to eq(0)
     expect(pipeline.calls).to be_empty
   end
+
+  it "full backfill marks the store fully backfilled and stamps completion time" do
+    stale = File.join(config.scratch_dir, "stale")
+    FileUtils.mkdir_p(stale)
+    page = {
+      "data" => [{ "id" => "1", "author_id" => "u1", "text" => "x", "created_at" => "2026-01-01T00:00:00Z", "conversation_id" => "1" }],
+      "includes" => { "users" => [{ "id" => "u1", "username" => "alice" }] },
+      "meta" => {}
+    }
+    pipeline = FakePipeline.new(->(_) { Xbookmark::Sync::Pipeline::Outcome.new(status: :done, markdown_path: "/x", digest: "d") })
+    runner = described_class.new(config: config, store: store, x_client: FakeXClient.new(pages: [page]),
+                                 pipeline: pipeline, registrar: registrar)
+
+    report = runner.run(mode: :backfill_full)
+
+    expect(report.synced).to eq(1)
+    expect(File.exist?(stale)).to be(false)
+    expect(store.mode).to eq(Xbookmark::State::Store::MODE_FULLY_BACKFILLED)
+    expect(store.get_meta("last_full_backfill_at")).not_to be_nil
+    expect(store.last_sync_finished_at).not_to be_nil
+  end
+
+  it "incremental sync refuses to run after a limited test backfill" do
+    store.mode = Xbookmark::State::Store::MODE_TEST_BACKFILLED
+    pipeline = FakePipeline.new(->(_) { Xbookmark::Sync::Pipeline::Outcome.new(status: :done, markdown_path: "/x", digest: "d") })
+    runner = described_class.new(config: config, store: store, x_client: FakeXClient.new(pages: []), pipeline: pipeline, registrar: registrar)
+
+    expect { @report = runner.run(mode: :sync) }.to output(/test-backfilled/).to_stdout
+    expect(@report.permanent_errors).to eq(1)
+    expect(store.last_sync_finished_at).to be_nil
+  end
+
+  it "resyncs one tweet by resetting retry attempts before processing" do
+    store.upsert_pending(tweet_id: "1", author_handle: "alice", bookmarked_at: "2026-01-01T00:00:00Z")
+    2.times { store.record_failure(tweet_id: "1", error: "old") }
+    single = {
+      "data" => { "id" => "1", "author_id" => "u1", "text" => "x", "created_at" => "2026-01-01T00:00:00Z", "conversation_id" => "1" },
+      "includes" => { "users" => [{ "id" => "u1", "username" => "alice" }] }
+    }
+    pipeline = FakePipeline.new(->(_) { Xbookmark::Sync::Pipeline::Outcome.new(status: :done, markdown_path: "/x", digest: "d") })
+    runner = described_class.new(config: config, store: store, x_client: FakeXClient.new(single_tweet: single),
+                                 pipeline: pipeline, registrar: registrar)
+
+    report = runner.run(mode: :resync, tweet_id: "1")
+
+    expect(report.synced).to eq(1)
+    expect(store.find_bookmark("1")[:attempts]).to eq(0)
+  end
+
+  it "requires tweet_id for resync and rejects unknown modes" do
+    runner = described_class.new(config: config, store: store, x_client: FakeXClient.new(pages: []),
+                                 pipeline: FakePipeline.new(->(_) { }), registrar: registrar)
+
+    expect { runner.run(mode: :resync) }.to raise_error(ArgumentError, /tweet_id/)
+    expect { runner.run(mode: :bogus) }.to raise_error(ArgumentError, /unknown mode/)
+  end
+
+  it "records permanent pipeline outcomes and keeps going when QMD reindex fails" do
+    page = {
+      "data" => [{ "id" => "1", "author_id" => "u1", "text" => "x", "created_at" => "2026-01-01T00:00:00Z", "conversation_id" => "1" }],
+      "includes" => { "users" => [{ "id" => "u1", "username" => "alice" }] },
+      "meta" => {}
+    }
+    pipeline = FakePipeline.new(->(_) { Xbookmark::Sync::Pipeline::Outcome.new(status: :permanent_error, error: Xbookmark::PermanentError.new("bad")) })
+    runner = described_class.new(config: config, store: store, x_client: FakeXClient.new(pages: [page]),
+                                 pipeline: pipeline, registrar: registrar)
+
+    report = runner.run(mode: :backfill_limited, limit: 1)
+
+    expect(report.permanent_errors).to eq(1)
+    expect(store.find_bookmark("1")[:status]).to eq("permanent_error")
+  end
+
+  it "warns but does not fail when QMD reindex raises after a successful sync" do
+    page = {
+      "data" => [{ "id" => "1", "author_id" => "u1", "text" => "x", "created_at" => "2026-01-01T00:00:00Z", "conversation_id" => "1" }],
+      "includes" => { "users" => [{ "id" => "u1", "username" => "alice" }] },
+      "meta" => {}
+    }
+    bad_registrar = Class.new do
+      def ensure_registered!
+        raise "qmd down"
+      end
+
+      def index!
+        raise "qmd down"
+      end
+    end.new
+    pipeline = FakePipeline.new(->(_) { Xbookmark::Sync::Pipeline::Outcome.new(status: :done, markdown_path: "/x", digest: "d") })
+    runner = described_class.new(config: config, store: store, x_client: FakeXClient.new(pages: [page]),
+                                 pipeline: pipeline, registrar: bad_registrar)
+
+    expect { @report = runner.run(mode: :backfill_limited, limit: 1) }
+      .to output(/qmd reindex failed: qmd down/).to_stderr
+    expect(@report.synced).to eq(1)
+  end
+
+  it "reports auth errors while retrying failed bookmarks" do
+    store.upsert_pending(tweet_id: "1", author_handle: "alice", bookmarked_at: "2026-01-01T00:00:00Z")
+    store.record_failure(tweet_id: "1", error: "temporary")
+    client = FakeXClient.new(pages: [])
+    allow(client).to receive(:get_tweet).and_raise(Xbookmark::AuthError, "expired")
+    runner = described_class.new(config: config, store: store, x_client: client,
+                                 pipeline: FakePipeline.new(->(_) { }), registrar: registrar)
+
+    expect { @report = runner.run(mode: :backfill_limited, limit: 1) }
+      .to output(/auth error during retry: expired/).to_stderr
+    expect(@report.permanent_errors).to eq(1)
+  end
 end

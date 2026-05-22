@@ -25,4 +25,10 @@ RSpec.describe Xbookmark::Render::Wikilinks do
     expect(described_class.link("topics/foo", "topics/foo"))
       .to eq("[[topics/foo]]")
   end
+
+  it "creates deterministic slugs for external URLs" do
+    expect(described_class.link_slug("https://example.com/Some Path?q=1"))
+      .to eq("example-com-some-path-q-1")
+    expect(described_class.link_slug("http://example.com")).to eq("example-com")
+  end
 end

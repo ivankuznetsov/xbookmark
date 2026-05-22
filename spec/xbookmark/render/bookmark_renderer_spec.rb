@@ -117,4 +117,42 @@ RSpec.describe Xbookmark::Render::BookmarkRenderer do
     expect(md).to include("#### Transcript")
     expect(md).to include("raw whisper text")
   end
+
+  it "falls back to created_at for invalid bookmarked_at and renders captions plus unavailable quotes" do
+    fallback_bookmark = bookmark.dup
+    fallback_bookmark.bookmarked_at = "not a date"
+    fallback_bookmark.created_at = "2026-02-03T00:00:00Z"
+    fallback_bookmark.quoted_tweet = nil
+    enrichment.image_captions = { "photo.jpg" => "A useful chart" }
+    renderer = described_class.new(vault_path: "/vault")
+
+    expect(renderer.markdown_path_for(fallback_bookmark))
+      .to eq("/vault/bookmarks/2026/02/03/1001.md")
+
+    md = renderer.render(fallback_bookmark, enrichment, media_records: media_records)
+    expect(md).to include("Captions:")
+    expect(md).to include("- `photo.jpg`: A useful chart")
+    expect(md).to include("(quoted tweet not available)")
+  end
+
+  it "keeps external media paths absolute and omits source when the tweet URL cannot be built" do
+    no_source = bookmark.dup
+    no_source.author_handle = nil
+    no_source.tweet_id = nil
+    renderer = described_class.new(vault_path: "/vault")
+
+    md = renderer.render(no_source, enrichment, media_records: [{ path: "/elsewhere/photo.jpg", kind: "photo" }])
+
+    expect(md).to include("![[/elsewhere/photo.jpg]]")
+    expect(md).not_to include("## Source")
+  end
+
+  it "falls back to the stored media path when it cannot compute a note-relative link" do
+    renderer = described_class.new(vault_path: "/vault")
+
+    md = renderer.render(bookmark, enrichment, media_records: [{ path: "relative media/file (1).jpg", kind: "photo" }])
+
+    expect(md).to include("![[relative media/file (1).jpg]]")
+    expect(md).to include("[Open file (1).jpg](relative%20media/file%20%281%29.jpg)")
+  end
 end
