@@ -52,3 +52,10 @@ Append-only log of meaningful wiki updates.
 **Pages updated:** wiki/commands.md, wiki/gaps.md, wiki/decisions.md, wiki/data-model.md, wiki/index.md, wiki/api.md, wiki/architecture.md, wiki/dependencies.md, wiki/active-areas.md, wiki/log.md
 **Decision:** Runtime output is a standalone bookmark wiki configured by `XBOOKMARK_WIKI_PATH`; this repository's `wiki/` remains the project LLM wiki. The `xbookmark-wiki` default does not need migration from `xbookmark-vault` before release.
 **Source:** `README.md`, `.env.example`, `lib/xbookmark/config.rb`, `lib/xbookmark/cli.rb`, `lib/xbookmark/cli/*.rb`, scheduler implementation, and review findings for PR #7.
+
+## [2026-05-22T13:36:38Z] ci-checks refresh
+
+**Action:** Added Hive-style CI checks for xbookmark and updated contributor docs.
+**Pages updated:** wiki/dependencies.md, wiki/log.md
+**Decision:** CI runs RSpec, RuboCop with the 37signals omakase base, Brakeman, and bundler-audit. The local RuboCop config keeps xbookmark's existing array-bracket style to avoid a broad mechanical rewrite.
+**Source:** Hive `.github/workflows/ci.yml`, Hive Dependabot/PR template, xbookmark Gemfile, `.rubocop.yml`, `.github/workflows/ci.yml`, and local check outputs.

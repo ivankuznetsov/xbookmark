@@ -1,0 +1,62 @@
+inherit_gem:
+  rubocop-rails-omakase: rubocop.yml
+
+AllCops:
+  TargetRubyVersion: 3.4
+  NewCops: disable
+  SuggestExtensions: false
+  Exclude:
+    - "vendor/**/*"
+    - "tmp/**/*"
+
+Style/Documentation:
+  Enabled: false
+
+Style/StringLiterals:
+  EnforcedStyle: double_quotes
+
+Metrics/MethodLength:
+  Max: 80
+  Exclude:
+    - "spec/**/*"
+
+Metrics/AbcSize:
+  Max: 65
+  Exclude:
+    - "spec/**/*"
+
+Metrics/ClassLength:
+  Max: 200
+  Exclude:
+    - "spec/**/*"
+
+Metrics/ModuleLength:
+  Max: 200
+
+Metrics/CyclomaticComplexity:
+  Max: 17
+
+Metrics/PerceivedComplexity:
+  Max: 17
+
+Metrics/ParameterLists:
+  CountKeywordArgs: false
+
+Metrics/BlockLength:
+  Exclude:
+    - "spec/**/*"
+    - "Rakefile"
+
+Naming/VariableNumber:
+  Exclude:
+    - "spec/**/*"
+
+Style/FormatStringToken:
+  Exclude:
+    - "spec/**/*"
+
+Layout/LineLength:
+  Max: 150
+
+Layout/SpaceInsideArrayLiteralBrackets:
+  Enabled: false

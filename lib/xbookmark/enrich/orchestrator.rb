@@ -61,11 +61,12 @@ module Xbookmark
           end
         end
 
-        vision = if plan["needs_image_ocr"] && image_paths.any?
-                   vision_call(image_paths)
-                 else
-                   { "captions" => {}, "ocr" => {} }
-                 end
+        vision =
+          if plan["needs_image_ocr"] && image_paths.any?
+            vision_call(image_paths)
+          else
+            { "captions" => {}, "ocr" => {} }
+          end
 
         final = final_call(bookmark, transcripts: transcripts, link_blobs: link_blobs, vision: vision, image_paths: image_paths)
 

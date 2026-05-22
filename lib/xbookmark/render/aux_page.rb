@@ -30,11 +30,12 @@ module Xbookmark
         existing = @store.find_page(self.class::KIND, slug)
         regenerate = existing.nil? || existing[:summary_input_digest] != digest
 
-        summary = if regenerate && @orch && !inputs.empty?
-                    generate_summary(slug: slug, label: label, inputs: inputs)
-                  else
-                    existing && File.exist?(path) ? extract_existing_summary(path) : nil
-                  end
+        summary =
+          if regenerate && @orch && !inputs.empty?
+            generate_summary(slug: slug, label: label, inputs: inputs)
+          else
+            existing && File.exist?(path) ? extract_existing_summary(path) : nil
+          end
 
         # Don't let the placeholder string become the persisted summary —
         # otherwise we'd round-trip "(no summary yet)" back into the page

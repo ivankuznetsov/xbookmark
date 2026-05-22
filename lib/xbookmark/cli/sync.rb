@@ -28,7 +28,7 @@ module Xbookmark
 
         mode  = options[:limit] ? :backfill_limited : :backfill_full
         report = runner.run(mode: mode, limit: options[:limit])
-        puts report.to_s
+        puts report
         exit_with(report)
       end
 
@@ -44,7 +44,7 @@ module Xbookmark
         runner = Xbookmark::Sync::Runner.new(config: config, store: store, x_client: client)
 
         report = runner.run(mode: :sync, from_scheduler: options[:"from-scheduler"])
-        puts report.to_s
+        puts report
         exit_with(report)
       end
 
@@ -60,7 +60,7 @@ module Xbookmark
         runner = Xbookmark::Sync::Runner.new(config: config, store: store, x_client: client)
 
         report = runner.run(mode: :resync, tweet_id: tweet_id)
-        puts report.to_s
+        puts report
         exit_with(report)
       end
 
