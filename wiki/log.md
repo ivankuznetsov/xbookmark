@@ -119,3 +119,10 @@ Append-only log of meaningful wiki updates.
 **Action:** Added an xbookmark-side cap to QMD search results after production `bin/xbookmark find ... --limit 3` returned four hits from the installed QMD.
 **Pages updated:** wiki/commands.md, wiki/log.md
 **Source:** Live production `bin/xbookmark find Transcript --limit 3`, `lib/xbookmark/qmd/searcher.rb`, `spec/xbookmark/qmd/searcher_spec.rb`.
+
+## [2026-05-22T21:05:00Z] production learning capture
+
+**Action:** Consolidated the most important live production setup/backfill lessons into a dedicated wiki page and added the user-facing X pagination/idempotency notes to the README.
+**Pages created:** wiki/live-production-learnings.md
+**Pages updated:** README.md, wiki/index.md, wiki/decisions.md, wiki/gaps.md, wiki/active-areas.md, wiki/log.md
+**Source:** Production install/backfill/transcription/search/scheduler verification, X API pagination probes, bookmark folder probe, duplicate audit, PRs #10-#12.

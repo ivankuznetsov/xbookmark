@@ -2,7 +2,7 @@
 
 | Area | Gap | Notes |
 |------|-----|-------|
-| Live X verification | OAuth and bookmark API paths need real credentials | Tests cover PKCE/token behavior with stubs, but a full new setup still needs `X_CLIENT_ID`, `X_USER_ID`, and browser login against X. |
+| 100-bookmark live proof | Current X source exposes fewer than 100 live bookmarks | Production API probes returned 98 unique IDs, one page, and no `next_token`; `max_results=200` is rejected by X, and bookmark folders returned zero folders. |
 | Cross-project wiki | No xbookmark-specific master page found | `/home/asterio/wikis/master/wiki` exists, but `rg` found no `xbookmark`-specific page during refresh. |
 
 ## Resolved Bootstrap Validation
@@ -18,3 +18,4 @@
 - 2026-05-22: Linux scheduler setup now tries to enable systemd linger automatically so daily timers can run after logout.
 - 2026-05-22: Live production backfill exposed a Codex JSONL event-shape drift; `item.completed` agent messages are now parsed.
 - 2026-05-22: Media download no longer has a default 200 MB cap; large X videos are allowed to download.
+- 2026-05-22: Live OAuth, bookmark API, production scheduler, QMD, media, transcript, enrichment, and duplicate checks were validated against the production install. Durable lessons are captured in [[live-production-learnings]].

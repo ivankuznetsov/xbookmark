@@ -7,11 +7,11 @@ updated: 2026-05-22
 tags: [activity]
 ---
 
-**TLDR**: Current work is focused on production backfill reliability: fast bookmark enrichment, full-size media downloads, and durable Whisper transcription for long X videos.
+**TLDR**: Production backfill reliability work has landed on `main`; the remaining live proof gap is that the X API currently exposes fewer than 100 bookmarks for this account.
 
 ## Active Branch
 
-Branch `fix/pipeline-backfill-speed` is ahead of `main`:
+`main` includes the production setup/backfill fixes from PRs 10-12:
 
 - README setup now runs `bin/xbookmark install` as a required daily scheduler step instead of asking whether to install it.
 - Linux scheduler setup tries to enable systemd linger through `loginctl enable-linger <user>` so the daily timer can fire after logout.
@@ -23,6 +23,7 @@ Branch `fix/pipeline-backfill-speed` is ahead of `main`:
 - `Xbookmark::Enrich::Codex` unwraps current `codex exec --json` `item.completed` agent messages.
 - Specs cover the README setup contract, legacy registrar fallback, scheduler linger setup, and current Codex JSON event parsing.
 - The earlier `XBOOKMARK_WIKI_PATH` runtime wiki terminology is already on `main`.
+- Production verification and reusable lessons are summarized in [[live-production-learnings]].
 
 ## Setup Reliability
 
