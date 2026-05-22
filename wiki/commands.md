@@ -31,7 +31,7 @@ The runtime bookmark wiki created at `XBOOKMARK_WIKI_PATH` is separate from this
 - `xbookmark backfill [--limit N]` runs a limited test backfill when `--limit` is present and a full backfill otherwise.
 - `xbookmark sync [--from-scheduler]` runs incremental sync; scheduler invocations can skip if the last completed sync is too recent.
 - `xbookmark resync TWEET_ID` re-fetches and reprocesses one tweet.
-- `xbookmark find QUERY [--limit N]` searches the QMD `bookmarks` collection and prints numbered text results. `Qmd::Searcher` invokes `qmd query --collection bookmarks --types lex,vec --limit N --json QUERY`.
+- `xbookmark find QUERY [--limit N]` searches the QMD `bookmarks` collection and prints numbered text results. `Qmd::Searcher` invokes `qmd query --collection bookmarks --types lex,vec --limit N --json QUERY` and caps parsed results to `N` even if the installed QMD returns extra hits.
 - `xbookmark doctor` checks platform, scheduler backend, bookmark wiki path, state DB path, `codex`, whisper, `qmd`, and X auth token presence.
 - `xbookmark install [--time HH:MM] [--dry-run] [--uninstall]` installs or removes the daily scheduler and registers QMD when installing. Linux installs also try to enable systemd linger so the timer can fire after logout.
 
