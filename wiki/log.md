@@ -86,3 +86,9 @@ Append-only log of meaningful wiki updates.
 **Action:** Updated Codex enrichment parsing after live production backfill showed current `codex exec --json` emits final JSON under `item.completed` agent-message events.
 **Pages updated:** wiki/api.md, wiki/active-areas.md, wiki/gaps.md, wiki/log.md
 **Source:** Live `bin/xbookmark backfill --limit 100` failure, `lib/xbookmark/enrich/codex.rb`, `spec/xbookmark/enrich/codex_spec.rb`.
+
+## [2026-05-22T16:10:00Z] large media download setup fix
+
+**Action:** Removed the default 200 MB media download cap after live production backfill hit `Down::TooLarge` on X video variants.
+**Pages updated:** wiki/architecture.md, wiki/active-areas.md, wiki/gaps.md, wiki/log.md
+**Source:** Live `bin/xbookmark backfill --limit 100` failure, `lib/xbookmark/media/downloader.rb`, `spec/xbookmark/media/downloader_spec.rb`.

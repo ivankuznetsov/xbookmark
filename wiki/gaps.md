@@ -17,3 +17,4 @@
 - 2026-05-22: `.env.example` no longer references a nonexistent `auth login --port` option; setup uses `X_REDIRECT_URI`.
 - 2026-05-22: Linux scheduler setup now tries to enable systemd linger automatically so daily timers can run after logout.
 - 2026-05-22: Live production backfill exposed a Codex JSONL event-shape drift; `item.completed` agent messages are now parsed.
+- 2026-05-22: Media download no longer has a default 200 MB cap; large X videos are allowed to download.

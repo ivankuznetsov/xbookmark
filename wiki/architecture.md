@@ -24,7 +24,7 @@ The application is a Ruby command-line application named `xbookmark`. Its runtim
 - X API integration: `Xbookmark::X::Auth` handles OAuth 2.0 PKCE and token refresh; `Xbookmark::X::Client` reads X bookmarks and tweet details from X API v2.
 - State: `Xbookmark::State::Store` keeps local SQLite state under `<bookmark-wiki>/.xbookmark/state.db`.
 - Sync loop: `Xbookmark::Sync::Runner` drives backfill, sync, and resync modes; `Xbookmark::Sync::Pipeline` processes one bookmark at a time.
-- Media and transcription: `Xbookmark::Media::Downloader` downloads X media, and `Xbookmark::Transcribe::Whisper` shells out to a local whisper backend.
+- Media and transcription: `Xbookmark::Media::Downloader` downloads full-size X media without a default byte cap, and `Xbookmark::Transcribe::Whisper` shells out to a local whisper backend.
 - Enrichment: `Xbookmark::Enrich::Orchestrator` calls `Xbookmark::Enrich::Codex`, fetches allowed external links, runs image OCR/captioning, and returns structured enrichment data.
 - Rendering: `Xbookmark::Render::BookmarkRenderer` writes per-bookmark markdown; `Xbookmark::Render::AuxPage` maintains author, topic, entity, and thread pages.
 - Search: `Xbookmark::Qmd::Registrar` registers the `bookmarks` QMD collection through current `qmd collection` commands with legacy fallbacks; `Xbookmark::Qmd::Searcher` shells out to `qmd query`.
