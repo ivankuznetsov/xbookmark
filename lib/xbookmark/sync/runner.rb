@@ -4,6 +4,7 @@ require "fileutils"
 require "time"
 require_relative "report"
 require_relative "pipeline"
+require_relative "../x/client"
 require_relative "../x/expansions"
 require_relative "../enrich/codex"
 require_relative "../enrich/orchestrator"
@@ -149,11 +150,12 @@ module Xbookmark
       end
 
       def process_new_pages(report, limit:, only_new: false)
-        cursor = only_new ? @store.cursor : nil
         collected = 0
-        @x_client.bookmarks(user_id: @config.x_user_id, pagination_token: cursor, max_results: 100) do |payload|
+        @x_client.bookmarks(user_id: @config.x_user_id,
+                            max_results: Xbookmark::X::Client::BOOKMARK_PAGE_SIZE) do |payload|
           report.api_pages += 1
           page_bookmarks = Xbookmark::X::Expansions.new(payload).bookmarks
+          page_new = 0
 
           page_bookmarks.each do |bm|
             break if limit && collected >= limit
@@ -164,10 +166,11 @@ module Xbookmark
             end
             run_one(bm, report)
             collected += 1
+            page_new += 1
           end
 
           next_token = (payload["meta"] || {})["next_token"]
-          @store.cursor = next_token if next_token
+          break if only_new && page_new.zero?
           break if limit && collected >= limit
           break unless next_token
         end

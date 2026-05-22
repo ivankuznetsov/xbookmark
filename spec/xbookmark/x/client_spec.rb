@@ -33,12 +33,12 @@ RSpec.describe Xbookmark::X::Client do
     page2 = Fixtures.bookmarks_page2
 
     stub_request(:get, "https://api.twitter.com/2/users/42/bookmarks")
-      .with(query: hash_including("max_results" => "100"))
+      .with(query: hash_including("max_results" => "50"))
       .to_return({ status: 200, body: page1.to_json, headers: { "Content-Type" => "application/json" } },
                  { status: 200, body: page2.to_json, headers: { "Content-Type" => "application/json" } })
 
     client = described_class.new(config: config_with)
-    pages = client.bookmarks(user_id: "42", max_results: 100).to_a
+    pages = client.bookmarks(user_id: "42").to_a
     expect(pages.size).to eq(2)
     expect(pages.first["data"].size).to eq(3)
   end
@@ -48,7 +48,7 @@ RSpec.describe Xbookmark::X::Client do
       .to_return(status: 429, headers: { "x-rate-limit-reset" => "12345" }, body: '{"title":"Too Many Requests"}')
 
     client = described_class.new(config: config_with)
-    expect { client.bookmarks(user_id: "42", max_results: 100).to_a }.to raise_error(Xbookmark::RateLimited)
+    expect { client.bookmarks(user_id: "42").to_a }.to raise_error(Xbookmark::RateLimited)
   end
 
   it "transparently refreshes a near-expired token before issuing the request" do
@@ -68,7 +68,7 @@ RSpec.describe Xbookmark::X::Client do
       .to_return(status: 200, body: Fixtures.bookmarks_page2.to_json)
 
     client = described_class.new(config: config, auth: fake_auth)
-    pages = client.bookmarks(user_id: "42", max_results: 100).to_a
+    pages = client.bookmarks(user_id: "42").to_a
     expect(pages.first["data"].first["id"]).to eq("1004")
     expect(config.x_access_token).to eq("NEW")
   end

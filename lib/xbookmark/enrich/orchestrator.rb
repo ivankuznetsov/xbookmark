@@ -9,7 +9,8 @@ module Xbookmark
   module Enrich
     EnrichmentResult = Struct.new(
       :summary, :tags, :topics, :entities, :links,
-      :image_captions, :image_ocr, :partial, :link_blobs,
+      :image_captions, :image_ocr, :transcript_summaries,
+      :formatted_transcripts, :partial, :link_blobs,
       keyword_init: true
     ) do
       def partial?
@@ -31,7 +32,9 @@ module Xbookmark
           "entities" => { "type" => "array", "items" => { "type" => "string" } },
           "links" => { "type" => "array" },
           "image_captions" => { "type" => "object" },
-          "image_ocr" => { "type" => "object" }
+          "image_ocr" => { "type" => "object" },
+          "transcript_summaries" => { "type" => "object" },
+          "formatted_transcripts" => { "type" => "object" }
         }
       }.freeze
 
@@ -69,6 +72,8 @@ module Xbookmark
           links: Array(final["links"] || []),
           image_captions: final["image_captions"] || vision["captions"] || {},
           image_ocr: final["image_ocr"] || vision["ocr"] || {},
+          transcript_summaries: string_object(final["transcript_summaries"]),
+          formatted_transcripts: string_object(final["formatted_transcripts"]),
           partial: partial,
           link_blobs: link_blobs
         )
@@ -173,6 +178,11 @@ module Xbookmark
 
       def format_link_blobs(blobs)
         blobs.map { |b| "[#{b[:title]}] (#{b[:url]})\n#{b[:text][0, 1500]}" }.join("\n---\n")
+      end
+
+      def string_object(value)
+        return {} unless value.is_a?(Hash)
+        value.each_with_object({}) { |(k, v), h| h[k.to_s] = v.to_s }
       end
 
       def render_template(name, vars)

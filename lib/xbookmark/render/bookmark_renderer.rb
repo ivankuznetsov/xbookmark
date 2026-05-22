@@ -5,6 +5,7 @@ require "json"
 require "time"
 require "fileutils"
 require "digest"
+require "pathname"
 require_relative "wikilinks"
 require_relative "atomic_writer"
 
@@ -76,6 +77,7 @@ module Xbookmark
           "topics" => (enrichment.topics || []),
           "entities" => (enrichment.entities || []),
           "media" => media_records.map { |m| { "path" => relativize(m[:path]), "kind" => m[:kind], "alt" => m[:alt_text] } },
+          "media_files" => media_records.map { |m| "[[#{relativize(m[:path])}]]" },
           "thread" => bookmark.conversation_id.to_s,
           "links" => (enrichment.links || []).map { |l| l.is_a?(Hash) ? l["url"] : l }.compact,
           "summary" => enrichment.summary,
@@ -91,8 +93,8 @@ module Xbookmark
         sections << author_section(bookmark)
         sections << topics_section(enrichment.topics)
         sections << entities_section(enrichment.entities)
-        sections << media_section(media_records, enrichment) unless media_records.empty?
-        sections << transcripts_section(transcripts) unless transcripts.empty?
+        sections << media_section(bookmark, media_records, enrichment) unless media_records.empty?
+        sections << transcripts_section(transcripts, enrichment) unless transcripts.empty?
         sections << quoted_section(bookmark) if bookmark.quoted_tweet_id
         sections << thread_section(bookmark) if bookmark.conversation_id
         sections << links_section(link_blobs) unless link_blobs.empty?
@@ -118,12 +120,13 @@ module Xbookmark
         "## Entities\n\n#{items.join("\n")}"
       end
 
-      def media_section(records, enrichment)
+      def media_section(bookmark, records, enrichment)
         items = records.map do |m|
           rel = relativize(m[:path])
+          direct_link = relative_to_note(bookmark, m[:path])
           # Obsidian's editing mode previews wikilink embeds (`![[…]]`)
           # natively for video/audio/images; raw <video> tags don't render.
-          "![[#{rel}]]"
+          ["![[#{rel}]]", "[Open #{File.basename(m[:path])}](#{escape_markdown_url(direct_link)})"].join("\n")
         end
         out = ["## Media", *items]
         captions = enrichment.image_captions
@@ -134,10 +137,19 @@ module Xbookmark
         out.join("\n")
       end
 
-      def transcripts_section(transcripts)
+      def transcripts_section(transcripts, enrichment)
         out = ["## Transcript"]
+        summaries = enrichment.respond_to?(:transcript_summaries) ? enrichment.transcript_summaries || {} : {}
+        formatted = enrichment.respond_to?(:formatted_transcripts) ? enrichment.formatted_transcripts || {} : {}
         transcripts.each do |k, v|
-          out << "**#{k}**\n\n#{v.to_s.strip}\n"
+          parts = ["### #{k}"]
+          summary = summaries[k] || summaries[File.basename(k.to_s)]
+          parts << "#### Summary\n\n#{summary.to_s.strip}" if summary && !summary.to_s.strip.empty?
+
+          transcript = formatted[k] || formatted[File.basename(k.to_s)]
+          transcript = v if transcript.to_s.strip.empty?
+          parts << "#### Transcript\n\n#{transcript.to_s.strip}"
+          out << parts.join("\n\n")
         end
         out.join("\n\n")
       end
@@ -172,6 +184,17 @@ module Xbookmark
         prefix = @vault_path.to_s.sub(/\/\z/, "")
         return path unless path.to_s.start_with?(prefix)
         path.to_s[(prefix.length + 1)..]
+      end
+
+      def relative_to_note(bookmark, path)
+        note_dir = Pathname.new(File.dirname(markdown_path_for(bookmark)))
+        Pathname.new(path).relative_path_from(note_dir).to_s
+      rescue ArgumentError
+        relativize(path)
+      end
+
+      def escape_markdown_url(path)
+        path.to_s.gsub(" ", "%20").gsub("(", "%28").gsub(")", "%29")
       end
     end
   end

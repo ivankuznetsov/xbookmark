@@ -4,13 +4,17 @@ require "xbookmark/sync/runner"
 require "xbookmark/state/store"
 
 class FakeXClient
+  attr_reader :calls
+
   def initialize(pages: [], single_tweet: nil)
     @pages = pages
     @single_tweet = single_tweet
+    @calls = []
   end
 
-  def bookmarks(user_id:, pagination_token: nil, max_results: 100)
+  def bookmarks(user_id:, pagination_token: nil, max_results: Xbookmark::X::Client::BOOKMARK_PAGE_SIZE)
     return enum_for(:bookmarks, user_id: user_id, pagination_token: pagination_token, max_results: max_results) unless block_given?
+    @calls << { user_id: user_id, pagination_token: pagination_token, max_results: max_results }
     @pages.each { |p| yield p }
   end
 
@@ -82,10 +86,12 @@ RSpec.describe Xbookmark::Sync::Runner do
     }
 
     pipeline = FakePipeline.new(->(_) { Xbookmark::Sync::Pipeline::Outcome.new(status: :done, markdown_path: "/x", digest: "d") })
-    runner = described_class.new(config: config, store: store, x_client: FakeXClient.new(pages: [page]),
+    fake_client = FakeXClient.new(pages: [page])
+    runner = described_class.new(config: config, store: store, x_client: fake_client,
                                  pipeline: pipeline, registrar: registrar)
     report = runner.run(mode: :backfill_limited, limit: 100)
     expect(report.synced).to eq(100)
+    expect(fake_client.calls.first[:max_results]).to eq(50)
     expect(store.mode).to eq(Xbookmark::State::Store::MODE_TEST_BACKFILLED)
     expect(registrar.index_calls).to eq(1)
   end
@@ -132,5 +138,34 @@ RSpec.describe Xbookmark::Sync::Runner do
     runner.run(mode: :sync, from_scheduler: false)
     # No skip output, no error — manual sync runs even when recent.
     expect(store.mode).to eq(Xbookmark::State::Store::MODE_INCREMENTAL)
+  end
+
+  it "incremental sync starts from the newest page and stops once a page has no new bookmarks" do
+    store.mode = Xbookmark::State::Store::MODE_FULLY_BACKFILLED
+    store.cursor = "stale-historical-token"
+    store.upsert_pending(tweet_id: "known", author_handle: "alice", bookmarked_at: "2026-01-01T00:00:00Z")
+    store.record_success(tweet_id: "known", markdown_path: "/known.md", digest: "d")
+
+    known_page = {
+      "data" => [{ "id" => "known", "author_id" => "u1", "text" => "x", "created_at" => "2026-01-01T00:00:00Z", "conversation_id" => "known" }],
+      "includes" => { "users" => [{ "id" => "u1", "username" => "alice" }] },
+      "meta" => { "next_token" => "older" }
+    }
+    older_page = {
+      "data" => [{ "id" => "older", "author_id" => "u1", "text" => "older", "created_at" => "2025-01-01T00:00:00Z", "conversation_id" => "older" }],
+      "includes" => { "users" => [{ "id" => "u1", "username" => "alice" }] },
+      "meta" => {}
+    }
+
+    fake_client = FakeXClient.new(pages: [known_page, older_page])
+    pipeline = FakePipeline.new(->(_) { Xbookmark::Sync::Pipeline::Outcome.new(status: :done, markdown_path: "/x", digest: "d") })
+    runner = described_class.new(config: config, store: store, x_client: fake_client, pipeline: pipeline, registrar: registrar)
+
+    report = runner.run(mode: :sync)
+
+    expect(fake_client.calls.first[:pagination_token]).to be_nil
+    expect(report.skipped).to eq(1)
+    expect(report.synced).to eq(0)
+    expect(pipeline.calls).to be_empty
   end
 end

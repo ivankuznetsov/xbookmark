@@ -32,6 +32,10 @@ RSpec.describe Xbookmark::Render::BookmarkRenderer do
       links: [{ "url" => "https://example.com/a", "title" => "Article", "summary" => "ok" }],
       image_captions: {},
       image_ocr: {},
+      transcript_summaries: { "video.mp4" => "A short explanation of the dosing point." },
+      formatted_transcripts: {
+        "video.mp4" => "**Speaker 1:** Dosing changed.\n\n**Speaker 2:** The chart explains why."
+      },
       partial: false
     )
   end
@@ -54,13 +58,18 @@ RSpec.describe Xbookmark::Render::BookmarkRenderer do
     expect(front["topics"]).to eq(["ozempic", "novo-nordisk"])
     expect(front["enrichment_status"]).to eq("done")
     expect(front["media"].first["path"]).to eq("media/1001/photo.jpg")
+    expect(front["media_files"]).to eq(["[[media/1001/photo.jpg]]"])
 
     expect(md).to include("## Author")
     expect(md).to include("[[authors/alice|@alice]]")
     expect(md).to include("[[topics/ozempic|ozempic]]")
     expect(md).to include("[[entities/novo-nordisk|novo-nordisk]]")
     expect(md).to include("![[media/1001/photo.jpg]]")
+    expect(md).to include("[Open photo.jpg](../../../../media/1001/photo.jpg)")
     expect(md).to include("## Transcript")
+    expect(md).to include("#### Summary")
+    expect(md).to include("A short explanation of the dosing point.")
+    expect(md).to include("**Speaker 1:** Dosing changed.")
     expect(md).to include("## Quoted")
     expect(md).to include("## Source")
     expect(md).to include("https://x.com/alice/status/1001")
@@ -94,5 +103,18 @@ RSpec.describe Xbookmark::Render::BookmarkRenderer do
     md = renderer.render(bookmark, partial)
     front = YAML.safe_load(md.split("---\n", 3)[1])
     expect(front["enrichment_status"]).to eq("partial")
+  end
+
+  it "falls back to raw transcript text when enrichment has no formatted transcript" do
+    raw = Xbookmark::Enrich::EnrichmentResult.new(
+      summary: nil, tags: [], topics: [], entities: [], links: [],
+      image_captions: {}, image_ocr: {}, partial: false
+    )
+    renderer = described_class.new(vault_path: "/vault")
+    md = renderer.render(bookmark, raw, transcripts: { "video.mp4" => "raw whisper text" })
+
+    expect(md).to include("### video.mp4")
+    expect(md).to include("#### Transcript")
+    expect(md).to include("raw whisper text")
   end
 end
