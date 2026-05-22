@@ -60,8 +60,29 @@ RSpec.describe Xbookmark::CLI::Uninstall do
     expect(output.string).to include("would remove: x_client_id")
   end
 
-  it "is idempotent — second run with everything already gone returns 0" do
-    code = run_uninstall(purge: true, yes: true)
-    expect(code).to eq(0)
+  it "is idempotent — second run after a real teardown still returns 0" do
+    with_tmp_home do |home|
+      config_dir = File.join(home, ".config", "xbookmark")
+      FileUtils.mkdir_p(config_dir)
+      File.write(File.join(config_dir, "marker"), "x")
+
+      keystore.set("X_CLIENT_ID", "abc")
+      keystore.set("X_CLIENT_SECRET", "shh")
+      keystore.set("X_USER_ID", "42")
+
+      first_code = run_uninstall(purge: true, yes: true)
+      expect(first_code).to eq(0)
+      expect(keystore.list_keys).to be_empty
+      expect(File.directory?(config_dir)).to be false
+
+      output.truncate(0)
+      output.rewind
+
+      second_code = run_uninstall(purge: true, yes: true)
+      expect(second_code).to eq(0)
+      expect(output.string).to include("no keystore entries to remove")
+      expect(keystore.list_keys).to be_empty
+      expect(File.directory?(config_dir)).to be false
+    end
   end
 end
