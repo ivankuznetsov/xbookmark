@@ -98,12 +98,42 @@ module Xbookmark
         case File.basename(bin)
         when "faster-whisper"
           [bin, "--model", @model, "--output", "-", media_path]
-        when "whisper", "whisper-cpp"
+        when "whisper-cpp"
+          [bin, "--model", whisper_cpp_model(bin), "--output_format", "txt", "--output_dir", "-", media_path]
+        when "whisper"
           [bin, "--model", @model, "--output_format", "txt", "--output_dir", "-", media_path]
         else
           # whisper-cli (whisper.cpp): output to stdout via -nt -np
-          [bin, "-m", @model, "-nt", "-np", "-f", media_path]
+          [bin, "-m", whisper_cpp_model(bin), "-nt", "-np", "-f", media_path]
         end
+      end
+
+      def whisper_cpp_model(bin)
+        explicit = expanded_existing_model(@model)
+        return explicit if explicit
+
+        filename = @model.to_s.start_with?("ggml-") ? @model.to_s : "ggml-#{@model}.bin"
+        candidates = whisper_cpp_model_dirs(bin).map { |dir| File.expand_path(File.join(dir, filename)) }
+        found = candidates.find { |path| File.file?(path) }
+        return found if found
+
+        raise Xbookmark::WhisperUnavailable,
+              "whisper.cpp model not found for WHISPER_MODEL=#{@model.inspect}; expected one of: #{candidates.join(", ")}"
+      end
+
+      def expanded_existing_model(model)
+        return nil if model.to_s.strip.empty?
+        path = File.expand_path(model.to_s)
+        File.file?(path) ? path : nil
+      end
+
+      def whisper_cpp_model_dirs(bin)
+        [
+          ENV["WHISPER_MODEL_DIR"],
+          File.join(File.dirname(bin), "..", "..", "models"),
+          File.join(File.dirname(bin), "..", "models"),
+          File.join(Dir.pwd, "models")
+        ].compact
       end
     end
   end

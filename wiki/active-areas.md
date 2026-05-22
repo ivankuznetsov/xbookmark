@@ -7,17 +7,20 @@ updated: 2026-05-22
 tags: [activity]
 ---
 
-**TLDR**: Current work is focused on making new xbookmark setups follow the implemented CLI and on separating the runtime bookmark wiki from this repository's project LLM wiki.
+**TLDR**: Current work is focused on making new xbookmark setups install the daily scheduler by default, enabling Linux timers after logout, and keeping QMD registration compatible with current and legacy command shapes.
 
-## Active PR
+## Active Branch
 
-Branch `fix/wiki-path-config` updates the public setup contract and runtime terminology:
+Branch `fix/default-scheduler-install` is ahead of `main`:
 
-- Preferred runtime output path is `XBOOKMARK_WIKI_PATH`.
-- The runtime bookmark wiki is standalone and can be opened from Obsidian later.
-- The repository `wiki/` remains the project LLM wiki and is not the runtime output directory.
-- `--wiki` is the preferred CLI override; `--vault`, `XBOOKMARK_VAULT`, and `OBSIDIAN_VAULT_PATH` remain compatibility aliases.
-- New defaults use `xbookmark-wiki`; no migration from the previous local `xbookmark-vault` name is needed before release.
+- README setup now runs `bin/xbookmark install` as a required daily scheduler step instead of asking whether to install it.
+- Linux scheduler setup tries to enable systemd linger through `loginctl enable-linger <user>` so the daily timer can fire after logout.
+- Media downloads no longer impose the old 200 MB default cap; full-size X media is downloaded.
+- `WHISPER_MODEL=base.en` resolves to a local whisper.cpp `ggml-base.en.bin` model file when using `whisper-cli`/`whisper-cpp`; setup docs now include the model download step.
+- `Xbookmark::Qmd::Registrar` tries current `qmd collection list`/`collection add` first and preserves legacy command fallbacks.
+- `Xbookmark::Enrich::Codex` unwraps current `codex exec --json` `item.completed` agent messages.
+- Specs cover the README setup contract, legacy registrar fallback, scheduler linger setup, and current Codex JSON event parsing.
+- The earlier `XBOOKMARK_WIKI_PATH` runtime wiki terminology is already on `main`.
 
 ## Setup Reliability
 
@@ -25,6 +28,7 @@ The README now describes only implemented setup commands:
 
 - `bin/xbookmark auth login`
 - `bin/xbookmark auth status`
+- `bin/xbookmark install`
 - `bin/xbookmark backfill [--limit N]`
 - `bin/xbookmark sync`
 - `bin/xbookmark find QUERY [--limit N]`

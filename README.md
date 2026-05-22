@@ -30,6 +30,7 @@ Stop here and edit `.env` to fill in `X_CLIENT_ID`, `X_USER_ID`, and `XBOOKMARK_
 
 ```bash
 bin/xbookmark auth login
+bin/xbookmark install
 bin/xbookmark backfill --limit 100
 bin/xbookmark find 'rails'
 ```
@@ -51,7 +52,7 @@ Install and configure xbookmark from https://github.com/ivankuznetsov/xbookmark 
 1. Read README.md from that repo and follow the Installation section that matches my operating system.
 2. Follow the Configuration section: copy .env.example to .env, ask me for my X developer Client ID, numeric X user ID, and bookmark wiki path, and fill them in. Leave X_CLIENT_SECRET blank unless I say my X app is a confidential client.
 3. Run `bin/xbookmark auth login` so I can sign in to X in my browser.
-4. Ask me whether to install the daily scheduler (`bin/xbookmark install`).
+4. Install the daily scheduler with `bin/xbookmark install`.
 5. Verify with `bin/xbookmark --version` and `bin/xbookmark auth status`, then report the output.
 
 Stop and ask me before installing system packages with sudo, and before any step that would overwrite a file in my home directory.
@@ -93,6 +94,7 @@ sudo pacman -S ruby ffmpeg sqlite base-devel git
 # community-maintained AUR package `whisper.cpp-git` if you already have an
 # AUR helper such as yay or paru set up.
 git clone https://github.com/ggml-org/whisper.cpp.git && (cd whisper.cpp && make)
+(cd whisper.cpp && ./models/download-ggml-model.sh base.en)
 
 git clone https://github.com/ivankuznetsov/xbookmark.git
 cd xbookmark
@@ -110,6 +112,7 @@ sudo apt install ruby ruby-dev build-essential libsqlite3-dev ffmpeg git
 
 # whisper.cpp from source
 git clone https://github.com/ggml-org/whisper.cpp.git && (cd whisper.cpp && make)
+(cd whisper.cpp && ./models/download-ggml-model.sh base.en)
 
 git clone https://github.com/ivankuznetsov/xbookmark.git
 cd xbookmark
@@ -124,6 +127,7 @@ sudo dnf install ruby ruby-devel @development-tools sqlite-devel ffmpeg git
 
 # whisper.cpp from source
 git clone https://github.com/ggml-org/whisper.cpp.git && (cd whisper.cpp && make)
+(cd whisper.cpp && ./models/download-ggml-model.sh base.en)
 
 git clone https://github.com/ivankuznetsov/xbookmark.git
 cd xbookmark
@@ -189,7 +193,7 @@ Install the [`codex` CLI](https://github.com/openai/codex), run `codex login` on
 
 ### Whisper backend
 
-Set `WHISPER_BACKEND` to either `whisper.cpp` (default, fast on CPU, one-time C++ build) or `faster-whisper` (Python, GPU-friendly) and ensure the matching backend is on your `PATH` — see [Prerequisites](#prerequisites). `WHISPER_MODEL` defaults to `base.en`; v1 accepts `tiny.en`, `base.en`, `small.en`, `medium.en`, `tiny`, `base`, `small`, `medium`, and `large-v3`.
+Set `WHISPER_BACKEND` to either `whisper.cpp` (default, fast on CPU, one-time C++ build) or `faster-whisper` (Python, GPU-friendly) and ensure the matching backend is on your `PATH` — see [Prerequisites](#prerequisites). `WHISPER_MODEL` defaults to `base.en`; v1 accepts `tiny.en`, `base.en`, `small.en`, `medium.en`, `tiny`, `base`, `small`, `medium`, and `large-v3`. For `whisper.cpp`, model aliases resolve to `ggml-<model>.bin` in `WHISPER_MODEL_DIR`, the source checkout's `models/` directory next to `whisper-cli`, or `./models`.
 
 ### Bookmark wiki path
 
@@ -281,12 +285,15 @@ bin/xbookmark install --uninstall
 
 The scheduler is always daily. `--time` defaults to `06:00` local time.
 `--dry-run` prints the scheduler artifact without writing it. On Linux,
-xbookmark installs a systemd user timer. On macOS, it installs a launchd agent.
+xbookmark installs a systemd user timer and enables systemd linger for the
+current user when possible, so the timer can fire after logout. On macOS, it
+installs a launchd agent.
 
 Example output on Linux with systemd:
 
 ```
 [xbookmark] systemd timer installed. Logs: ~/.local/state/xbookmark/sync.log
+[xbookmark] systemd linger enabled; timer can run while logged out.
 ```
 
 Example output on macOS:
@@ -362,7 +369,9 @@ the scheduler artifact, either as a systemd `EnvironmentFile` or launchd
 `XBOOKMARK_ENV_FILE` environment variable.
 
 Scheduler selection is platform-based: macOS uses launchd, and Linux uses a
-systemd user timer.
+systemd user timer. Linux installs also try to enable systemd linger for the
+current user; if your system refuses that step, xbookmark prints the
+`loginctl enable-linger <user>` command to run manually.
 
 The artifact written depends on your OS:
 

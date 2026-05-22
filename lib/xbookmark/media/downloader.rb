@@ -9,10 +9,9 @@ require_relative "variant_picker"
 module Xbookmark
   module Media
     class Downloader
-      MAX_BYTES = 200 * 1024 * 1024
       TIMEOUT_SECONDS = 30
 
-      def initialize(timeout: TIMEOUT_SECONDS, max_bytes: MAX_BYTES, http: nil)
+      def initialize(timeout: TIMEOUT_SECONDS, max_bytes: nil, http: nil)
         @timeout = timeout
         @max_bytes = max_bytes
         @http = http
@@ -81,7 +80,9 @@ module Xbookmark
           File.binwrite(dest_path, @http.call(url))
           return
         end
-        tempfile = Down.download(url, max_size: @max_bytes, open_timeout: @timeout, read_timeout: @timeout)
+        options = { open_timeout: @timeout, read_timeout: @timeout }
+        options[:max_size] = @max_bytes if @max_bytes
+        tempfile = Down.download(url, **options)
         FileUtils.mv(tempfile.path, dest_path)
       rescue Down::Error => e
         raise MediaError, "media download failed for #{url}: #{e.class}: #{e.message}"

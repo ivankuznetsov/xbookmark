@@ -28,12 +28,13 @@ The project contains:
 
 ## External Runtime Tools
 
-The implementation worktree shells out to external tools:
+The runtime shells out to external tools:
 
 - `codex` for LLM enrichment via `codex exec --json`.
 - `qmd` for search collection registration, indexing, and querying.
 - A whisper backend, detected from `WHISPER_BIN` or PATH candidates `whisper-cli`, `whisper-cpp`, `whisper`, and `faster-whisper`.
-- System scheduler tools: `systemctl --user` on Linux and `launchctl` on macOS.
+  - For whisper.cpp binaries, model aliases such as `base.en` resolve to `ggml-base.en.bin` under `WHISPER_MODEL_DIR`, the source checkout's `models/` directory next to the binary, or `./models`.
+- System scheduler tools: `systemctl --user` and `loginctl` on Linux, and `launchctl` on macOS.
 
 ## External Services
 

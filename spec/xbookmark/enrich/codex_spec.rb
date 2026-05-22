@@ -39,6 +39,23 @@ RSpec.describe Xbookmark::Enrich::Codex do
     expect(result).to include("tags" => ["a"], "topics" => ["b"], "entities" => ["c"])
   end
 
+  it "parses current codex item.completed agent_message streams" do
+    fake = FakeCodex.new
+    body = '{"tags":["a"],"topics":["b"],"entities":["c"]}'
+    stream = [
+      { "type" => "thread.started", "thread_id" => "t" },
+      { "type" => "turn.started" },
+      { "type" => "item.completed", "item" => { "id" => "i", "type" => "agent_message", "text" => body } },
+      { "type" => "turn.completed", "usage" => { "input_tokens" => 1 } }
+    ].map(&:to_json).join("\n")
+    fake.push(stream)
+
+    codex = described_class.new(bin: "codex", runner: fake)
+    schema = { "type" => "object", "required" => %w[tags topics entities] }
+    result = codex.run(prompt: "x", json_schema: schema)
+    expect(result).to include("tags" => ["a"], "topics" => ["b"], "entities" => ["c"])
+  end
+
   it "passes images as discrete --image argv entries" do
     fake = FakeCodex.new.push({ "tags" => ["a"], "topics" => ["b"], "entities" => ["c"] })
     codex = described_class.new(bin: "codex", runner: fake)

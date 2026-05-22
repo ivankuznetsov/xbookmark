@@ -14,13 +14,13 @@ Updated: 2026-05-22
 
 ## Core Pages
 
-- [[architecture]] - Branch-aware project architecture: minimal `main`, implementation worktree, README review worktree.
-- [[api]] - External API, OAuth callback, X API, and QMD search surfaces with README/implementation mismatches.
+- [[architecture]] - Branch-aware project architecture: runtime on `main` and current scheduler/QMD registration work.
+- [[api]] - External API, OAuth callback, X API, and QMD registration/search surfaces with README/implementation mismatches.
 - [[commands]] - CLI command surface and fresh setup contract.
 - [[data-model]] - SQLite state schema, bookmark wiki layout, statuses, modes, and transactional behavior.
 - [[dependencies]] - Ruby gem dependencies, external CLIs, X API, and local scheduler dependencies.
 - [[decisions]] - Repository, workflow, runtime, and setup decisions grounded in code/history.
-- [[active-areas]] - Recent activity across `main`, implementation worktree, README review worktree, and Hive state.
+- [[active-areas]] - Current scheduler setup and QMD registration work on top of `main`.
 
 ## Maintenance Pages
 

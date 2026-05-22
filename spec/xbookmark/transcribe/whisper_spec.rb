@@ -36,6 +36,47 @@ RSpec.describe Xbookmark::Transcribe::Whisper do
     end
   end
 
+  it "resolves whisper.cpp model aliases near the configured binary" do
+    Dir.mktmpdir do |dir|
+      bin = File.join(dir, "whisper.cpp", "build", "bin", "whisper-cli")
+      model = File.join(dir, "whisper.cpp", "models", "ggml-base.en.bin")
+      audio = File.join(dir, "clip.wav")
+      FileUtils.mkdir_p(File.dirname(bin))
+      FileUtils.mkdir_p(File.dirname(model))
+      File.write(bin, "")
+      File.chmod(0o755, bin)
+      File.write(model, "model")
+      File.write(audio, "fake")
+
+      observed_argv = nil
+      status = instance_double(Process::Status, success?: true)
+      whisper = described_class.new(binary: bin, model: "base.en")
+      allow(whisper).to receive(:run_with_timeout) do |argv, _timeout|
+        observed_argv = argv
+        ["transcript", "", status]
+      end
+
+      expect(whisper.transcribe(audio, duration_ms: 5000)).to eq("transcript")
+      expect(observed_argv).to include("-m", model)
+    end
+  end
+
+  it "raises a setup error when a whisper.cpp model alias cannot be resolved" do
+    Dir.mktmpdir do |dir|
+      bin = File.join(dir, "whisper.cpp", "build", "bin", "whisper-cli")
+      audio = File.join(dir, "clip.wav")
+      FileUtils.mkdir_p(File.dirname(bin))
+      File.write(bin, "")
+      File.chmod(0o755, bin)
+      File.write(audio, "fake")
+
+      whisper = described_class.new(binary: bin, model: "base.en")
+
+      expect { whisper.transcribe(audio, duration_ms: 5000) }
+        .to raise_error(Xbookmark::WhisperUnavailable, /whisper\.cpp model not found/)
+    end
+  end
+
   it "detect returns nil when override does not exist and PATH has no candidate" do
     stub_const("ENV", ENV.to_hash.merge("PATH" => "/nonexistent"))
     expect(described_class.detect("/no/such/file")).to be_nil

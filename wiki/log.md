@@ -59,3 +59,43 @@ Append-only log of meaningful wiki updates.
 **Pages updated:** wiki/dependencies.md, wiki/log.md
 **Decision:** CI runs RSpec, RuboCop with the 37signals omakase base, Brakeman, and bundler-audit. The local RuboCop config keeps xbookmark's existing array-bracket style to avoid a broad mechanical rewrite.
 **Source:** Hive `.github/workflows/ci.yml`, Hive Dependabot/PR template, xbookmark Gemfile, `.rubocop.yml`, `.github/workflows/ci.yml`, and local check outputs.
+
+## [2026-05-22T15:23:06Z] default scheduler setup refresh
+
+**Action:** Made daily scheduler installation part of the default setup contract and aligned QMD registration with the installed `qmd collection add` CLI while preserving legacy command fallback.
+**Pages updated:** wiki/commands.md, wiki/gaps.md, wiki/decisions.md, wiki/active-areas.md, wiki/log.md
+**Source:** `README.md`, `lib/xbookmark/qmd/registrar.rb`, `spec/xbookmark/qmd/registrar_spec.rb`, production install output.
+
+## [2026-05-22T15:28:29Z] command-api coverage refresh
+
+**Action:** Refreshed command/API coverage after commit `8c5833f` touched README setup flow and QMD registrar behavior; also corrected stale branch/main wiki context.
+**Pages updated:** wiki/api.md, wiki/commands.md, wiki/architecture.md, wiki/active-areas.md, wiki/decisions.md, wiki/data-model.md, wiki/dependencies.md, wiki/gaps.md, wiki/index.md, wiki/log.md
+**Main wiki:** searched `/home/asterio/wikis/master/wiki`; no xbookmark/QMD/scheduler-specific page found. Other default main wiki paths did not exist.
+**QMD:** `qmd search` was read-only and returned stale indexed snippets; did not run `qmd update` or `qmd embed` because the post-commit wrapper owns bounded qmd maintenance.
+**Gap recorded:** `.env.example` still references `--port`, but the implemented auth command uses `X_REDIRECT_URI` and has no `auth login --port` flag.
+**Source:** `AGENTS.md`, `.llm-wiki/config.json`, wiki core pages and recent log entries, latest committed diff `8c5833f`, `README.md`, `.env.example`, `lib/xbookmark/cli.rb`, `lib/xbookmark/cli/auth.rb`, `lib/xbookmark/cli/install.rb`, `lib/xbookmark/x/auth.rb`, `lib/xbookmark/qmd/registrar.rb`, `lib/xbookmark/qmd/searcher.rb`, scheduler files, `spec/readme_contract_spec.rb`, `spec/xbookmark/qmd/registrar_spec.rb`, and `main..HEAD` diff.
+
+## [2026-05-22T15:40:00Z] linger setup refresh
+
+**Action:** Added Linux systemd linger enablement to scheduler install so default setup can run daily timers after logout, and fixed `.env.example` to avoid the nonexistent `--port` option.
+**Pages updated:** wiki/commands.md, wiki/architecture.md, wiki/active-areas.md, wiki/decisions.md, wiki/dependencies.md, wiki/gaps.md, wiki/log.md
+**Source:** `README.md`, `.env.example`, `lib/xbookmark/scheduler/systemd.rb`, `spec/xbookmark/scheduler/systemd_spec.rb`, `spec/readme_contract_spec.rb`.
+
+## [2026-05-22T15:55:00Z] codex-jsonl live setup fix
+
+**Action:** Updated Codex enrichment parsing after live production backfill showed current `codex exec --json` emits final JSON under `item.completed` agent-message events.
+**Pages updated:** wiki/api.md, wiki/active-areas.md, wiki/gaps.md, wiki/log.md
+**Source:** Live `bin/xbookmark backfill --limit 100` failure, `lib/xbookmark/enrich/codex.rb`, `spec/xbookmark/enrich/codex_spec.rb`.
+
+## [2026-05-22T16:10:00Z] large media download setup fix
+
+**Action:** Removed the default 200 MB media download cap after live production backfill hit `Down::TooLarge` on X video variants.
+**Pages updated:** wiki/architecture.md, wiki/active-areas.md, wiki/gaps.md, wiki/log.md
+**Source:** Live `bin/xbookmark backfill --limit 100` failure, `lib/xbookmark/media/downloader.rb`, `spec/xbookmark/media/downloader_spec.rb`.
+
+## [2026-05-22T17:35:00Z] whisper model setup fix
+
+**Action:** Fixed whisper.cpp model resolution so `WHISPER_MODEL=base.en` resolves to a local `ggml-base.en.bin` file and documented the model download step in setup instructions.
+**Pages updated:** wiki/active-areas.md, wiki/dependencies.md, wiki/log.md
+**Production check:** Downloaded `ggml-base.en.bin` into the production whisper.cpp checkout and reran all Whisper-failed media rows; state ended with 31 bookmarks done and zero Whisper failures.
+**Source:** Live production resync failures, `lib/xbookmark/transcribe/whisper.rb`, `spec/xbookmark/transcribe/whisper_spec.rb`, `README.md`.
