@@ -80,3 +80,9 @@ Append-only log of meaningful wiki updates.
 **Action:** Added Linux systemd linger enablement to scheduler install so default setup can run daily timers after logout, and fixed `.env.example` to avoid the nonexistent `--port` option.
 **Pages updated:** wiki/commands.md, wiki/architecture.md, wiki/active-areas.md, wiki/decisions.md, wiki/dependencies.md, wiki/gaps.md, wiki/log.md
 **Source:** `README.md`, `.env.example`, `lib/xbookmark/scheduler/systemd.rb`, `spec/xbookmark/scheduler/systemd_spec.rb`, `spec/readme_contract_spec.rb`.
+
+## [2026-05-22T15:55:00Z] codex-jsonl live setup fix
+
+**Action:** Updated Codex enrichment parsing after live production backfill showed current `codex exec --json` emits final JSON under `item.completed` agent-message events.
+**Pages updated:** wiki/api.md, wiki/active-areas.md, wiki/gaps.md, wiki/log.md
+**Source:** Live `bin/xbookmark backfill --limit 100` failure, `lib/xbookmark/enrich/codex.rb`, `spec/xbookmark/enrich/codex_spec.rb`.

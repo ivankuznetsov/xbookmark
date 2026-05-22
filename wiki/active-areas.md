@@ -16,7 +16,8 @@ Branch `fix/default-scheduler-install` is ahead of `main`:
 - README setup now runs `bin/xbookmark install` as a required daily scheduler step instead of asking whether to install it.
 - Linux scheduler setup tries to enable systemd linger through `loginctl enable-linger <user>` so the daily timer can fire after logout.
 - `Xbookmark::Qmd::Registrar` tries current `qmd collection list`/`collection add` first and preserves legacy command fallbacks.
-- Specs cover the README setup contract and legacy registrar fallback.
+- `Xbookmark::Enrich::Codex` unwraps current `codex exec --json` `item.completed` agent messages.
+- Specs cover the README setup contract, legacy registrar fallback, scheduler linger setup, and current Codex JSON event parsing.
 - The earlier `XBOOKMARK_WIKI_PATH` runtime wiki terminology is already on `main`.
 
 ## Setup Reliability

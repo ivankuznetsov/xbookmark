@@ -49,6 +49,12 @@ Requests include tweet, user, media, and expansion fields defined in `Xbookmark:
 - `Qmd::Searcher` invokes `qmd query --collection bookmarks --types lex,vec --limit N --json QUERY`.
 - The CLI currently prints numbered text results with score, path, and optional snippet.
 
+## Codex Subprocess Surface
+
+- `Enrich::Codex` invokes `codex exec --json` and parses JSONL event streams.
+- Current Codex emits final model text under `item.completed` events with an `item.type` of `agent_message`; xbookmark unwraps the nested `item.text` JSON.
+- Older model-message and plain JSON object output shapes remain accepted.
+
 ## Public Contract Notes
 
 The committed README documents the current CLI only. Deferred commands and flags are cataloged in [[commands]] so they are not accidentally exposed in setup docs before implementation.
