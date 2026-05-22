@@ -10,6 +10,7 @@ module Xbookmark
   module X
     class Client
       API_BASE = "https://api.twitter.com"
+      BOOKMARK_PAGE_SIZE = 50
 
       EXPANSIONS = "author_id,attachments.media_keys,referenced_tweets.id"
       TWEET_FIELDS = "created_at,conversation_id,referenced_tweets,entities,attachments,author_id"
@@ -25,7 +26,7 @@ module Xbookmark
 
       # Yields each page payload. If a block is not given, returns an enumerator.
       # Re-raises Xbookmark::AuthError, Xbookmark::RateLimited.
-      def bookmarks(user_id:, pagination_token: nil, max_results: 100)
+      def bookmarks(user_id:, pagination_token: nil, max_results: BOOKMARK_PAGE_SIZE)
         return enum_for(:bookmarks, user_id: user_id, pagination_token: pagination_token, max_results: max_results) unless block_given?
 
         params = {

@@ -27,5 +27,18 @@ Return JSON only with this schema:
     { "url": "...", "title": "...", "summary": "..." }
   ],
   "image_captions": { "<media_path>": "<caption>", ... },
-  "image_ocr": { "<media_path>": "<extracted text>", ... }
+  "image_ocr": { "<media_path>": "<extracted text>", ... },
+  "transcript_summaries": {
+    "<transcript filename>": "<one to three sentences summarizing the transcript>"
+  },
+  "formatted_transcripts": {
+    "<transcript filename>": "<readable Markdown transcript>"
+  }
 }
+
+When transcripts are provided, fill transcript_summaries and
+formatted_transcripts for each transcript key. Format dialogue as separate
+speaker turns when distinct speakers are evident. Use neutral labels like
+Speaker 1 and Speaker 2 unless a speaker is explicitly named. Do not invent
+names. If there is only one evident speaker, format the transcript as clean
+paragraphs instead of forcing dialogue.

@@ -11,8 +11,8 @@ tags: [learnings, production, backfill, x-api, whisper, qmd]
 
 ## Most Important Findings
 
-1. **The 100-bookmark target is source-data limited, not a pipeline bug.**
-   The X bookmarks endpoint accepts `max_results` only in the range `1..100`; `max_results=200` is rejected. More than 100 bookmarks requires `meta.next_token` pagination. The live account currently returns one page with 98 unique bookmark IDs and no `next_token`, and bookmark folders return zero folders. The production wiki has 99 done bookmarks because one previously ingested bookmark no longer appears in the live bookmark list.
+1. **Use 50-item bookmark pages, not 100-item pages.**
+   The X bookmarks endpoint rejects `max_results=200`, but `max_results=100` is not reliable in production: it returned one page with 98 unique IDs and no `next_token`. The same live account with `max_results=50` returned 95 pages, 4,745 unique IDs, and tweets back to 2019-12-10. More than 100 bookmarks works by following `meta.next_token`, but xbookmark should request 50 per page.
 
 2. **Fresh setup docs must match implemented commands exactly.**
    The README originally drifted toward commands that did not exist, such as `schedule install` and `auth login --port`. New setup should use `bin/xbookmark install`, `X_REDIRECT_URI`, `XBOOKMARK_WIKI_PATH`, and `XBOOKMARK_ENV_FILE`. Keep the runtime bookmark wiki separate from this repository's project LLM wiki.
@@ -36,7 +36,7 @@ tags: [learnings, production, backfill, x-api, whisper, qmd]
    Passing MP4 files directly to `whisper-cli` produced empty transcripts because whisper.cpp only supports audio formats such as WAV/MP3/FLAC/OGG. The stable path is: resolve `WHISPER_MODEL=base.en` to `ggml-base.en.bin`, extract audio with `ffmpeg`, treat no-audio MP4s as empty transcripts, scale timeouts by media duration, and run whisper.cpp with a practical thread count.
 
 9. **Transcript sidecars alone are not enough after a repair run.**
-   If transcript sidecars are regenerated after markdown was already rendered, the affected bookmark markdown must also get `## Transcript` sections. Otherwise the data exists on disk but not in the Obsidian-facing note.
+   If transcript sidecars are regenerated after markdown was already rendered, the affected bookmark markdown must also get `## Transcript` sections. Otherwise the data exists on disk but not in the Obsidian-facing note. Future enrichment should also summarize transcripts and format evident speaker turns instead of dumping raw Whisper text.
 
 10. **QMD command and output behavior must be guarded locally.**
     Current QMD uses `qmd collection list` / `qmd collection add`; older command shapes need fallbacks. `qmd query --limit 3` returned four results in production, so xbookmark caps parsed results itself. QMD also writes local cache/embedding state, so search/index verification may fail in read-only sandboxes.
@@ -45,7 +45,7 @@ tags: [learnings, production, backfill, x-api, whisper, qmd]
     SQLite uses `tweet_id` as the primary key, pending inserts use `INSERT OR IGNORE`, done bookmarks are skipped, markdown paths are deterministic, and media directories are replaced on reprocess. Production verification found 99 DB rows, 99 distinct markdown tweet IDs, and no duplicate bookmarks.
 
 12. **Scheduler verification is part of production readiness.**
-    The installed Linux unit is `xbookmark-sync.timer`, not `xbookmark.timer`. It points at the production `.env` and runs `bin/xbookmark sync --from-scheduler` daily. `sync --from-scheduler` should skip cleanly when the recent-run guard applies.
+    The installed Linux unit is `xbookmark-sync.timer`, not `xbookmark.timer`. It points at the production `.env` and runs `bin/xbookmark sync --from-scheduler` daily. `sync --from-scheduler` should skip cleanly when the recent-run guard applies. Incremental sync should start at the newest bookmark page and stop after a fully known page; X `next_token` values are page-traversal tokens, not durable cursors for future syncs.
 
 ## Production Verification Snapshot
 
@@ -53,8 +53,8 @@ Last verified on 2026-05-22:
 
 - Production checkout: `/home/asterio/Dev/xbookmark.install/xbookmark`, `main` at `3e6bbb0`.
 - Runtime bookmark wiki: `/home/asterio/xbookmark-wiki`.
-- X source: 98 live bookmark IDs, one page, no `next_token`, no bookmark folders.
-- Local state: 99 bookmark rows, all `done`, zero stored errors.
+- X source: 4,745 live bookmark IDs over 95 pages with `max_results=50`; `max_results=100` returned only 98 IDs and no `next_token`.
+- Local state: 99 bookmark rows, all `done`, zero stored errors before rerunning backfill with the corrected page size.
 - Markdown: 99 bookmark files, 99 distinct frontmatter `tweet_id`s, no duplicate bookmark notes.
 - Aux pages: 91 authors, 440 topics, 335 entities, 99 threads.
 - Media/transcripts: 20 MP4 files, 20 transcript sidecars, 18 non-empty transcripts, 2 no-audio MP4s, 18 markdown transcript sections.

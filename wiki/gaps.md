@@ -2,7 +2,7 @@
 
 | Area | Gap | Notes |
 |------|-----|-------|
-| 100-bookmark live proof | Current X source exposes fewer than 100 live bookmarks | Production API probes returned 98 unique IDs, one page, and no `next_token`; `max_results=200` is rejected by X, and bookmark folders returned zero folders. |
+| Production backfill completeness | Production wiki still needs a backfill rerun with 50-item pages | `max_results=100` returned only 98 IDs with no `next_token`, while `max_results=50` returned 4,745 unique IDs across 95 pages. Code and docs now need to standardize on 50-item pages before rerunning production. |
 | Cross-project wiki | No xbookmark-specific master page found | `/home/asterio/wikis/master/wiki` exists, but `rg` found no `xbookmark`-specific page during refresh. |
 
 ## Resolved Bootstrap Validation

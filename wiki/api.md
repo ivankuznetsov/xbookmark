@@ -37,7 +37,7 @@ During `auth login`, `Xbookmark::X::Auth` starts a temporary WEBrick loopback se
 - `GET /2/tweets/:id` for a single tweet.
 - `GET /2/tweets/search/recent` with `conversation_id:<id>` for conversation context.
 
-Requests include tweet, user, media, and expansion fields defined in `Xbookmark::X::Client`. The client retries selected 5xx responses through Faraday, refreshes once on 401 when a refresh token is present, raises `RateLimited` on 429, and raises transient errors for other non-success responses.
+Bookmark requests use 50-item pages and follow `meta.next_token`. Production testing on 2026-05-22 found that `max_results=100` returned only 98 IDs and no `next_token`, while `max_results=50` returned 4,745 unique IDs over 95 pages. Pagination tokens are used only within one traversal; incremental sync starts at the newest page and stops after reaching a page with no new bookmarks. Requests include tweet, user, media, and expansion fields defined in `Xbookmark::X::Client`. The client retries selected 5xx responses through Faraday, refreshes once on 401 when a refresh token is present, raises `RateLimited` on 429, and raises transient errors for other non-success responses.
 
 ## QMD Subprocess Surface
 

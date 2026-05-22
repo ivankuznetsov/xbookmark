@@ -126,3 +126,9 @@ Append-only log of meaningful wiki updates.
 **Pages created:** wiki/live-production-learnings.md
 **Pages updated:** README.md, wiki/index.md, wiki/decisions.md, wiki/gaps.md, wiki/active-areas.md, wiki/log.md
 **Source:** Production install/backfill/transcription/search/scheduler verification, X API pagination probes, bookmark folder probe, duplicate audit, PRs #10-#12.
+
+## [2026-05-22T22:05:00Z] bookmark page-size correction
+
+**Action:** Corrected the X bookmark pagination finding: production `max_results=100` returned 98 IDs and no token, but `max_results=50` returned 4,745 unique IDs over 95 pages. xbookmark should use 50-item bookmark pages.
+**Pages updated:** README.md, wiki/api.md, wiki/active-areas.md, wiki/commands.md, wiki/decisions.md, wiki/gaps.md, wiki/live-production-learnings.md, wiki/log.md
+**Source:** Read-only production X API probes from `/home/asterio/Dev/xbookmark.install/xbookmark`.
