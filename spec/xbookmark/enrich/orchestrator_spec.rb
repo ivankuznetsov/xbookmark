@@ -36,16 +36,20 @@ RSpec.describe Xbookmark::Enrich::Orchestrator do
       "tags" => ["health"],
       "topics" => ["ozempic"],
       "entities" => ["novo-nordisk"],
-      "links" => [{ "url" => "https://example.com/a", "title" => "Article", "summary" => "ok" }]
+      "links" => [{ "url" => "https://example.com/a", "title" => "Article", "summary" => "ok" }],
+      "transcript_summaries" => { "video.mp4" => "A short transcript summary." },
+      "formatted_transcripts" => { "video.mp4" => "**Speaker 1:** Hello." }
     })
 
     codex = Xbookmark::Enrich::Codex.new(bin: "codex", runner: fake)
     orch = described_class.new(codex: codex, link_fetcher: link_fetcher)
-    result = orch.enrich(bookmark)
+    result = orch.enrich(bookmark, transcripts: { "video.mp4" => "hello" })
     expect(result.summary).to eq("Talks about ozempic dosing.")
     expect(result.tags).to eq(["health"])
     expect(result.topics).to eq(["ozempic"])
     expect(result.entities).to eq(["novo-nordisk"])
+    expect(result.transcript_summaries).to eq("video.mp4" => "A short transcript summary.")
+    expect(result.formatted_transcripts).to eq("video.mp4" => "**Speaker 1:** Hello.")
     expect(result.partial?).to be(false)
     # Fetched link blobs are returned so the renderer can build the
     # "Linked Articles" section without re-fetching.

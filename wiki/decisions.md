@@ -20,6 +20,7 @@ tags: [decisions]
 
 - Use Ruby with a Bundler/gemspec layout and a Thor CLI (`bin/xbookmark`, `lib/xbookmark/cli.rb`).
 - Use official X API v2 with OAuth 2.0 PKCE and scopes visible in `Xbookmark::X::Auth`.
+- Use 50-item pages for `GET /2/users/:user_id/bookmarks`; live production showed `max_results=100` can omit pagination even when older bookmarks exist.
 - Require `X_CLIENT_ID` and `X_USER_ID` at config load time; store access and refresh tokens back into the env file with file mode `0600`.
 - Create a standalone bookmark wiki at `XBOOKMARK_WIKI_PATH`, separate from the project LLM wiki in `wiki/`.
 - Default new installs to `xbookmark-wiki`; migration from the earlier local `xbookmark-vault` name is not needed because the product has not been released.
@@ -42,7 +43,7 @@ tags: [decisions]
 ## Recent History Signals
 
 - `main`: `3e6bbb0 Merge pull request #12 from ivankuznetsov/fix/find-limit-enforcement`, after the production setup/backfill hardening PRs landed.
-- Production validation showed the X bookmark endpoint currently exposes 98 live bookmark IDs with no `next_token`; the remaining 100-bookmark proof is source-data-limited rather than an xbookmark duplicate/pagination bug.
+- Production validation showed the X bookmark endpoint exposes thousands of bookmarks when requested at 50 per page. The earlier 98-bookmark result was caused by using `max_results=100`, which returned no `next_token`.
 - The most important production findings are summarized in [[live-production-learnings]].
 
 Related: [[architecture]], [[commands]], [[api]], [[data-model]], [[active-areas]], [[gaps]].

@@ -42,6 +42,7 @@ Configuration loaded by these commands comes from `XBOOKMARK_ENV_FILE`, `$PWD/.e
 ## Command Flow
 
 - `backfill`, `sync`, and `resync` all load config, open the SQLite state store, create an X API client, and delegate to `Xbookmark::Sync::Runner`.
+- `sync` starts from the newest bookmark page and stops after a page with no new bookmarks; X `next_token` values are not treated as durable cursors between runs.
 - `find` delegates to `Xbookmark::Qmd::Searcher`.
 - `install` delegates to `Xbookmark::Scheduler::Factory` and, when installing for real, `Xbookmark::Qmd::Registrar`; `--dry-run` and `--uninstall` do not register QMD.
 - `Xbookmark::Scheduler::Systemd` writes and enables the user timer, then runs `loginctl enable-linger <user>` when linger is not already enabled; failure is non-fatal and prints the manual command.
