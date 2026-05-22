@@ -21,7 +21,6 @@ set -eu
 XBOOKMARK_REPO="${XBOOKMARK_REPO:-ivankuznetsov/xbookmark}"
 XBOOKMARK_TAG="${XBOOKMARK_TAG:-latest}"
 XBOOKMARK_PREFIX="${XBOOKMARK_PREFIX:-$HOME/.local}"
-XBOOKMARK_FORCE="${XBOOKMARK_FORCE:-0}"
 XBOOKMARK_RELEASE_BASE="${XBOOKMARK_RELEASE_BASE:-https://github.com/${XBOOKMARK_REPO}/releases}"
 # Binary is the supported default until the RubyGem is published. Set
 # XBOOKMARK_INSTALL_METHOD=gem explicitly to opt into RubyGems.
@@ -124,11 +123,7 @@ install_tebako_binary() {
   target="${install_dir}/xbookmark"
 
   if [ -e "$target" ]; then
-    if [ "$XBOOKMARK_FORCE" = "1" ]; then
-      say "replacing existing $target (forced)."
-    else
-      say "replacing existing $target."
-    fi
+    say "replacing existing $target."
   fi
 
   mkdir -p "$install_dir"
