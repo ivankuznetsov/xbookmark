@@ -43,8 +43,14 @@ The implementation worktree shells out to external tools:
 
 ## Contributor Checks
 
-The documented local verification command is `bundle exec rspec`. The
-development/test bundle includes `rspec`, `webmock`, and `rake`; it does not
-currently include RuboCop or Brakeman.
+xbookmark mirrors Hive's baseline CI shape:
+
+- `bundle exec rspec`
+- `bundle exec rubocop --parallel --format github`
+- `bundle exec brakeman --force --no-pager --quiet --format github --ignore-config config/brakeman.ignore`
+- `bundle exec bundler-audit check --update`
+
+The development/test bundle includes `rspec`, `webmock`, `rake`, `rubocop`,
+`rubocop-rails-omakase`, `brakeman`, and `bundler-audit`.
 
 Related: [[architecture]], [[commands]], [[api]], [[data-model]], [[gaps]].

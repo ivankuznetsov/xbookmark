@@ -18,8 +18,6 @@ RSpec.describe "README setup contract" do
       "--since YYYY-MM-DD",
       "[--type lex|vec|hyde]",
       "[--json]",
-      "bundle exec rubocop",
-      "bundle exec brakeman",
       "minitest"
     ]
 

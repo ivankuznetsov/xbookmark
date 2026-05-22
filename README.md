@@ -414,7 +414,16 @@ Dev setup is the same as a user install: `git clone`, `bundle install`, `cp .env
 
 Tests run with `bundle exec rspec`. Routine contributor test runs stub external services and do not hit the X API.
 
-Pull requests should be small and focused — one logical change per PR — and pass `bundle exec rspec` before pushing. Link any related issue in the PR description.
+Pull requests should be small and focused — one logical change per PR — and pass the same checks as CI before pushing:
+
+```bash
+bundle exec rspec
+bundle exec rubocop --parallel
+bundle exec brakeman --force --no-pager --quiet --ignore-config config/brakeman.ignore
+bundle exec bundler-audit check --update
+```
+
+Link any related issue in the PR description.
 
 ## Credits
 
