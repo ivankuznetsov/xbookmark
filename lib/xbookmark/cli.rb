@@ -6,6 +6,7 @@ require_relative "../xbookmark"
 module Xbookmark
   class CLI < Thor
     package_name "xbookmark"
+    map %w[--version -v] => :version
 
     class_option :wiki, type: :string, desc: "Override the bookmark wiki path"
     class_option :vault, type: :string, desc: "Legacy alias for --wiki"

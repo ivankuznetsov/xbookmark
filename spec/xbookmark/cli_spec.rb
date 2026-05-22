@@ -8,6 +8,11 @@ RSpec.describe Xbookmark::CLI do
     expect(out.strip).to eq(Xbookmark::VERSION)
   end
 
+  it "exposes --version for setup scripts" do
+    out = capture_stdout { described_class.start(%w[--version]) }
+    expect(out.strip).to eq(Xbookmark::VERSION)
+  end
+
   it "lists all top-level subcommands in --help" do
     out = capture_stdout { described_class.start(%w[help]) }
     %w[auth backfill sync find doctor install resync].each do |cmd|
