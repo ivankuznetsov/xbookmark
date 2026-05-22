@@ -1,4 +1,4 @@
-You are enriching one X (Twitter) bookmark for a personal markdown vault.
+You are enriching one X (Twitter) bookmark for a personal bookmark wiki.
 
 Read the tweet and any media descriptions provided, then return a JSON
 object describing what additional context would be valuable to fetch

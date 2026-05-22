@@ -1,10 +1,10 @@
 # xbookmark
 
-Own your X bookmarks as a local, Obsidian-ready markdown vault with LLM enrichment and Whisper transcription.
+Own your X bookmarks as a local, Obsidian-ready bookmark wiki with LLM enrichment and Whisper transcription.
 
 xbookmark pulls your X (formerly Twitter) bookmarks through the official paid X API v2, writes each one to a plain markdown file with YAML frontmatter, runs an LLM enrichment pass for summaries and tags, and transcribes any linked audio or video locally with Whisper.
 
-It is built for people who keep notes in Obsidian or any markdown-first system and are tired of X bookmarks being unsearchable and ephemeral. Everything runs on your machine; nothing leaves it except the calls you authorize to the X API and your configured LLM provider.
+It is built for people who keep notes in Obsidian or any markdown-first system and are tired of X bookmarks being unsearchable and ephemeral. xbookmark writes to its own standalone bookmark wiki directory; point Obsidian at that folder when you want to browse it. Everything runs on your machine; nothing leaves it except the calls you authorize to the X API and your configured LLM provider.
 
 <p align="center">
   <a href="https://github.com/ivankuznetsov/xbookmark/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/ivankuznetsov/xbookmark/ci.yml?branch=main&label=ci" alt="Build status"></a>
@@ -26,7 +26,7 @@ bundle install
 cp .env.example .env
 ```
 
-Stop here and edit `.env` to fill in `X_CLIENT_ID` — see [Configuration → Set up X API access](#set-up-x-api-access) for how to obtain one. Then run:
+Stop here and edit `.env` to fill in `X_CLIENT_ID`, `X_USER_ID`, and `XBOOKMARK_WIKI_PATH` — see [Configuration → Set up X API access](#set-up-x-api-access) for how to obtain the X values. Then run:
 
 ```bash
 bin/xbookmark auth login
@@ -49,7 +49,7 @@ If you use Claude Code, Cursor, Codex, ChatGPT, or any other AI assistant, paste
 Install and configure xbookmark from https://github.com/ivankuznetsov/xbookmark on this machine.
 
 1. Read README.md from that repo and follow the Installation section that matches my operating system.
-2. Follow the Configuration section: copy .env.example to .env, ask me for my X developer Client ID and Obsidian vault path, and fill them in. Leave X_CLIENT_SECRET blank unless I say my X app is a confidential client.
+2. Follow the Configuration section: copy .env.example to .env, ask me for my X developer Client ID, numeric X user ID, and bookmark wiki path, and fill them in. Leave X_CLIENT_SECRET blank unless I say my X app is a confidential client.
 3. Run `bin/xbookmark auth login` so I can sign in to X in my browser.
 4. Ask me whether to install the daily scheduler (`bin/xbookmark schedule install --daily`).
 5. Verify with `bin/xbookmark --version` and `bin/xbookmark auth status`, then report the output.
@@ -61,10 +61,10 @@ If you prefer to run the steps yourself, jump to [Installation](#installation) a
 
 ## Features
 
-- One-shot backfill of your entire X bookmark history into a local markdown vault.
+- One-shot backfill of your entire X bookmark history into a local bookmark wiki.
 - Daily incremental ingest via a built-in scheduler (systemd or cron on Linux, launchd on macOS).
 - Obsidian-friendly markdown output with YAML frontmatter and stable file naming.
-- Full-text search over the vault via a local QMD index (a markdown full-text search engine).
+- Full-text search over the bookmark wiki via a local QMD index (a markdown full-text search engine).
 - LLM enrichment (summary, tags) via the [`codex`](https://github.com/openai/codex) CLI.
 - Local Whisper transcription of audio and video linked from a bookmark.
 - Official X API v2 only, via OAuth 2.0 with PKCE.
@@ -172,7 +172,7 @@ secrets.
 1. Sign in at the [X developer portal](https://developer.x.com) and create a project, then create an app inside it.
 2. Enable OAuth 2.0 on the app. Set the callback URL to `http://127.0.0.1:8765/callback` for the default loopback port. If that port is permanently unavailable, register the port you will pass to `auth login --port PORT`; if you want automatic fallback ports to work, register those callback URLs too.
 3. Request the v1 scope set: `bookmark.read`, `users.read`, `tweet.read`, and `offline.access`. `offline.access` is intentional because xbookmark stores a refresh token for scheduled jobs and explicit `auth refresh`.
-4. Copy the Client ID into `X_CLIENT_ID`. `X_CLIENT_SECRET` is only required if your app type is a confidential client that issues a secret; PKCE public-client apps leave it blank.
+4. Copy the Client ID into `X_CLIENT_ID` and your numeric X user ID into `X_USER_ID`. `X_CLIENT_SECRET` is only required if your app type is a confidential client that issues a secret; PKCE public-client apps leave it blank.
 5. Run `bin/xbookmark auth login`. The CLI opens your browser, completes the PKCE handshake, and stores tokens in `~/.config/xbookmark/credentials.json`; the parent directory is mode `0700` and the credentials file is mode `0600`.
 
 ### What this will cost
@@ -192,9 +192,9 @@ Install the [`codex` CLI](https://github.com/openai/codex), run `codex login` on
 
 Set `WHISPER_BACKEND` to either `whisper.cpp` (default, fast on CPU, one-time C++ build) or `faster-whisper` (Python, GPU-friendly) and ensure the matching backend is on your `PATH` — see [Prerequisites](#prerequisites). `WHISPER_MODEL` defaults to `base.en`; v1 accepts `tiny.en`, `base.en`, `small.en`, `medium.en`, `tiny`, `base`, `small`, `medium`, and `large-v3`.
 
-### Obsidian vault path
+### Bookmark wiki path
 
-Set `OBSIDIAN_VAULT_PATH` to a directory you want to use as your vault. On first run xbookmark creates the directory if it is missing, including any missing parent directories, with mode `0755` so normal Obsidian sync and group-readable vault workflows keep working. Credentials stay separate under `~/.config/xbookmark` with owner-only permissions. If the vault path already exists but is not a directory, xbookmark exits non-zero without modifying it. See [Obsidian integration](#obsidian-integration) for how to open it in Obsidian.
+Set `XBOOKMARK_WIKI_PATH` to the directory where xbookmark should create its standalone bookmark wiki from X data. This runtime output is separate from this repository's `wiki/` project LLM wiki. Use an xbookmark-owned folder you will later open from Obsidian, not an existing general-purpose Obsidian vault. On first run xbookmark creates the directory if it is missing, including any missing parent directories, with mode `0755` so normal sync and group-readable wiki workflows keep working. Credentials stay separate under `~/.config/xbookmark` with owner-only permissions. If the bookmark wiki path already exists but is not a directory, xbookmark exits non-zero without modifying it. See [Obsidian integration](#obsidian-integration) for how to open it in Obsidian.
 
 ## Usage
 
@@ -224,7 +224,7 @@ expired, `auth refresh` exits non-zero and prompts you to re-run `auth login`.
 
 ### backfill
 
-Pull historical bookmarks into the vault.
+Pull historical bookmarks into the bookmark wiki.
 
 ```bash
 bin/xbookmark backfill [--limit N] [--since YYYY-MM-DD] [--dry-run] [--overwrite]
@@ -241,7 +241,7 @@ bin/xbookmark backfill --limit 100
 Example output:
 
 ```
-Fetched 100 bookmarks. Wrote 100 markdown files to ~/Vaults/xbookmark/bookmarks/.
+Fetched 100 bookmarks. Wrote 100 markdown files to ~/wikis/xbookmark/bookmarks/.
 ```
 
 Backfill is idempotent by default. If `bookmarks/YYYY/MM/<id>.md` already
@@ -251,7 +251,7 @@ API and current enrichment output.
 
 ### find
 
-Full-text search across the vault.
+Full-text search across the bookmark wiki.
 
 ```bash
 bin/xbookmark find '<query>' [--type lex|vec|hyde] [--limit N] [--json]
@@ -270,7 +270,7 @@ bookmarks/2026/05/1789012345678901234.md  "Rails 8.0 ships with..."  @dhh
 bookmarks/2026/04/1788123456789012345.md  "A small Rails tip..."     @rosa
 ```
 
-`find` searches the entire vault, so matches can span multiple month partitions
+`find` searches the entire wiki, so matches can span multiple month partitions
 in a single result set. The default `--type lex` sends a QMD lexical query:
 whitespace separates required terms, quoted text is matched as a phrase, and
 v1 does not support regex, prefix wildcards, or boolean operators. Use
@@ -307,7 +307,7 @@ Run the LLM enrichment pass.
 bin/xbookmark enrich [--bookmark ID | --all] [--force]
 ```
 
-Provide exactly one of `--bookmark` (a single tweet ID) or `--all` (every bookmark in the vault) — the two are mutually exclusive. `--force` re-runs enrichment on bookmarks that already have `enriched_at` set; without it, those bookmarks are skipped.
+Provide exactly one of `--bookmark` (a single tweet ID) or `--all` (every bookmark in the bookmark wiki) — the two are mutually exclusive. `--force` re-runs enrichment on bookmarks that already have `enriched_at` set; without it, those bookmarks are skipped.
 
 Example:
 
@@ -361,10 +361,10 @@ Every subcommand accepts `--help`. The top-level `bin/xbookmark --help` lists al
 
 ## How it works
 
-xbookmark talks to the X API v2 to fetch your bookmarks, writes each one as a markdown file with YAML frontmatter into your vault, then runs an enrichment pass (LLM summaries and tags via the default `codex` driver) and, for any linked audio or video, a local Whisper transcription. A QMD index over the vault gives you fast full-text search through `bin/xbookmark find`.
+xbookmark talks to the X API v2 to fetch your bookmarks, writes each one as a markdown file with YAML frontmatter into its bookmark wiki, then runs an enrichment pass (LLM summaries and tags via the default `codex` driver) and, for any linked audio or video, a local Whisper transcription. A QMD index over the bookmark wiki gives you fast full-text search through `bin/xbookmark find`.
 
 ```text
-X API v2 -> Ingest -> Enrich -> Markdown vault -> QMD index
+X API v2 -> Ingest -> Enrich -> Bookmark wiki -> QMD index
               |          ^                              |
               +-> Whisper -+                           v
                   media                         bin/xbookmark find
@@ -372,7 +372,7 @@ X API v2 -> Ingest -> Enrich -> Markdown vault -> QMD index
 
 ## Obsidian integration
 
-To open your vault in Obsidian, choose "Open folder as vault" from the Obsidian launcher and pick the directory you configured as `OBSIDIAN_VAULT_PATH`. Bookmarks land under `bookmarks/YYYY/MM/<id>.md`, partitioned by `bookmarked_at`.
+To open the bookmark wiki in Obsidian, choose "Open folder as vault" from the Obsidian launcher and pick the directory you configured as `XBOOKMARK_WIKI_PATH`. Bookmarks land under `bookmarks/YYYY/MM/<id>.md`, partitioned by `bookmarked_at`.
 
 The graph view picks up wiki-links and tags from each bookmark's frontmatter, so re-tagging in `codex` enrichment automatically reshapes the graph.
 
@@ -451,7 +451,7 @@ Run `codex login` again, then re-run `bin/xbookmark enrich --all` — bookmarks 
 `backfill` respects the published `bookmark.read` rate limits but a long backfill can still hit the current rate-limit window. Lower `--limit` and re-run later, or schedule a daily ingest instead. The X API [rate-limit reference](https://docs.x.com/x-api/fundamentals/rate-limits) on `docs.x.com` lists the current numbers.
 
 **Where are my markdown files?**
-Under `$OBSIDIAN_VAULT_PATH/bookmarks/YYYY/MM/<id>.md`. The `bin/xbookmark find` output prints these paths so you can open them in your editor directly, or `cd "$(dirname …)"` into the containing folder.
+Under `$XBOOKMARK_WIKI_PATH/bookmarks/YYYY/MM/<id>.md`. The `bin/xbookmark find` output prints these paths so you can open them in your editor directly, or `cd "$(dirname …)"` into the containing folder.
 
 **Why does xbookmark use `~/.config` on every OS?**
 Credentials intentionally live at `~/.config/xbookmark/credentials.json` on both Linux and macOS so clone-and-bundle installs, scheduled jobs, and support docs share one path. Scheduler artifacts still use native OS locations; the credentials directory stays owner-only (`0700`) and the file stays `0600`.
@@ -477,7 +477,7 @@ Pull requests should be small and focused — one logical change per PR — and 
 
 ## Credits
 
-xbookmark builds on the [`codex`](https://github.com/openai/codex) CLI for enrichment, [whisper.cpp](https://github.com/ggml-org/whisper.cpp) and [faster-whisper](https://github.com/SYSTRAN/faster-whisper) for local transcription, QMD for markdown search, [Obsidian](https://obsidian.md) for the vault workflow, and the official X API.
+xbookmark builds on the [`codex`](https://github.com/openai/codex) CLI for enrichment, [whisper.cpp](https://github.com/ggml-org/whisper.cpp) and [faster-whisper](https://github.com/SYSTRAN/faster-whisper) for local transcription, QMD for markdown search, [Obsidian](https://obsidian.md) for browsing the bookmark wiki, and the official X API.
 
 ## Security
 

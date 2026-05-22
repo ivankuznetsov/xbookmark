@@ -18,12 +18,12 @@ module Xbookmark
         require_relative "../enrich/codex"
         require_relative "../transcribe/whisper"
 
-        config = Xbookmark::Config.load(vault_override: options[:vault], verbose: options[:verbose])
+        config = Xbookmark::Config.load(wiki_override: options[:wiki], vault_override: options[:vault], verbose: options[:verbose])
 
         platform = Paths.macos? ? "macOS" : (Paths.linux? ? "Linux" : "unknown")
         puts "platform: #{platform}"
         puts "scheduler backend: #{platform == "macOS" ? "launchd" : "systemd"}"
-        puts "vault: #{config.vault_path}"
+        puts "bookmark wiki: #{config.vault_path}"
         puts "state db: #{config.state_db_path}"
 
         check_bin("codex", config.codex_bin)

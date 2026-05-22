@@ -17,7 +17,7 @@ module Xbookmark
         @vault_path = vault_path
       end
 
-      # Final markdown path inside the vault for this bookmark.
+      # Final markdown path inside the bookmark wiki.
       def markdown_path_for(bookmark)
         date_dir = bookmark_date(bookmark).strftime("%Y/%m/%d")
         File.join(@vault_path, "bookmarks", date_dir, "#{bookmark.tweet_id}.md")

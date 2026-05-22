@@ -39,8 +39,8 @@ module Xbookmark
         @orch.existing_slugs = @store.all_topic_slugs if @orch.respond_to?(:existing_slugs=)
         enrichment = @orch.enrich(bookmark, transcripts: transcripts, image_paths: image_paths(media_records))
 
-        # Move scratch media into the final vault location.
-        media_records = move_media_into_vault(bookmark, media_records)
+        # Move scratch media into the final bookmark wiki location.
+        media_records = move_media_into_wiki(bookmark, media_records)
 
         markdown = @renderer.render(bookmark, enrichment, media_records: media_records, transcripts: transcripts, link_blobs: Array(enrichment.link_blobs))
         markdown_path = @renderer.write(bookmark, markdown)
@@ -91,7 +91,7 @@ module Xbookmark
         media_records.select { |m| m[:kind] == "photo" }.map { |m| m[:path] }
       end
 
-      def move_media_into_vault(bookmark, media_records)
+      def move_media_into_wiki(bookmark, media_records)
         return media_records if media_records.empty?
         final_dir = @renderer.media_dir_for(bookmark)
         FileUtils.mkdir_p(File.dirname(final_dir))

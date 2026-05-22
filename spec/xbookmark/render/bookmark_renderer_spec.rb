@@ -75,7 +75,7 @@ RSpec.describe Xbookmark::Render::BookmarkRenderer do
     expect(idx.call("## Quoted")).to be < idx.call("## Source")
   end
 
-  it "writes the markdown to <vault>/bookmarks/YYYY/MM/DD/<id>.md" do
+  it "writes the markdown to <bookmark-wiki>/bookmarks/YYYY/MM/DD/<id>.md" do
     Dir.mktmpdir do |dir|
       renderer = described_class.new(vault_path: dir)
       content = renderer.render(bookmark, enrichment, media_records: [], transcripts: {})

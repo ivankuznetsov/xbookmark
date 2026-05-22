@@ -61,7 +61,7 @@ module Xbookmark
         bin = xbookmark_bin
         <<~UNIT
           [Unit]
-          Description=xbookmark sync — pull new X bookmarks into the local vault
+          Description=xbookmark sync — pull new X bookmarks into the local bookmark wiki
           After=network-online.target
           Wants=network-online.target
 

@@ -15,6 +15,12 @@ RSpec.describe Xbookmark::CLI do
     end
   end
 
+  it "advertises the bookmark wiki path override" do
+    out = capture_stdout { described_class.start(%w[help]) }
+    expect(out).to include("--wiki")
+    expect(out).to include("Override the bookmark wiki path")
+  end
+
   def capture_stdout
     old = $stdout
     $stdout = StringIO.new
