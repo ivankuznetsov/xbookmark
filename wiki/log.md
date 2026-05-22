@@ -132,3 +132,11 @@ Append-only log of meaningful wiki updates.
 **Action:** Corrected the X bookmark pagination finding: production `max_results=100` returned 98 IDs and no token, but `max_results=50` returned 4,745 unique IDs over 95 pages. xbookmark should use 50-item bookmark pages.
 **Pages updated:** README.md, wiki/api.md, wiki/active-areas.md, wiki/commands.md, wiki/decisions.md, wiki/gaps.md, wiki/live-production-learnings.md, wiki/log.md
 **Source:** Read-only production X API probes from `/home/asterio/Dev/xbookmark.install/xbookmark`.
+
+## [2026-05-22T22:35:00Z] 100-percent coverage gate
+
+**Action:** Added real behavioral tests across CLI dispatch, config/path discovery, OAuth, X API retries/errors, QMD, scheduler install/uninstall/status, media/transcription, rendering, sync pipeline/runner, and the executable wrapper. Added `bundle exec rake coverage` using Ruby's built-in `Coverage` API to enforce 100% line coverage over `bin/` and `lib/`.
+**Pages updated:** wiki/dependencies.md, wiki/log.md
+**Bug fixed:** `LinkFetcher#resolve` now fails closed when DNS resolution raises after a hostname parse miss.
+**Verification:** After updating the coverage branch to current `main`, `bundle exec rake coverage` passed with 205 examples at 100.00% (1767/1767), and `bundle exec rubocop` passed with no offenses.
+**Source:** `Rakefile`, `bin/xbookmark`, `lib/xbookmark/enrich/link_fetcher.rb`, and expanded specs under `spec/`.

@@ -85,9 +85,11 @@ module Xbookmark
         IPAddr.new(host) # raises on hostname
         [host]
       rescue IPAddr::InvalidAddressError
-        Resolv.getaddresses(host)
-      rescue StandardError
-        []
+        begin
+          Resolv.getaddresses(host)
+        rescue StandardError
+          []
+        end
       end
 
       def private_address?(addr_or_host)
