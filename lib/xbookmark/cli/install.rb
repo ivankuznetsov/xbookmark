@@ -14,11 +14,11 @@ module Xbookmark
 
       def execute
         require_relative "../config"
-        require_relative "../scheduler/factory"
+        require_relative "../scheduler/installer"
         require_relative "../qmd/registrar"
 
         config = Xbookmark::Config.load(wiki_override: options[:wiki], vault_override: options[:vault], verbose: options[:verbose])
-        scheduler = Xbookmark::Scheduler::Factory.build(config: config)
+        installer = Xbookmark::Scheduler::Installer.new(config: config)
 
         scheduler_options = {
           time: options[:time] || config.daily_sync_time,
@@ -26,9 +26,9 @@ module Xbookmark
         }
 
         if options[:uninstall]
-          scheduler.uninstall(**scheduler_options)
+          installer.uninstall(**scheduler_options)
         else
-          scheduler.install(**scheduler_options)
+          installer.install(**scheduler_options)
           unless options[:"dry-run"]
             registrar = Xbookmark::Qmd::Registrar.new(config: config)
             registrar.ensure_registered!

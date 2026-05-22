@@ -1,0 +1,16 @@
+# Tebako project config for xbookmark.
+#
+# Builds a single-file binary from the gem checkout.  The CI workflow
+# at .github/workflows/release.yml invokes Tebako twice: once on
+# ubuntu-22.04 for x86_64-linux, once on macos-14 for arm64-darwin.
+#
+# Tebako pins one Ruby version per build — we target 3.3 so the
+# resulting binary always has the same MRI the README documents.
+---
+entry_point: bin/xbookmark
+ruby_version: 3.3.5
+fs_root: .
+output: build/xbookmark
+gems_lock: Gemfile.lock
+prefix: /usr/local
+package_extension: ""

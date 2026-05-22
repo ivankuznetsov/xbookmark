@@ -1,0 +1,23 @@
+post_install() {
+  cat <<'MSG'
+xbookmark is installed.  Run:
+  xbookmark
+to launch the interactive setup wizard.  See:
+  https://github.com/ivankuznetsov/xbookmark/blob/main/README.md
+for the install + uninstall one-liners and full configuration details.
+MSG
+}
+
+post_upgrade() {
+  cat <<'MSG'
+xbookmark upgraded.  Run `xbookmark doctor` to verify the new binary
+sees your keystore and scheduler unit.
+MSG
+}
+
+pre_remove() {
+  cat <<'MSG'
+Tip: run `xbookmark uninstall --purge` before this `pacman -R` to
+clear scheduler unit, libsecret entries, and ~/.config/xbookmark.
+MSG
+}

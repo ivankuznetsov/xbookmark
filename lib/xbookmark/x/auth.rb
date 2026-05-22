@@ -8,6 +8,9 @@ require "webrick"
 require "faraday"
 require "faraday/retry"
 require "json"
+require "fileutils"
+require_relative "../keystore"
+require_relative "../paths"
 
 module Xbookmark
   module X
@@ -21,10 +24,11 @@ module Xbookmark
 
       AuthResult = Struct.new(:env_file, :access_token, :refresh_token, :expires_at, keyword_init: true)
 
-      def initialize(config, opener: nil, env_path: nil)
+      def initialize(config, opener: nil, env_path: :auto, keystore: :auto)
         @config = config
         @opener = opener
-        @env_path = env_path || resolve_env_path
+        @keystore = resolve_keystore(keystore)
+        @env_path = resolve_env_path(env_path)
       end
 
       def login
@@ -41,7 +45,7 @@ module Xbookmark
         token = exchange_code_for_token(code: code, verifier: verifier)
         write_tokens!(token)
         AuthResult.new(
-          env_file: @env_path,
+          env_file: token_destination,
           access_token: token["access_token"],
           refresh_token: token["refresh_token"],
           expires_at: token_expires_at(token)
@@ -73,7 +77,7 @@ module Xbookmark
         token = JSON.parse(res.body)
         write_tokens!(token, preserve_refresh: token["refresh_token"].nil?)
         AuthResult.new(
-          env_file: @env_path,
+          env_file: token_destination,
           access_token: token["access_token"],
           refresh_token: token["refresh_token"] || @config.x_refresh_token,
           expires_at: token_expires_at(token)
@@ -198,7 +202,11 @@ module Xbookmark
         }
         updates["X_REFRESH_TOKEN"] = refresh if refresh
 
-        atomic_update_env(@env_path, updates)
+        if @env_path
+          atomic_update_env(@env_path, updates)
+        else
+          write_tokens_to_keystore!(updates)
+        end
       end
 
       private
@@ -219,8 +227,34 @@ module Xbookmark
         end
       end
 
-      def resolve_env_path
-        @config.env_file || ::File.join(Dir.pwd, ".env")
+      def resolve_keystore(keystore)
+        return nil if keystore.nil?
+        return keystore unless keystore == :auto
+
+        Xbookmark::Keystore.default
+      rescue StandardError
+        nil
+      end
+
+      def resolve_env_path(env_path)
+        return env_path unless env_path == :auto
+        return @config.env_file if @config.env_file
+
+        # The macOS `security` CLI accepts generic-password values only as
+        # argv, so keep rotating OAuth tokens in the stable 0600 user env file.
+        return Xbookmark::Paths.user_env_path if @keystore.nil? || @keystore.backend_name == "keychain"
+
+        nil
+      end
+
+      def token_destination
+        @env_path || "keystore: #{@keystore.backend_name}"
+      end
+
+      def write_tokens_to_keystore!(updates)
+        raise AuthError, "No token store available; set XBOOKMARK_ENV_FILE and retry auth login." unless @keystore
+
+        updates.each { |key, value| @keystore.set(key, value) }
       end
 
       def atomic_update_env(path, updates)

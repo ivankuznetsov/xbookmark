@@ -74,83 +74,83 @@ If you prefer to run the steps yourself, jump to [Installation](#installation) a
 
 ## Installation
 
-xbookmark is installed from source. There is no published gem, AUR package, or Homebrew tap yet.
+xbookmark ships pre-built single-file binaries for `x86_64-linux` and
+`arm64-darwin`.  Pick the channel that matches your host:
 
-### Prerequisites
+| Channel | One-liner |
+|---------|-----------|
+| Homebrew (macOS, arm64) | `brew install ivankuznetsov/tap/xbookmark` |
+| AUR (Arch / Manjaro) | `yay -S xbookmark` |
+| `.deb` (Debian / Ubuntu, x86_64) | `sudo apt install ./xbookmark_<ver>_amd64.deb` |
+| Generic `curl \| sh` | `curl -fsSL https://github.com/ivankuznetsov/xbookmark/raw/main/install.sh \| sh` |
 
-Every supported platform needs:
+After install, run `xbookmark` once — it auto-launches the interactive
+setup wizard, which writes your X API credentials to the host keystore
+(libsecret on Linux, login Keychain on macOS) and optionally enables
+the daily sync timer.
 
-- Ruby 3.1 or newer.
-- `ffmpeg` for media extraction.
-- A Whisper backend — either `whisper.cpp` (the default, fast on CPU) or `faster-whisper` (Python, GPU-friendly).
-- The [`codex` CLI](https://github.com/openai/codex) for LLM enrichment.
-- `git`.
+### Upgrades
 
-### Arch Linux
+Upgrade via the same channel you installed from — `brew upgrade
+xbookmark`, `yay -Syu xbookmark`, `apt upgrade xbookmark`, or re-run
+`install.sh`.  There is no in-binary `xbookmark update`.
+
+### Uninstall
 
 ```bash
-sudo pacman -S ruby ffmpeg sqlite base-devel git
+xbookmark uninstall --purge      # remove scheduler unit, keystore entries, config dir
+# then, depending on channel:
+brew uninstall xbookmark         # macOS
+sudo pacman -R xbookmark         # Arch
+sudo apt remove xbookmark        # Debian/Ubuntu
+sh <(curl -fsSL https://github.com/ivankuznetsov/xbookmark/raw/main/uninstall.sh)  # curl|sh path
+```
 
-# whisper.cpp: build from source (recommended below), or install the
-# community-maintained AUR package `whisper.cpp-git` if you already have an
-# AUR helper such as yay or paru set up.
-git clone https://github.com/ggml-org/whisper.cpp.git && (cd whisper.cpp && make)
-(cd whisper.cpp && ./models/download-ggml-model.sh base.en)
+Running the package-manager removal before `xbookmark uninstall
+--purge` is supported but leaves orphan keystore entries behind; the
+order above keeps the box clean.
 
+### Troubleshooting
+
+- **`ruby not found`** — the Tebako binary bundles its own Ruby, so
+  this should never appear after the binary install.  If you see it,
+  re-run `install.sh` and confirm the binary is on PATH.
+- **`secret-tool missing` (Linux)** — install
+  `libsecret`/`libsecret-tools` for your distro; otherwise xbookmark
+  falls back to a 0600 `.env` at `~/.config/xbookmark/.env`.  `xbookmark
+  doctor` always prints the active backend on its `keystore:` line.
+- **Scheduler did not enable** — re-run `xbookmark install`.  On
+  Arch/Linux you may need `loginctl enable-linger $USER` to fire while
+  logged out; macOS launchd needs no extra setup.
+- **macOS Gatekeeper quarantines the binary** — run `xattr -d
+  com.apple.quarantine $(which xbookmark)`.
+
+### Optional runtime tools
+
+xbookmark detects the following at runtime and prints copy-pasteable
+install commands when they are missing.  None of them are required to
+launch the wizard:
+
+- `ffmpeg` — media extraction.
+- `whisper.cpp` / `faster-whisper` — local transcription.
+- `codex` — LLM enrichment (`https://github.com/openai/codex`).
+- `qmd` — vector search over the bookmark wiki.
+
+Run `xbookmark doctor` to see which ones the binary can find, and
+`xbookmark doctor --fix` to interactively install the missing ones via
+the host package manager.
+
+### Building from source
+
+If you prefer a source build, clone the repo and `bundle install`
+against Ruby 3.1 or newer.  Source builds skip Tebako entirely.
+
+```bash
 git clone https://github.com/ivankuznetsov/xbookmark.git
 cd xbookmark
 bundle install
 bin/xbookmark --version
 ```
-
-### Ubuntu / Debian
-
-```bash
-sudo apt install ruby ruby-dev build-essential libsqlite3-dev ffmpeg git
-
-# Debian 11 and older distributions may ship a Ruby older than 3.1.
-# Install a modern Ruby with rbenv or mise if `ruby -v` reports < 3.1.
-
-# whisper.cpp from source
-git clone https://github.com/ggml-org/whisper.cpp.git && (cd whisper.cpp && make)
-(cd whisper.cpp && ./models/download-ggml-model.sh base.en)
-
-git clone https://github.com/ivankuznetsov/xbookmark.git
-cd xbookmark
-bundle install
-bin/xbookmark --version
-```
-
-### Fedora
-
-```bash
-sudo dnf install ruby ruby-devel @development-tools sqlite-devel ffmpeg git
-
-# whisper.cpp from source
-git clone https://github.com/ggml-org/whisper.cpp.git && (cd whisper.cpp && make)
-(cd whisper.cpp && ./models/download-ggml-model.sh base.en)
-
-git clone https://github.com/ivankuznetsov/xbookmark.git
-cd xbookmark
-bundle install
-bin/xbookmark --version
-```
-
-### macOS
-
-```bash
-brew install ruby ffmpeg sqlite git whisper-cpp
-
-# If `ruby -v` still shows the system Ruby, prepend Homebrew's Ruby to PATH:
-#   echo 'export PATH="$(brew --prefix ruby)/bin:$PATH"' >> ~/.zshrc
-
-git clone https://github.com/ivankuznetsov/xbookmark.git
-cd xbookmark
-bundle install
-bin/xbookmark --version
-```
-
-A published gem is on the [Roadmap](#roadmap); until then, clone-and-bundle is the supported install path.
 
 ## Configuration
 
@@ -202,7 +202,7 @@ Every enriched bookmark links to author, topic, entity, and thread landing pages
 
 ### Bookmark wiki path
 
-Set `XBOOKMARK_WIKI_PATH` to the directory where xbookmark should create its standalone bookmark wiki from X data. This runtime output is separate from this repository's `wiki/` project LLM wiki. Use an xbookmark-owned folder you will later open from Obsidian, not an existing general-purpose Obsidian vault. On first run xbookmark creates the directory if it is missing, including any missing parent directories, with mode `0755` so normal sync and group-readable wiki workflows keep working. Auth tokens stay in the loaded env file, which `auth login` chmods to `0600`. If the bookmark wiki path already exists but is not a directory, xbookmark exits non-zero without modifying it. See [Obsidian integration](#obsidian-integration) for how to open it in Obsidian.
+Set `XBOOKMARK_WIKI_PATH` to the directory where xbookmark should create its standalone bookmark wiki from X data. This runtime output is separate from this repository's `wiki/` project LLM wiki. Use an xbookmark-owned folder you will later open from Obsidian, not an existing general-purpose Obsidian vault. On first run xbookmark creates the directory if it is missing, including any missing parent directories, with mode `0755` so normal sync and group-readable wiki workflows keep working. Credentials and OAuth tokens stay in the active keystore when available, falling back to a `0600` env file under `~/.config/xbookmark`. If the bookmark wiki path already exists but is not a directory, xbookmark exits non-zero without modifying it. See [Obsidian integration](#obsidian-integration) for how to open it in Obsidian.
 
 For compatibility with earlier local branches, `XBOOKMARK_VAULT`,
 `OBSIDIAN_VAULT_PATH`, and the `--vault` CLI option are still accepted as

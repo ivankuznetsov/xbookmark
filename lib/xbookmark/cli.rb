@@ -28,6 +28,8 @@ require_relative "cli/sync"
 require_relative "cli/find"
 require_relative "cli/doctor"
 require_relative "cli/install"
+require_relative "cli/setup"
+require_relative "cli/uninstall"
 
 module Xbookmark
   class CLI
@@ -63,6 +65,7 @@ module Xbookmark
     end
 
     desc "doctor", "Check that codex / whisper / qmd / X auth are wired up"
+    method_option :fix, type: :boolean, default: false, desc: "Prompt to run install commands for missing tools"
     def doctor
       Xbookmark::CLI::Doctor.new([], options).execute
     end
@@ -73,6 +76,20 @@ module Xbookmark
     method_option :uninstall, type: :boolean, default: false
     def install
       Xbookmark::CLI::Install.new([], options).execute
+    end
+
+    desc "setup", "Interactive first-run wizard (keystore + scheduler)"
+    def setup
+      Xbookmark::CLI::Setup.new([], options).execute
+    end
+
+    desc "uninstall", "Remove scheduler unit, keystore entries, and config dir (requires --purge)"
+    method_option :purge, type: :boolean, default: false, desc: "Confirm full removal"
+    method_option :yes, type: :boolean, default: false, desc: "Skip confirmation prompt"
+    method_option :"dry-run", type: :boolean, default: false
+    def uninstall
+      code = Xbookmark::CLI::Uninstall.new([], options).execute
+      exit(code) unless code == 0
     end
   end
 end

@@ -65,6 +65,25 @@ RSpec.describe Xbookmark::CLI do
     end.to raise_error(SystemExit)
   end
 
+  it "runs first-run setup from the installed executable when invoked without args on a tty" do
+    bin_path = File.expand_path("../../bin/xbookmark", __dir__)
+    input = StringIO.new
+    def input.tty?; true; end
+
+    allow(Xbookmark::CLI::Setup).to receive(:first_run_configured?).and_return(false)
+    expect(Xbookmark::CLI::Setup).to receive(:first_run_check!).and_return(0)
+    expect(described_class).not_to receive(:start)
+
+    old_argv = ARGV.dup
+    old_stdin = $stdin
+    ARGV.replace([])
+    $stdin = input
+    expect { load bin_path }.to raise_error(SystemExit) { |error| expect(error.status).to eq(0) }
+  ensure
+    ARGV.replace(old_argv) if old_argv
+    $stdin = old_stdin if old_stdin
+  end
+
   def capture_stdout
     old = $stdout
     $stdout = StringIO.new

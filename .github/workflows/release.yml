@@ -1,0 +1,329 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build-linux:
+    name: Build x86_64-linux (Tebako)
+    runs-on: ubuntu-22.04
+    container: ghcr.io/tamatebako/tebako-ubuntu-20.04:latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure git safe.directory
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Cache tebako build prerequisites
+        uses: actions/cache@v4
+        with:
+          path: ~/.tebako
+          key: tebako-x86_64-linux-${{ hashFiles('packaging/tebako/xbookmark.yml', 'Gemfile.lock') }}
+
+      - name: Build single-file binary
+        run: |
+          tebako press --root="$PWD" \
+                      --entry-point=bin/xbookmark \
+                      --output=xbookmark-x86_64-linux \
+                      --Ruby=3.3.5
+
+      - name: Smoke check binary
+        run: ./xbookmark-x86_64-linux version
+
+      - name: Compute SHA256
+        run: sha256sum xbookmark-x86_64-linux > xbookmark-x86_64-linux.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xbookmark-x86_64-linux
+          path: |
+            xbookmark-x86_64-linux
+            xbookmark-x86_64-linux.sha256
+
+  build-macos:
+    name: Build arm64-darwin (Tebako)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Tebako
+        run: brew install tebako
+
+      - name: Cache tebako build prerequisites
+        uses: actions/cache@v4
+        with:
+          path: ~/.tebako
+          key: tebako-arm64-darwin-${{ hashFiles('packaging/tebako/xbookmark.yml', 'Gemfile.lock') }}
+
+      - name: Build single-file binary
+        run: |
+          tebako press --root="$PWD" \
+                      --entry-point=bin/xbookmark \
+                      --output=xbookmark-arm64-darwin \
+                      --Ruby=3.3.5
+
+      - name: Smoke check binary
+        run: ./xbookmark-arm64-darwin version
+
+      - name: Compute SHA256
+        run: shasum -a 256 xbookmark-arm64-darwin > xbookmark-arm64-darwin.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xbookmark-arm64-darwin
+          path: |
+            xbookmark-arm64-darwin
+            xbookmark-arm64-darwin.sha256
+
+  build-deb:
+    name: Build .deb (x86_64)
+    needs: build-linux
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: xbookmark-x86_64-linux
+      - name: Install FPM
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ruby ruby-dev rubygems build-essential
+          sudo gem install --no-document fpm
+      - name: Build .deb
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          chmod +x packaging/deb/fpm.sh
+          packaging/deb/fpm.sh "${TAG#v}" xbookmark-x86_64-linux
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xbookmark-deb
+          path: "xbookmark_*_amd64.deb"
+
+  draft-release:
+    name: Create smokeable prerelease
+    needs: [build-linux, build-macos, build-deb]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+      - name: Aggregate SHA256SUMS
+        run: |
+          cd dist
+          cat */*.sha256 > SHA256SUMS
+      - name: Create prerelease
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          REPO_FULL: ${{ github.repository }}
+        run: |
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --prerelease \
+            --notes "Automated release for $TAG. See https://github.com/$REPO_FULL/blob/main/CHANGELOG.md" \
+            dist/xbookmark-x86_64-linux/xbookmark-x86_64-linux \
+            dist/xbookmark-arm64-darwin/xbookmark-arm64-darwin \
+            dist/xbookmark-deb/xbookmark_*_amd64.deb \
+            install.sh uninstall.sh \
+            dist/SHA256SUMS
+
+  smoke-curl:
+    name: Smoke-test install.sh
+    needs: draft-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install via install.sh
+        env:
+          XBOOKMARK_TAG: ${{ github.ref_name }}
+          XBOOKMARK_REPO: ${{ github.repository }}
+        run: sh ./install.sh
+      - name: Smoke
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          xbookmark version
+          X_CLIENT_ID=dummy X_USER_ID=0 XBOOKMARK_WIKI_PATH=/tmp/xbookmark-wiki xbookmark doctor
+          xbookmark uninstall --purge --yes
+
+  smoke-brew:
+    name: Smoke-test Homebrew formula
+    needs: draft-release
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: xbookmark-arm64-darwin
+          path: tap-binary
+      - name: Render local formula
+        env:
+          TAG: ${{ github.ref_name }}
+          REPO_FULL: ${{ github.repository }}
+        run: |
+          VERSION="${TAG#v}"
+          SHA=$(awk '{print $1}' tap-binary/xbookmark-arm64-darwin.sha256)
+          sed -e "s/__VERSION__/${VERSION}/g" \
+              -e "s/__REPO__/${REPO_FULL//\//\\/}/g" \
+              -e "s/__SHA256__/${SHA}/g" \
+              packaging/homebrew/xbookmark.rb.erb > xbookmark.rb
+      - name: Install local formula
+        run: brew install ./xbookmark.rb
+      - name: Smoke
+        run: |
+          xbookmark version
+          X_CLIENT_ID=dummy X_USER_ID=0 XBOOKMARK_WIKI_PATH=/tmp/xbookmark-wiki xbookmark doctor
+          xbookmark uninstall --purge --yes
+
+  smoke-aur:
+    name: Smoke-test AUR PKGBUILD
+    needs: draft-release
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: xbookmark-x86_64-linux
+          path: aur-binary
+      - name: Bootstrap arch container
+        run: |
+          pacman -Syu --noconfirm base-devel git sudo
+          useradd -m build
+          echo "build ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+          VERSION="${GITHUB_REF_NAME#v}"
+          SHA=$(awk '{print $1}' aur-binary/xbookmark-x86_64-linux.sha256)
+          sed -e "s/__VERSION__/${VERSION}/g" \
+              -e "s/__REPO__/${GITHUB_REPOSITORY//\//\\/}/g" \
+              -e "s/__SHA256__/${SHA}/g" \
+              packaging/aur/PKGBUILD.template > /home/build/PKGBUILD
+          cp packaging/aur/xbookmark.install /home/build/xbookmark.install
+          chown -R build:build /home/build
+      - name: makepkg
+        run: |
+          cd /home/build
+          sudo -u build makepkg --noconfirm -si
+      - name: Smoke
+        run: |
+          xbookmark version
+          X_CLIENT_ID=dummy X_USER_ID=0 XBOOKMARK_WIKI_PATH=/tmp/xbookmark-wiki xbookmark doctor
+          xbookmark uninstall --purge --yes
+
+  smoke-deb:
+    name: Smoke-test .deb
+    needs: draft-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: xbookmark-deb
+      - name: apt install local .deb
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ./xbookmark_*_amd64.deb
+      - name: Smoke
+        run: |
+          xbookmark version
+          X_CLIENT_ID=dummy X_USER_ID=0 XBOOKMARK_WIKI_PATH=/tmp/xbookmark-wiki xbookmark doctor
+          xbookmark uninstall --purge --yes
+
+  promote-latest:
+    name: Promote release to latest
+    needs: [smoke-curl, smoke-brew, smoke-aur, smoke-deb]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Promote
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          REPO_FULL: ${{ github.repository }}
+        run: |
+          gh release edit "$TAG" --prerelease=false --latest --repo "$REPO_FULL"
+
+  update-tap:
+    name: Update Homebrew tap
+    needs: promote-latest
+    runs-on: ubuntu-latest
+    if: ${{ !contains(github.ref_name, '-') }} # skip pre-releases
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: src
+      - uses: actions/checkout@v4
+        with:
+          repository: ivankuznetsov/homebrew-tap
+          ssh-key: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+          path: tap
+      - uses: actions/download-artifact@v4
+        with:
+          name: xbookmark-arm64-darwin
+          path: tap-binary
+      - name: Render formula from template
+        env:
+          TAG: ${{ github.ref_name }}
+          REPO_FULL: ${{ github.repository }}
+        run: |
+          VERSION="${TAG#v}"
+          SHA=$(awk '{print $1}' tap-binary/xbookmark-arm64-darwin.sha256)
+          sed -e "s/__VERSION__/${VERSION}/g" \
+              -e "s/__REPO__/${REPO_FULL//\//\\/}/g" \
+              -e "s/__SHA256__/${SHA}/g" \
+              src/packaging/homebrew/xbookmark.rb.erb \
+              > tap/Formula/xbookmark.rb
+      - name: Commit + push
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          cd tap
+          git config user.name  "xbookmark-bot"
+          git config user.email "xbookmark-bot@users.noreply.github.com"
+          git add Formula/xbookmark.rb
+          git commit -m "xbookmark ${TAG}"
+          git push
+
+  update-aur:
+    name: Update AUR PKGBUILD
+    needs: promote-latest
+    runs-on: ubuntu-latest
+    if: ${{ !contains(github.ref_name, '-') }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: xbookmark-x86_64-linux
+          path: aur-binary
+      - name: Render PKGBUILD
+        env:
+          TAG: ${{ github.ref_name }}
+          REPO_FULL: ${{ github.repository }}
+        run: |
+          VERSION="${TAG#v}"
+          SHA=$(awk '{print $1}' aur-binary/xbookmark-x86_64-linux.sha256)
+          sed -e "s/__VERSION__/${VERSION}/g" \
+              -e "s/__REPO__/${REPO_FULL//\//\\/}/g" \
+              -e "s/__SHA256__/${SHA}/g" \
+              packaging/aur/PKGBUILD.template > PKGBUILD
+      - name: Publish to AUR
+        uses: KSXGitHub/github-actions-deploy-aur@v2.7.2
+        with:
+          pkgname: xbookmark
+          pkgbuild: PKGBUILD
+          assets: packaging/aur/xbookmark.install
+          commit_username: xbookmark-bot
+          commit_email: xbookmark-bot@users.noreply.github.com
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: "xbookmark ${{ github.ref_name }}"

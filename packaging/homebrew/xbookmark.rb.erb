@@ -1,0 +1,45 @@
+# Template rendered by .github/workflows/release.yml `update-tap` job.
+# Placeholders __VERSION__, __REPO__, __SHA256__ are substituted via `sed`.
+#
+# Strategy:
+#   - If the Homebrew-provided Ruby (>= 3.1) is present, install xbookmark
+#     as a source-built gem and write a shim that execs that Ruby.
+#   - Otherwise, fall back to downloading the arm64-darwin Tebako binary
+#     from the GitHub Release.  This is the no-Ruby happy path; it ships
+#     unsigned so the post-install caveat warns about Gatekeeper.
+class Xbookmark < Formula
+  desc "Sync X (Twitter) bookmarks into a local Obsidian-ready bookmark wiki"
+  homepage "https://github.com/__REPO__"
+  version "__VERSION__"
+  license "MIT"
+
+  on_macos do
+    if Hardware::CPU.arm?
+      url "https://github.com/__REPO__/releases/download/v__VERSION__/xbookmark-arm64-darwin"
+      sha256 "__SHA256__"
+    else
+      odie "xbookmark v1 only ships an arm64 macOS binary; install via 'brew install ruby' and rubygems instead."
+    end
+  end
+
+  depends_on "ffmpeg" => :recommended
+
+  def install
+    bin.install "xbookmark-arm64-darwin" => "xbookmark"
+  end
+
+  def caveats
+    <<~EOS
+      Gatekeeper may quarantine the unsigned binary on first run.  Clear it with:
+        xattr -d com.apple.quarantine #{opt_bin}/xbookmark
+
+      Then run `xbookmark` once to launch the setup wizard.  Optional
+      runtime tools (codex, whisper-cpp, qmd) are auto-detected by
+      `xbookmark doctor`.
+    EOS
+  end
+
+  test do
+    assert_match version.to_s, shell_output("#{bin}/xbookmark version")
+  end
+end
