@@ -43,6 +43,17 @@ RSpec.describe Xbookmark::Qmd::Searcher do
     expect(hits.first[:path]).to eq("/v/x.md")
   end
 
+  it "enforces the requested limit even when qmd returns extra hits" do
+    json = [
+      { "path" => "/v/1.md", "score" => 3 },
+      { "path" => "/v/2.md", "score" => 2 },
+      { "path" => "/v/3.md", "score" => 1 }
+    ].to_json
+    runner = ->(_argv) { [json, "", status] }
+    hits = described_class.new(config: config, runner: runner).search("x", limit: 2)
+    expect(hits.map { |hit| hit[:path] }).to eq(["/v/1.md", "/v/2.md"])
+  end
+
   it "returns [] when qmd binary is missing" do
     runner = ->(_argv) { raise Errno::ENOENT }
     expect { @hits = described_class.new(config: config, runner: runner).search("x") }

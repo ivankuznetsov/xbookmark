@@ -113,3 +113,9 @@ Append-only log of meaningful wiki updates.
 **Pages updated:** wiki/architecture.md, wiki/dependencies.md, wiki/active-areas.md, wiki/log.md
 **Production check:** Reran Whisper over 20 production MP4 files. Eighteen produced non-empty transcript sidecars and were injected into bookmark markdown; two MP4s had no audio stream and cleanly produced empty transcript sidecars.
 **Source:** Live production media rerun, `lib/xbookmark/transcribe/whisper.rb`, `lib/xbookmark/cli/doctor.rb`, `spec/xbookmark/transcribe/whisper_spec.rb`, `README.md`, `.env.example`.
+
+## [2026-05-22T20:40:00Z] find limit enforcement
+
+**Action:** Added an xbookmark-side cap to QMD search results after production `bin/xbookmark find ... --limit 3` returned four hits from the installed QMD.
+**Pages updated:** wiki/commands.md, wiki/log.md
+**Source:** Live production `bin/xbookmark find Transcript --limit 3`, `lib/xbookmark/qmd/searcher.rb`, `spec/xbookmark/qmd/searcher_spec.rb`.
