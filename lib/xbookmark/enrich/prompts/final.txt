@@ -11,7 +11,7 @@ Image OCR / captions (if any):
 %{vision_blob}
 Linked article extracts (if any):
 %{link_blobs}
-Existing topic/entity slugs already in the vault (use these instead of
+Existing topic/entity slugs already in the bookmark wiki (use these instead of
 creating near-duplicates when meaning matches):
 %{existing_slugs}
 

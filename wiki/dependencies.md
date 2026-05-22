@@ -1,22 +1,17 @@
 ---
 title: Dependencies
 type: dependencies
-source: git ls-files; ../xbookmark.worktrees/i-want-to-create-a-260504-1253/Gemfile; ../xbookmark.worktrees/i-want-to-create-a-260504-1253/xbookmark.gemspec; ../xbookmark.worktrees/i-want-to-create-a-260504-1253/README.md; ../xbookmark.worktrees/create-proper-readme-md-for-260513-2ba1/README.md
+source: git ls-files; Gemfile; xbookmark.gemspec; README.md
 created: 2026-05-14
-updated: 2026-05-14
+updated: 2026-05-22
 tags: [dependencies]
 ---
 
-**TLDR**: `main` has no runtime dependency files; the implementation worktree is a Ruby gem-style CLI, while the README branch documents some dependency expectations that are not yet reflected in manifests.
+**TLDR**: `xbookmark` is a Ruby gem-style CLI with Ruby gems for CLI/config/state/HTTP and external tools for Codex, QMD, Whisper, and native schedulers.
 
-## Main Branch
+## Ruby Dependencies
 
-- No `Gemfile`, gemspec, package manifest, lockfile, or application source is tracked on `main`.
-- The only tracked project files are `.gitignore` and `LICENSE`.
-
-## Implementation Worktree: Ruby Dependencies
-
-Branch `i-want-to-create-a-260504-1253` contains:
+The project contains:
 
 - `Gemfile` using `gemspec`, plus development/test gems `rspec`, `webmock`, and `rake`.
 - `xbookmark.gemspec` with runtime dependencies:
@@ -46,16 +41,10 @@ The implementation worktree shells out to external tools:
 - Local OAuth callback server on loopback for PKCE login.
 - Optional HTTP fetching of public external article links found in bookmarks, guarded by URL/IP safety checks.
 
-## README Branch Dependency Claims
+## Contributor Checks
 
-The README review branch documents user-facing prerequisites and contributor checks without adding runtime manifests on that branch:
-
-- Ruby 3.3 or newer, while the implementation gemspec currently says `>= 3.1`.
-- Platform packages for Ruby, SQLite headers, `ffmpeg`, `git`, and Whisper tooling.
-- `codex` CLI authenticated through `codex login`.
-- QMD as the markdown search engine behind `find`.
-- Contributor checks `bundle exec rake test`, `bundle exec rubocop`, and `bundle exec brakeman`; the implementation Gemfile read during this refresh includes `rspec`, `webmock`, and `rake`, but not `rubocop` or `brakeman`.
-
-These are documentation contracts until the implementation branch manifests are reconciled.
+The documented local verification command is `bundle exec rspec`. The
+development/test bundle includes `rspec`, `webmock`, and `rake`; it does not
+currently include RuboCop or Brakeman.
 
 Related: [[architecture]], [[commands]], [[api]], [[data-model]], [[gaps]].

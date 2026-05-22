@@ -1,53 +1,35 @@
 ---
 title: Active Areas
 type: active-areas
-source: git log --name-only; git worktree list; .hive-state/stages/**/task.md; ../xbookmark.worktrees/*/git log
+source: git log --name-only; git status; README.md; lib/xbookmark/config.rb; lib/xbookmark/cli.rb
 created: 2026-05-14
-updated: 2026-05-14
+updated: 2026-05-22
 tags: [activity]
 ---
 
-**TLDR**: `main` has almost no source activity, but Hive worktrees show active CLI implementation and README/spec review work with recent wiki context restoration.
+**TLDR**: Current work is focused on making new xbookmark setups follow the implemented CLI and on separating the runtime bookmark wiki from this repository's project LLM wiki.
 
-## Main Branch
+## Active PR
 
-- `99559b4 chore: ignore .hive-state worktree`
-- `e960fed Initial commit`
+Branch `fix/wiki-path-config` updates the public setup contract and runtime terminology:
 
-Tracked source on `main` remains limited to `.gitignore` and `LICENSE`.
+- Preferred runtime output path is `XBOOKMARK_WIKI_PATH`.
+- The runtime bookmark wiki is standalone and can be opened from Obsidian later.
+- The repository `wiki/` remains the project LLM wiki and is not the runtime output directory.
+- `--wiki` is the preferred CLI override; `--vault`, `XBOOKMARK_VAULT`, and `OBSIDIAN_VAULT_PATH` remain compatibility aliases.
+- New defaults use `xbookmark-wiki`; no migration from the previous local `xbookmark-vault` name is needed before release.
 
-## Completed Implementation Worktree
+## Setup Reliability
 
-Branch `i-want-to-create-a-260504-1253` is marked complete in `.hive-state/stages/7-done/.../task.md` and contains the Ruby CLI implementation.
+The README now describes only implemented setup commands:
 
-Recent visible commits on that branch include:
+- `bin/xbookmark auth login`
+- `bin/xbookmark auth status`
+- `bin/xbookmark backfill [--limit N]`
+- `bin/xbookmark sync`
+- `bin/xbookmark find QUERY [--limit N]`
+- `bin/xbookmark install [--time HH:MM] [--dry-run] [--uninstall]`
 
-- `8f45a6d docs: clarify bookmarked_at semantics, drop Windows-only PATHEXT lookup`
-- `6ce9f75 fix(sync): only stamp last_sync on real runs, ensure qmd registration in reindex`
-- `ac74988 fix(render): stable bookmark date fallback, Obsidian-friendly media embeds`
-- `f49328e fix(qmd): surface JSON parse errors, exact collection match, require fileutils`
-- `d6c28ad fix(whisper): raise WhisperUnavailable for subprocess failure, bound runtime`
-- `950cd09 fix(link-fetcher): block SSRF to private/loopback/metadata addresses`
-- Earlier feature commits added scaffold/config, state, X API auth/client, media, transcription, enrichment, rendering, sync, CLI, QMD, scheduler, and acceptance tests.
-
-`git diff main...HEAD` in that worktree reports 72 files and 5155 insertions, including `Gemfile`, `xbookmark.gemspec`, `bin/xbookmark`, `lib/xbookmark/**/*.rb`, and `spec/**/*.rb`.
-
-## Active README Review Worktree
-
-Branch `create-proper-readme-md-for-260513-2ba1` is in `.hive-state/stages/5-review/...` and reached a pass-4 fix-guardrail wait after commit `8e6ad0e`.
-
-Recent visible commits on that branch include:
-
-- `8e6ad0e docs(readme): resolve pass 04 review findings`
-- `7d9fd00 docs(env): warn that .env.example must stay credential-free`
-- `66dd62c docs(readme): apply triage fix pass 04`
-- `b9a6482 fix(gitignore): ignore /.env to prevent X credential leaks`
-- Prior commits build the README sections and add `docs/assets/demo.gif`.
-
-`git diff main...HEAD` in that worktree reports README, `.env.example`, `.gitignore`, demo asset, managed `.llm-wiki/` scripts/config, agent context files, `raw/notes/.gitkeep`, and wiki pages.
-
-## Current Working Tree
-
-After unsetting wrapper-provided `GIT_DIR`/`GIT_INDEX_FILE`, `git status --short --untracked-files=all` in the README review worktree showed only this refresh's wiki edits.
+Deferred command shapes such as `schedule`, `auth refresh/logout`, `enrich`, `--config`, `backfill --since`, and `find --json` should stay out of setup docs until implemented.
 
 Related: [[architecture]], [[commands]], [[api]], [[dependencies]], [[gaps]].

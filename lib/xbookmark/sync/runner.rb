@@ -111,12 +111,12 @@ module Xbookmark
 
       def incremental_sync(report)
         if @store.mode == Xbookmark::State::Store::MODE_FRESH
-          puts "[xbookmark] vault is empty. Run `xbookmark backfill --limit 100` first to seed it."
+          puts "[xbookmark] bookmark wiki is empty. Run `xbookmark backfill --limit 100` first to seed it."
           report.permanent_errors += 1
           return
         end
         if @store.mode == Xbookmark::State::Store::MODE_TEST_BACKFILLED
-          puts "[xbookmark] vault was test-backfilled. Run `xbookmark backfill` (no --limit) to ingest the rest."
+          puts "[xbookmark] bookmark wiki was test-backfilled. Run `xbookmark backfill` (no --limit) to ingest the rest."
           report.permanent_errors += 1
           return
         end

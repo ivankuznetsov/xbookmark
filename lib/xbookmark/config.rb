@@ -31,13 +31,13 @@ module Xbookmark
     ) unless defined?(Struct::XbookmarkConfig)
 
     class << self
-      def load(vault_override: nil, cwd: Dir.pwd, env: ENV.to_h.dup, verbose: false)
+      def load(wiki_override: nil, vault_override: nil, cwd: Dir.pwd, env: ENV.to_h.dup, verbose: false)
         loaded_env_files = load_env_files!(cwd: cwd, env: env)
         merged = env
 
         validate_required!(merged)
 
-        vault_path = vault_override || merged["XBOOKMARK_VAULT"] || default_vault_dir(merged)
+        vault_path = first_present(wiki_override, vault_override, configured_wiki_path(merged)) || default_wiki_dir(merged)
         vault_path = File.expand_path(vault_path)
 
         state_db_path = File.join(vault_path, ".xbookmark", "state.db")
@@ -101,13 +101,21 @@ module Xbookmark
         nil
       end
 
-      def default_vault_dir(env)
+      def configured_wiki_path(env)
+        first_present(env["XBOOKMARK_WIKI_PATH"], env["XBOOKMARK_VAULT"], env["OBSIDIAN_VAULT_PATH"])
+      end
+
+      def first_present(*values)
+        values.find { |value| value && !value.to_s.strip.empty? }
+      end
+
+      def default_wiki_dir(env)
         if Paths.macos? && env["XDG_DATA_HOME"].to_s.empty?
-          File.join(Paths.home, "Library", "Application Support", "xbookmark-vault")
+          File.join(Paths.home, "Library", "Application Support", "xbookmark-wiki")
         elsif env["XDG_DATA_HOME"] && !env["XDG_DATA_HOME"].to_s.empty?
-          File.join(env["XDG_DATA_HOME"], "xbookmark-vault")
+          File.join(env["XDG_DATA_HOME"], "xbookmark-wiki")
         else
-          File.join(Paths.home, ".local", "share", "xbookmark-vault")
+          File.join(Paths.home, ".local", "share", "xbookmark-wiki")
         end
       end
 

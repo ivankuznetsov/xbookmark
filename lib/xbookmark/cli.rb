@@ -6,8 +6,10 @@ require_relative "../xbookmark"
 module Xbookmark
   class CLI < Thor
     package_name "xbookmark"
+    map %w[--version -v] => :version
 
-    class_option :vault, type: :string, desc: "Override the vault path"
+    class_option :wiki, type: :string, desc: "Override the bookmark wiki path"
+    class_option :vault, type: :string, desc: "Legacy alias for --wiki"
     class_option :verbose, type: :boolean, default: false, desc: "Verbose output"
 
     def self.exit_on_failure?
@@ -49,7 +51,7 @@ module Xbookmark
       Xbookmark::CLI::Sync.new([], options).resync_run(tweet_id)
     end
 
-    desc "find QUERY", "Search the bookmark vault via QMD"
+    desc "find QUERY", "Search the bookmark wiki via QMD"
     method_option :limit, type: :numeric, default: 20
     def find(*query)
       Xbookmark::CLI::Find.new([], options).find_run(query.join(" "))
