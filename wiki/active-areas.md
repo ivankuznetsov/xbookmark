@@ -16,6 +16,7 @@ Branch `fix/default-scheduler-install` is ahead of `main`:
 - README setup now runs `bin/xbookmark install` as a required daily scheduler step instead of asking whether to install it.
 - Linux scheduler setup tries to enable systemd linger through `loginctl enable-linger <user>` so the daily timer can fire after logout.
 - Media downloads no longer impose the old 200 MB default cap; full-size X media is downloaded.
+- `WHISPER_MODEL=base.en` resolves to a local whisper.cpp `ggml-base.en.bin` model file when using `whisper-cli`/`whisper-cpp`; setup docs now include the model download step.
 - `Xbookmark::Qmd::Registrar` tries current `qmd collection list`/`collection add` first and preserves legacy command fallbacks.
 - `Xbookmark::Enrich::Codex` unwraps current `codex exec --json` `item.completed` agent messages.
 - Specs cover the README setup contract, legacy registrar fallback, scheduler linger setup, and current Codex JSON event parsing.

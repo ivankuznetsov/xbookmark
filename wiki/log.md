@@ -92,3 +92,10 @@ Append-only log of meaningful wiki updates.
 **Action:** Removed the default 200 MB media download cap after live production backfill hit `Down::TooLarge` on X video variants.
 **Pages updated:** wiki/architecture.md, wiki/active-areas.md, wiki/gaps.md, wiki/log.md
 **Source:** Live `bin/xbookmark backfill --limit 100` failure, `lib/xbookmark/media/downloader.rb`, `spec/xbookmark/media/downloader_spec.rb`.
+
+## [2026-05-22T17:35:00Z] whisper model setup fix
+
+**Action:** Fixed whisper.cpp model resolution so `WHISPER_MODEL=base.en` resolves to a local `ggml-base.en.bin` file and documented the model download step in setup instructions.
+**Pages updated:** wiki/active-areas.md, wiki/dependencies.md, wiki/log.md
+**Production check:** Downloaded `ggml-base.en.bin` into the production whisper.cpp checkout and reran all Whisper-failed media rows; state ended with 31 bookmarks done and zero Whisper failures.
+**Source:** Live production resync failures, `lib/xbookmark/transcribe/whisper.rb`, `spec/xbookmark/transcribe/whisper_spec.rb`, `README.md`.

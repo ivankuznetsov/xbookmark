@@ -94,6 +94,7 @@ sudo pacman -S ruby ffmpeg sqlite base-devel git
 # community-maintained AUR package `whisper.cpp-git` if you already have an
 # AUR helper such as yay or paru set up.
 git clone https://github.com/ggml-org/whisper.cpp.git && (cd whisper.cpp && make)
+(cd whisper.cpp && ./models/download-ggml-model.sh base.en)
 
 git clone https://github.com/ivankuznetsov/xbookmark.git
 cd xbookmark
@@ -111,6 +112,7 @@ sudo apt install ruby ruby-dev build-essential libsqlite3-dev ffmpeg git
 
 # whisper.cpp from source
 git clone https://github.com/ggml-org/whisper.cpp.git && (cd whisper.cpp && make)
+(cd whisper.cpp && ./models/download-ggml-model.sh base.en)
 
 git clone https://github.com/ivankuznetsov/xbookmark.git
 cd xbookmark
@@ -125,6 +127,7 @@ sudo dnf install ruby ruby-devel @development-tools sqlite-devel ffmpeg git
 
 # whisper.cpp from source
 git clone https://github.com/ggml-org/whisper.cpp.git && (cd whisper.cpp && make)
+(cd whisper.cpp && ./models/download-ggml-model.sh base.en)
 
 git clone https://github.com/ivankuznetsov/xbookmark.git
 cd xbookmark
@@ -190,7 +193,7 @@ Install the [`codex` CLI](https://github.com/openai/codex), run `codex login` on
 
 ### Whisper backend
 
-Set `WHISPER_BACKEND` to either `whisper.cpp` (default, fast on CPU, one-time C++ build) or `faster-whisper` (Python, GPU-friendly) and ensure the matching backend is on your `PATH` — see [Prerequisites](#prerequisites). `WHISPER_MODEL` defaults to `base.en`; v1 accepts `tiny.en`, `base.en`, `small.en`, `medium.en`, `tiny`, `base`, `small`, `medium`, and `large-v3`.
+Set `WHISPER_BACKEND` to either `whisper.cpp` (default, fast on CPU, one-time C++ build) or `faster-whisper` (Python, GPU-friendly) and ensure the matching backend is on your `PATH` — see [Prerequisites](#prerequisites). `WHISPER_MODEL` defaults to `base.en`; v1 accepts `tiny.en`, `base.en`, `small.en`, `medium.en`, `tiny`, `base`, `small`, `medium`, and `large-v3`. For `whisper.cpp`, model aliases resolve to `ggml-<model>.bin` in `WHISPER_MODEL_DIR`, the source checkout's `models/` directory next to `whisper-cli`, or `./models`.
 
 ### Bookmark wiki path
 
