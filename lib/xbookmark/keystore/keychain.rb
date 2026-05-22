@@ -7,8 +7,6 @@ module Xbookmark
     # macOS Keychain backend.  Shells out to `security` from Apple's
     # Security framework.
     class Keychain
-      SERVICE = "xbookmark"
-
       def self.available?
         ENV.fetch("PATH", "").split(File::PATH_SEPARATOR).each do |dir|
           full = File.join(dir, "security")
@@ -24,7 +22,7 @@ module Xbookmark
       def get(account)
         out, _err, status = Open3.capture3(
           "security", "find-generic-password",
-          "-s", SERVICE, "-a", account.to_s, "-w"
+          "-s", Xbookmark::Keystore::SERVICE, "-a", account.to_s, "-w"
         )
         return nil unless status.success?
         value = out.to_s.chomp
@@ -38,7 +36,7 @@ module Xbookmark
         # macOS Keychain CLI throughout Apple's own docs.
         _out, err, status = Open3.capture3(
           "security", "add-generic-password",
-          "-s", SERVICE,
+          "-s", Xbookmark::Keystore::SERVICE,
           "-a", account.to_s,
           "-w", value.to_s,
           "-U"
@@ -50,7 +48,7 @@ module Xbookmark
       def delete(account)
         _out, _err, status = Open3.capture3(
           "security", "delete-generic-password",
-          "-s", SERVICE, "-a", account.to_s
+          "-s", Xbookmark::Keystore::SERVICE, "-a", account.to_s
         )
         status.success?
       end

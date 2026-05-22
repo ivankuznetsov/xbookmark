@@ -8,8 +8,6 @@ module Xbookmark
     # All entries are tagged with attributes `service=xbookmark` and
     # `account=<key>` so we can enumerate them.
     class Libsecret
-      SERVICE = "xbookmark"
-
       def self.available?
         path = which("secret-tool")
         !path.nil?
@@ -30,7 +28,7 @@ module Xbookmark
       def get(account)
         out, _err, status = Open3.capture3(
           "secret-tool", "lookup",
-          "service", SERVICE,
+          "service", Xbookmark::Keystore::SERVICE,
           "account", account.to_s
         )
         return nil unless status.success?
@@ -44,7 +42,7 @@ module Xbookmark
         _out, err, status = Open3.capture3(
           "secret-tool", "store",
           "--label=xbookmark",
-          "service", SERVICE,
+          "service", Xbookmark::Keystore::SERVICE,
           "account", account.to_s,
           stdin_data: value.to_s
         )
@@ -55,7 +53,7 @@ module Xbookmark
       def delete(account)
         _out, _err, status = Open3.capture3(
           "secret-tool", "clear",
-          "service", SERVICE,
+          "service", Xbookmark::Keystore::SERVICE,
           "account", account.to_s
         )
         status.success?
@@ -64,7 +62,7 @@ module Xbookmark
       def list_accounts
         out, _err, status = Open3.capture3(
           "secret-tool", "search", "--all",
-          "service", SERVICE
+          "service", Xbookmark::Keystore::SERVICE
         )
         return [] unless status.success?
         accounts = []
