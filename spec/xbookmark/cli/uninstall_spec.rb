@@ -51,6 +51,15 @@ RSpec.describe Xbookmark::CLI::Uninstall do
     expect(output.string).to include("scheduler uninstall failed: boom")
   end
 
+  it "does not delete keystore entries during dry-run" do
+    keystore.set("X_CLIENT_ID", "abc")
+    code = run_uninstall(purge: true, yes: true, "dry-run": true)
+    expect(code).to eq(0)
+    expect(scheduler).to have_received(:uninstall).with(dry_run: true)
+    expect(keystore.get("X_CLIENT_ID")).to eq("abc")
+    expect(output.string).to include("would remove: x_client_id")
+  end
+
   it "is idempotent — second run with everything already gone returns 0" do
     code = run_uninstall(purge: true, yes: true)
     expect(code).to eq(0)

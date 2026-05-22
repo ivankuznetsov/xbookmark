@@ -2,32 +2,30 @@
 # xbookmark installer — pure POSIX sh, no bashisms.
 #
 # Usage:
-#   curl -fsSL https://github.com/asterio/xbookmark/raw/main/install.sh | sh
+#   curl -fsSL https://github.com/ivankuznetsov/xbookmark/raw/main/install.sh | sh
 #
 # Or with overrides:
-#   XBOOKMARK_TAG=v1.2.3 XBOOKMARK_REPO=asterio/xbookmark sh install.sh
+#   XBOOKMARK_TAG=v1.2.3 XBOOKMARK_REPO=ivankuznetsov/xbookmark sh install.sh
 #
 # Strategy:
 #   1. Detect arch (x86_64-linux or arm64-darwin); bail otherwise.
-#   2. Probe for a compatible system Ruby (>= 3.1).  If present *and*
-#      `gem` is on PATH, install xbookmark from rubygems.
-#   3. Otherwise download the matching Tebako binary from the release.
+#   2. Download the matching Tebako binary from the release.
+#   3. Verify the SHA256 against the published SHA256SUMS.
 #   4. Place at $XBOOKMARK_PREFIX/bin/xbookmark (default ~/.local/bin).
-#   5. Verify the SHA256 against the published SHA256SUMS.
-#   6. Ensure prefix/bin is on PATH (offer to append to the user's rc).
+#   5. Ensure prefix/bin is on PATH (offer to append to the user's rc).
 #
-# Refuses to clobber an existing binary unless XBOOKMARK_FORCE=1.
+# Replaces an existing binary so re-running the script performs an upgrade.
 
 set -eu
 
-XBOOKMARK_REPO="${XBOOKMARK_REPO:-asterio/xbookmark}"
+XBOOKMARK_REPO="${XBOOKMARK_REPO:-ivankuznetsov/xbookmark}"
 XBOOKMARK_TAG="${XBOOKMARK_TAG:-latest}"
 XBOOKMARK_PREFIX="${XBOOKMARK_PREFIX:-$HOME/.local}"
 XBOOKMARK_FORCE="${XBOOKMARK_FORCE:-0}"
 XBOOKMARK_RELEASE_BASE="${XBOOKMARK_RELEASE_BASE:-https://github.com/${XBOOKMARK_REPO}/releases}"
-# Force the prebuilt-binary path even when a compatible system Ruby is
-# present.  Used by CI smoke tests because the gem is not published.
-XBOOKMARK_FORCE_BINARY="${XBOOKMARK_FORCE_BINARY:-0}"
+# Binary is the supported default until the RubyGem is published. Set
+# XBOOKMARK_INSTALL_METHOD=gem explicitly to opt into RubyGems.
+XBOOKMARK_INSTALL_METHOD="${XBOOKMARK_INSTALL_METHOD:-binary}"
 
 say()  { printf '%s\n'   "[xbookmark] $*"; }
 warn() { printf '%s\n'   "[xbookmark] $*" >&2; }
@@ -86,8 +84,7 @@ verify_sha256() {
   elif command -v shasum >/dev/null 2>&1; then
     actual="$(shasum -a 256 "$file" | awk '{print $1}')"
   else
-    warn "no sha256 tool available; skipping checksum verification."
-    return 0
+    die "no sha256 tool available; refusing to install an unverified binary."
   fi
   if [ "$actual" != "$expected" ]; then
     die "checksum mismatch for $file: expected $expected, got $actual"
@@ -118,23 +115,20 @@ install_tebako_binary() {
   say "downloading $binary_url"
   download "$binary_url" "$tmpdir/$binary_name"
 
-  if download "$sums_url" "$tmpdir/SHA256SUMS"; then
-    expected="$(awk -v name="$binary_name" '$2 ~ name {print $1}' "$tmpdir/SHA256SUMS")"
-    if [ -n "$expected" ]; then
-      verify_sha256 "$tmpdir/$binary_name" "$expected"
-    else
-      warn "SHA256SUMS did not contain a row for $binary_name; skipping verification."
-    fi
-  else
-    warn "could not fetch SHA256SUMS; skipping verification."
-  fi
+  download "$sums_url" "$tmpdir/SHA256SUMS" || die "could not fetch SHA256SUMS; refusing to install."
+  expected="$(awk -v name="$binary_name" '$2 == name || $2 == "*" name {print $1}' "$tmpdir/SHA256SUMS")"
+  [ -n "$expected" ] || die "SHA256SUMS did not contain a row for $binary_name."
+  verify_sha256 "$tmpdir/$binary_name" "$expected"
 
   install_dir="${XBOOKMARK_PREFIX}/bin"
   target="${install_dir}/xbookmark"
 
-  if [ -e "$target" ] && [ "$XBOOKMARK_FORCE" != "1" ]; then
-    say "$target already exists; pass XBOOKMARK_FORCE=1 to overwrite."
-    return 0
+  if [ -e "$target" ]; then
+    if [ "$XBOOKMARK_FORCE" = "1" ]; then
+      say "replacing existing $target (forced)."
+    else
+      say "replacing existing $target."
+    fi
   fi
 
   mkdir -p "$install_dir"
@@ -185,13 +179,19 @@ main() {
   arch="$(detect_arch)"
   say "detected platform: $arch"
 
-  if [ "$XBOOKMARK_FORCE_BINARY" != "1" ] && have_compatible_ruby; then
-    install_via_gem
-  else
-    say "no compatible system Ruby (>= 3.1) found; installing Tebako binary."
-    install_tebako_binary "$arch"
-    ensure_path
-  fi
+  case "$XBOOKMARK_INSTALL_METHOD" in
+    binary)
+      install_tebako_binary "$arch"
+      ensure_path
+      ;;
+    gem)
+      have_compatible_ruby || die "XBOOKMARK_INSTALL_METHOD=gem requires Ruby >= 3.1 and gem on PATH."
+      install_via_gem
+      ;;
+    *)
+      die "unsupported XBOOKMARK_INSTALL_METHOD=$XBOOKMARK_INSTALL_METHOD (expected binary or gem)."
+      ;;
+  esac
 
   say "install complete.  Run \`xbookmark\` to launch the setup wizard."
 }

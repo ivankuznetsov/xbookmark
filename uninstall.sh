@@ -2,7 +2,7 @@
 # xbookmark uninstaller — POSIX sh sibling to install.sh.
 #
 # Usage:
-#   curl -fsSL https://github.com/asterio/xbookmark/raw/main/uninstall.sh | sh
+#   curl -fsSL https://github.com/ivankuznetsov/xbookmark/raw/main/uninstall.sh | sh
 #
 # Behavior:
 #   1. If `xbookmark` is on PATH, run `xbookmark uninstall --purge --yes`
@@ -19,9 +19,16 @@ XBOOKMARK_PREFIX="${XBOOKMARK_PREFIX:-$HOME/.local}"
 say()  { printf '%s\n' "[xbookmark] $*"; }
 warn() { printf '%s\n' "[xbookmark] $*" >&2; }
 
-if command -v xbookmark >/dev/null 2>&1; then
-  say "running xbookmark uninstall --purge --yes…"
-  if ! xbookmark uninstall --purge --yes; then
+cmd=""
+if [ -x "${XBOOKMARK_PREFIX}/bin/xbookmark" ]; then
+  cmd="${XBOOKMARK_PREFIX}/bin/xbookmark"
+elif command -v xbookmark >/dev/null 2>&1; then
+  cmd="xbookmark"
+fi
+
+if [ -n "$cmd" ]; then
+  say "running $cmd uninstall --purge --yes..."
+  if ! "$cmd" uninstall --purge --yes; then
     warn "xbookmark uninstall failed; proceeding to binary removal anyway."
   fi
 else

@@ -23,14 +23,14 @@ module Xbookmark
         require_relative "../system/runtime"
         require_relative "../system/package_manager"
 
-        config = Xbookmark::Config.load(vault_override: options[:vault], verbose: options[:verbose])
+        config = Xbookmark::Config.load(wiki_override: options[:wiki], vault_override: options[:vault], verbose: options[:verbose])
 
         platform = Paths.macos? ? "macOS" : (Paths.linux? ? "Linux" : "unknown")
         say "platform: #{platform}"
         say "scheduler backend: #{platform == "macOS" ? "launchd" : "systemd"}"
         say "ruby: #{Xbookmark::System::Runtime.describe}"
         say "keystore: #{safe_keystore_backend}"
-        say "vault: #{config.vault_path}"
+        say "bookmark wiki: #{config.vault_path}"
         say "state db: #{config.state_db_path}"
 
         missing = []

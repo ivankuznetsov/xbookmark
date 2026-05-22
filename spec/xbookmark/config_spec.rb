@@ -23,7 +23,7 @@ RSpec.describe Xbookmark::Config do
     Dir.mktmpdir do |cwd|
       File.write(File.join(cwd, ".env"), "X_CLIENT_ID=abc\nX_USER_ID=42\n")
       config = described_class.load(cwd: cwd, env: { "XDG_DATA_HOME" => "/data/xdg" })
-      expect(config.vault_path).to eq("/data/xdg/xbookmark-vault")
+      expect(config.vault_path).to eq("/data/xdg/xbookmark-wiki")
     end
   end
 
@@ -33,7 +33,7 @@ RSpec.describe Xbookmark::Config do
       Dir.mktmpdir do |cwd|
         File.write(File.join(cwd, ".env"), "X_CLIENT_ID=abc\nX_USER_ID=42\n")
         config = described_class.load(cwd: cwd, env: {})
-        expect(config.vault_path).to eq(File.join(home, ".local", "share", "xbookmark-vault"))
+        expect(config.vault_path).to eq(File.join(home, ".local", "share", "xbookmark-wiki"))
       end
     end
   end
@@ -44,19 +44,72 @@ RSpec.describe Xbookmark::Config do
       Dir.mktmpdir do |cwd|
         File.write(File.join(cwd, ".env"), "X_CLIENT_ID=abc\nX_USER_ID=42\n")
         config = described_class.load(cwd: cwd, env: {})
-        expect(config.vault_path).to eq(File.join(home, "Library", "Application Support", "xbookmark-vault"))
+        expect(config.vault_path).to eq(File.join(home, "Library", "Application Support", "xbookmark-wiki"))
       end
     end
   end
 
-  it "honors XBOOKMARK_VAULT and CLI vault override" do
+  it "honors XBOOKMARK_WIKI_PATH and CLI bookmark wiki override" do
     Dir.mktmpdir do |cwd|
-      File.write(File.join(cwd, ".env"), "X_CLIENT_ID=abc\nX_USER_ID=42\nXBOOKMARK_VAULT=/custom/vault\n")
+      File.write(File.join(cwd, ".env"), "X_CLIENT_ID=abc\nX_USER_ID=42\nXBOOKMARK_WIKI_PATH=/custom/wiki\n")
       config = described_class.load(cwd: cwd, env: {})
-      expect(config.vault_path).to eq("/custom/vault")
+      expect(config.vault_path).to eq("/custom/wiki")
+
+      File.write(File.join(cwd, ".env"), <<~ENV)
+        X_CLIENT_ID=abc
+        X_USER_ID=42
+        XBOOKMARK_WIKI_PATH=/new/wiki
+        XBOOKMARK_VAULT=/legacy/vault
+        OBSIDIAN_VAULT_PATH=/legacy/obsidian
+      ENV
+      precedence = described_class.load(cwd: cwd, env: {})
+      expect(precedence.vault_path).to eq("/new/wiki")
+
+      override = described_class.load(cwd: cwd, env: {}, wiki_override: "/override/wiki", vault_override: "/override/vault")
+      expect(override.vault_path).to eq("/override/wiki")
+    end
+  end
+
+  it "keeps older vault-named path keys as compatibility aliases" do
+    Dir.mktmpdir do |cwd|
+      File.write(File.join(cwd, ".env"), "X_CLIENT_ID=abc\nX_USER_ID=42\nXBOOKMARK_VAULT=/legacy/vault\n")
+      config = described_class.load(cwd: cwd, env: {})
+      expect(config.vault_path).to eq("/legacy/vault")
+
+      File.write(File.join(cwd, ".env"), "X_CLIENT_ID=abc\nX_USER_ID=42\nOBSIDIAN_VAULT_PATH=/legacy/obsidian\n")
+      obsidian = described_class.load(cwd: cwd, env: {})
+      expect(obsidian.vault_path).to eq("/legacy/obsidian")
 
       override = described_class.load(cwd: cwd, env: {}, vault_override: "/override/vault")
       expect(override.vault_path).to eq("/override/vault")
+    end
+  end
+
+  it "ignores blank wiki path values when falling back" do
+    stub_platform_linux
+    with_tmp_home do |home|
+      Dir.mktmpdir do |cwd|
+        File.write(File.join(cwd, ".env"), "X_CLIENT_ID=abc\nX_USER_ID=42\nXBOOKMARK_WIKI_PATH=\nXBOOKMARK_VAULT=/legacy/vault\n")
+        legacy = described_class.load(cwd: cwd, env: {})
+        expect(legacy.vault_path).to eq("/legacy/vault")
+
+        File.write(File.join(cwd, ".env"), "X_CLIENT_ID=abc\nX_USER_ID=42\nXBOOKMARK_WIKI_PATH=\nXBOOKMARK_VAULT=\nOBSIDIAN_VAULT_PATH=\n")
+        default = described_class.load(cwd: cwd, env: {})
+        expect(default.vault_path).to eq(File.join(home, ".local", "share", "xbookmark-wiki"))
+
+        override = described_class.load(cwd: cwd, env: {}, wiki_override: "", vault_override: "/override/vault")
+        expect(override.vault_path).to eq("/override/vault")
+      end
+    end
+  end
+
+  it "keeps aux page summaries disabled unless explicitly enabled" do
+    Dir.mktmpdir do |cwd|
+      File.write(File.join(cwd, ".env"), "X_CLIENT_ID=abc\nX_USER_ID=42\n")
+      expect(described_class.load(cwd: cwd, env: {}).aux_summaries).to be(false)
+
+      File.write(File.join(cwd, ".env"), "X_CLIENT_ID=abc\nX_USER_ID=42\nXBOOKMARK_AUX_SUMMARIES=true\n")
+      expect(described_class.load(cwd: cwd, env: {}).aux_summaries).to be(true)
     end
   end
 end

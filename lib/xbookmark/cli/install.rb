@@ -17,7 +17,7 @@ module Xbookmark
         require_relative "../scheduler/installer"
         require_relative "../qmd/registrar"
 
-        config = Xbookmark::Config.load(vault_override: options[:vault], verbose: options[:verbose])
+        config = Xbookmark::Config.load(wiki_override: options[:wiki], vault_override: options[:vault], verbose: options[:verbose])
         installer = Xbookmark::Scheduler::Installer.new(config: config)
 
         scheduler_options = {

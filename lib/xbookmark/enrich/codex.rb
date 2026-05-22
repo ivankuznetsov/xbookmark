@@ -10,17 +10,18 @@ module Xbookmark
     # stdout/stderr, parses JSON, validates against an optional schema, and
     # surfaces failures as Xbookmark::CodexError.
     class Codex
-      DEFAULT_TIMEOUT = 120
+      DEFAULT_TIMEOUT = 300
 
       # Wrapper events emitted by `codex exec --json`. The model body is
       # carried separately (either as a `model_message`/`agent_message`
       # event or as a plain JSON object without a wrapper type).
       WRAPPER_EVENT_TYPES = %w[
         turn_start turn_end telemetry start progress event finish
+        thread.started turn.started turn.completed
         thinking agent_reasoning tool_call tool_result
       ].freeze
 
-      MODEL_MESSAGE_TYPES = %w[model_message agent_message].freeze
+      MODEL_MESSAGE_TYPES = %w[model_message agent_message item.completed].freeze
 
       attr_reader :bin
 
@@ -72,8 +73,8 @@ module Xbookmark
       def invoke_with_timeout(argv, timeout)
         Open3.popen3(*argv) do |stdin, stdout, stderr, wait_thr|
           stdin.close
-          out_reader = Thread.new { stdout.read }
-          err_reader = Thread.new { stderr.read }
+          out_reader = Thread.new { stdout.read rescue "" }
+          err_reader = Thread.new { stderr.read rescue "" }
 
           if wait_thr.join(timeout).nil?
             pid = wait_thr.pid
@@ -119,7 +120,7 @@ module Xbookmark
           next if WRAPPER_EVENT_TYPES.include?(type)
 
           if MODEL_MESSAGE_TYPES.include?(type)
-            inner = event["content"] || event["message"] || event["body"]
+            inner = model_message_payload(event)
             return inner if inner.is_a?(Hash)
             if inner.is_a?(String) && inner.strip.start_with?("{")
               parsed_inner = JSON.parse(inner) rescue nil
@@ -138,6 +139,16 @@ module Xbookmark
       rescue JSON::ParserError => e
         # Reached only by the fallback `JSON.parse(candidate)` above.
         raise Xbookmark::CodexError, "codex stdout JSON parse failed: #{e.message}"
+      end
+
+      def model_message_payload(event)
+        if event["item"].is_a?(Hash)
+          item = event["item"]
+          return item["text"] if item["type"].to_s == "agent_message"
+          return item["content"] || item["message"] || item["body"]
+        end
+
+        event["content"] || event["message"] || event["body"] || event["text"]
       end
 
       def status_success?(status)

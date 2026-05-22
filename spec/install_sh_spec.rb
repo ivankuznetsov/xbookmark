@@ -22,6 +22,19 @@ RSpec.describe "install.sh" do
     expect(body).not_to match(/\bsource\b/) # bash-only
   end
 
+  it "defaults to the publishing repo and binary install path" do
+    body = File.read(script_path)
+    expect(body).to include('XBOOKMARK_REPO="${XBOOKMARK_REPO:-ivankuznetsov/xbookmark}"')
+    expect(body).to include('XBOOKMARK_INSTALL_METHOD="${XBOOKMARK_INSTALL_METHOD:-binary}"')
+    expect(body).not_to include("XBOOKMARK_FORCE_BINARY")
+  end
+
+  it "refuses to install when checksum verification cannot run" do
+    body = File.read(script_path)
+    expect(body).to include("refusing to install an unverified binary")
+    expect(body).to include("could not fetch SHA256SUMS; refusing to install")
+  end
+
   it "detects x86_64-linux and arm64-darwin and rejects others" do
     # Run a small shim that sources `detect_arch` from install.sh by
     # extracting the function body — pure POSIX, no bashisms.

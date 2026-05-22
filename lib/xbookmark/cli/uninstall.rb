@@ -47,9 +47,16 @@ module Xbookmark
 
         say "[xbookmark] removing keystore entries…"
         begin
-          removed = @keystore.delete_all
+          removed =
+            if options[:"dry-run"]
+              @keystore.list_keys & Xbookmark::Keystore::KNOWN_KEYS
+            else
+              @keystore.delete_all
+            end
           if removed.empty?
             say "  no keystore entries to remove."
+          elsif options[:"dry-run"]
+            say "  would remove: #{removed.join(", ")}"
           else
             say "  removed: #{removed.join(", ")}"
           end

@@ -10,7 +10,7 @@ Tag pushes (`vX.Y.Z`) drive the entire pipeline.
 | `build-linux`  | `ghcr.io/tamatebako/tebako-ubuntu-20.04`  | `xbookmark-x86_64-linux` + `.sha256`                |
 | `build-macos`  | `macos-14` + Homebrew `tebako` formula    | `xbookmark-arm64-darwin` + `.sha256`                |
 | `build-deb`    | `ubuntu-latest` + FPM                     | `xbookmark_<ver>_amd64.deb`                         |
-| `draft-release`| `ubuntu-latest`                            | GitHub Release marked `draft`, with `SHA256SUMS`   |
+| `draft-release`| `ubuntu-latest`                            | Public prerelease with `SHA256SUMS`                |
 
 ## Phase 2 — Smoke gate
 
@@ -21,19 +21,19 @@ These four jobs each install xbookmark via one channel, then run
 | Job          | Channel               |
 |--------------|-----------------------|
 | `smoke-curl` | `install.sh`          |
-| `smoke-brew` | Homebrew tap          |
+| `smoke-brew` | Local Homebrew formula |
 | `smoke-aur`  | AUR PKGBUILD          |
 | `smoke-deb`  | `.deb` via `apt`      |
 
-`smoke-brew` is marked `continue-on-error: true` for the very first
-release of v1 because the tap repo will not exist yet; once the tap is
-bootstrapped this flag should be removed.
+The prerelease is public before smoke tests run so URL-based installers can
+download the exact candidate assets. `promote-latest` only runs after every
+smoke gate exits successfully.
 
 ## Phase 3 — Promote + publish
 
 | Job              | Trigger condition           | Effect                                              |
 |------------------|-----------------------------|-----------------------------------------------------|
-| `promote-latest` | all four smoke gates pass   | `gh release edit --draft=false --latest`            |
+| `promote-latest` | all four smoke gates pass   | `gh release edit --prerelease=false --latest`       |
 | `update-tap`     | `promote-latest` succeeded  | renders + pushes `Formula/xbookmark.rb` to the tap  |
 | `update-aur`     | `promote-latest` succeeded  | renders + publishes the PKGBUILD via SSH to AUR    |
 

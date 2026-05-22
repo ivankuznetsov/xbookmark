@@ -11,7 +11,7 @@
 pkgname=xbookmark
 pkgver=__VERSION__
 pkgrel=1
-pkgdesc="Sync X (Twitter) bookmarks into a local Obsidian + QMD vault"
+pkgdesc="Sync X (Twitter) bookmarks into a local Obsidian-ready bookmark wiki"
 arch=('x86_64')
 url="https://github.com/__REPO__"
 license=('MIT')
@@ -19,7 +19,7 @@ depends=()
 optdepends=(
   'ffmpeg: media transcoding for embedded video'
   'whisper-cpp: local transcription of bookmarked clips'
-  'qmd: vector search over the bookmark vault'
+  'qmd: vector search over the bookmark wiki'
   'codex: LLM enrichment of bookmark cards'
 )
 provides=('xbookmark')

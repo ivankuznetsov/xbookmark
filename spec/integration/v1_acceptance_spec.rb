@@ -9,7 +9,7 @@ require "xbookmark/qmd/registrar"
 # video, quote-tweet, link variants) flow through the runner with a fake
 # X client, fake codex, and stubbed media/whisper layers — no network.
 RSpec.describe "v1 acceptance" do
-  let(:vault) { Dir.mktmpdir("xbookmark-vault") }
+  let(:vault) { Dir.mktmpdir("xbookmark-wiki") }
 
   let(:bookmarks_payload) do
     data = []
@@ -169,7 +169,7 @@ RSpec.describe "v1 acceptance" do
     md_files = Dir.glob(File.join(vault, "bookmarks", "**/*.md"))
     expect(md_files.size).to eq(10)
 
-    # No leftover .tmp anywhere in the vault
+    # No leftover .tmp anywhere in the bookmark wiki
     leftovers = Dir.glob(File.join(vault, "**/*.tmp.*"))
     expect(leftovers).to be_empty
 

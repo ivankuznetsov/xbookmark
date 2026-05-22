@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "json"
+require "uri"
 require_relative "codex"
 require_relative "link_fetcher"
 
@@ -18,6 +19,7 @@ module Xbookmark
 
     class Orchestrator
       PROMPT_DIR = File.expand_path("prompts", __dir__)
+      IMAGE_TIMEOUT = 300
 
       FINAL_SCHEMA = {
         "type" => "object",
@@ -33,15 +35,6 @@ module Xbookmark
         }
       }.freeze
 
-      PLAN_SCHEMA = {
-        "type" => "object",
-        "properties" => {
-          "fetch_external_links" => { "type" => "array", "items" => { "type" => "string" } },
-          "summarize_quoted_tweet" => { "type" => "boolean" },
-          "needs_image_ocr" => { "type" => "boolean" }
-        }
-      }.freeze
-
       attr_writer :existing_slugs
 
       def initialize(codex:, link_fetcher: nil, existing_slugs: [])
@@ -51,21 +44,8 @@ module Xbookmark
       end
 
       def enrich(bookmark, transcripts: {}, image_paths: [])
-        plan = plan_call(bookmark, image_paths: image_paths)
-
-        link_blobs = []
-        if plan["fetch_external_links"]&.any?
-          plan["fetch_external_links"].first(3).each do |url|
-            blob = @link_fetcher.fetch(url)
-            link_blobs << blob if blob
-          end
-        end
-
-        vision = if plan["needs_image_ocr"] && image_paths.any?
-                   vision_call(image_paths)
-                 else
-                   { "captions" => {}, "ocr" => {} }
-                 end
+        link_blobs = fetch_link_blobs(bookmark)
+        vision = { "captions" => {}, "ocr" => {} }
 
         final = final_call(bookmark, transcripts: transcripts, link_blobs: link_blobs, vision: vision, image_paths: image_paths)
 
@@ -108,22 +88,39 @@ module Xbookmark
 
       private
 
-      def plan_call(bookmark, image_paths:)
-        prompt = render_template("plan.txt", {
-                                   tweet_text: bookmark.text.to_s,
-                                   author_handle: bookmark.author_handle.to_s,
-                                   author_name: bookmark.author_name.to_s,
-                                   media_summary: media_summary_for(bookmark),
-                                   has_quoted: bookmark.quoted_tweet_id ? "yes" : "no",
-                                   external_links: format_links(bookmark.urls)
-                                 })
-        @codex.run(prompt: prompt, json_schema: PLAN_SCHEMA)
-      end
-
       def vision_call(image_paths)
         prompt = render_template("vision.txt", {})
         @codex.run(prompt: prompt, images: image_paths,
                    json_schema: { "type" => "object", "properties" => { "captions" => { "type" => "object" }, "ocr" => { "type" => "object" } } })
+      end
+
+      def fetch_link_blobs(bookmark)
+        candidate_external_links(bookmark).first(3).filter_map { |url| @link_fetcher.fetch(url) }
+      end
+
+      def candidate_external_links(bookmark)
+        Array(bookmark.urls).filter_map { |url| expanded_url(url) }.uniq.select { |url| external_article_url?(url) }
+      end
+
+      def expanded_url(url)
+        return url if url.is_a?(String)
+        url[:expanded_url] || url["expanded_url"] || url[:url] || url["url"]
+      end
+
+      def external_article_url?(url)
+        uri = URI.parse(url.to_s)
+        return false unless %w[http https].include?(uri.scheme)
+        host = uri.host.to_s.downcase
+        return false if host.empty?
+        !x_host?(host)
+      rescue URI::InvalidURIError
+        false
+      end
+
+      def x_host?(host)
+        host == "x.com" || host.end_with?(".x.com") ||
+          host == "twitter.com" || host.end_with?(".twitter.com") ||
+          host == "t.co" || host.end_with?(".t.co")
       end
 
       def final_call(bookmark, transcripts:, link_blobs:, vision:, image_paths:)
@@ -136,14 +133,15 @@ module Xbookmark
                                    link_blobs: format_link_blobs(link_blobs),
                                    existing_slugs: @existing_slugs.first(50).join(", ")
                                  })
-        @codex.run(prompt: prompt, images: image_paths, json_schema: FINAL_SCHEMA)
+        @codex.run(prompt: prompt, images: image_paths, json_schema: FINAL_SCHEMA, timeout: timeout_for_images(image_paths))
       end
 
       def retry_required_fields(bookmark, **args)
         prompt_extra = "\n\nIMPORTANT: tags AND entities arrays MUST contain at least one entry each. " \
                        "Re-derive both from the tweet, transcripts, vision, and link extracts. " \
                        "Return JSON only with the same schema."
-        @codex.run(prompt: build_retry_prompt(bookmark, **args, extra: prompt_extra), images: args[:image_paths], json_schema: FINAL_SCHEMA)
+        @codex.run(prompt: build_retry_prompt(bookmark, **args, extra: prompt_extra), images: args[:image_paths],
+                   json_schema: FINAL_SCHEMA, timeout: timeout_for_images(args[:image_paths]))
       rescue Xbookmark::CodexError, Xbookmark::PermanentError
         # Best-effort second pass — fall back to the first call's partial
         # result. A schema mismatch on the retry still leaves the original
@@ -163,14 +161,8 @@ module Xbookmark
                         }) + extra
       end
 
-      def media_summary_for(bookmark)
-        return "none" if bookmark.media.nil? || bookmark.media.empty?
-        bookmark.media.map { |m| "#{m.type}#{m.alt_text ? " (alt: #{m.alt_text[0, 60]})" : ""}" }.join(", ")
-      end
-
-      def format_links(urls)
-        return "none" if urls.nil? || urls.empty?
-        urls.map { |u| u[:expanded_url] || u[:url] }.compact.first(3).join(", ")
+      def timeout_for_images(image_paths)
+        Array(image_paths).empty? ? Xbookmark::Enrich::Codex::DEFAULT_TIMEOUT : IMAGE_TIMEOUT
       end
 
       def format_vision(vision)

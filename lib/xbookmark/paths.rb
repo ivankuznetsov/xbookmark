@@ -32,12 +32,16 @@ module Xbookmark
       File.join(xdg_config_home, "xbookmark")
     end
 
-    def default_vault_dir
+    def default_wiki_dir
       if macos? && ENV["XDG_DATA_HOME"].to_s.empty?
-        File.join(home, "Library", "Application Support", "xbookmark-vault")
+        File.join(home, "Library", "Application Support", "xbookmark-wiki")
       else
-        File.join(xdg_data_home, "xbookmark-vault")
+        File.join(xdg_data_home, "xbookmark-wiki")
       end
+    end
+
+    def default_vault_dir
+      default_wiki_dir
     end
 
     def default_logs_dir

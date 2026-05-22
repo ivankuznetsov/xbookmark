@@ -2,6 +2,7 @@
 
 require "thor"
 require "fileutils"
+require "io/console"
 require_relative "../paths"
 require_relative "../keystore"
 require_relative "../keystore/importer"
@@ -48,7 +49,7 @@ module Xbookmark
 
         prompt_for_missing_keys
 
-        offer_scheduler_install
+        install_scheduler
 
         say ""
         say "[xbookmark] setup complete. Run `xbookmark doctor` to confirm."
@@ -58,19 +59,26 @@ module Xbookmark
       # Returns 0 when the wizard is satisfied; non-zero otherwise.
       # Used by the first-run hook before invoking any other subcommand.
       def self.first_run_check!(input: $stdin, output: $stdout, keystore: Xbookmark::Keystore.default)
-        return 0 if configured?(keystore: keystore)
-        return 0 if env_file_present? # legacy .env covers the required keys
+        return 0 if first_run_configured?(keystore: keystore)
         return 0 unless input.respond_to?(:tty?) && input.tty?
         output.puts "[xbookmark] first run detected — launching setup wizard."
         new([], input: input, output: output, keystore: keystore).execute
+      end
+
+      def self.first_run_configured?(keystore: Xbookmark::Keystore.default)
+        configured?(keystore: keystore) || env_file_configured?
       end
 
       def self.configured?(keystore: Xbookmark::Keystore.default)
         Xbookmark::Config::REQUIRED_KEYS.all? { |k| !keystore.get(k).to_s.empty? }
       end
 
-      def self.env_file_present?
-        [Xbookmark::Paths.project_env_path, Xbookmark::Paths.user_env_path].any? { |p| File.file?(p) }
+      def self.env_file_configured?
+        env = ENV.to_h.dup
+        Xbookmark::Config.load_env_files!(cwd: Dir.pwd, env: env)
+        Xbookmark::Config::REQUIRED_KEYS.all? { |k| env[k] && !env[k].to_s.strip.empty? }
+      rescue StandardError
+        false
       end
 
       private
@@ -122,10 +130,8 @@ module Xbookmark
         end
       end
 
-      def offer_scheduler_install
+      def install_scheduler
         say ""
-        return unless yes_no?("Enable daily sync on login?", default: true)
-
         installer = @scheduler || begin
           config = Xbookmark::Config.load
           Xbookmark::Scheduler::Installer.new(config: config)

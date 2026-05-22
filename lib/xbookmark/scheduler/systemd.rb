@@ -34,7 +34,7 @@ module Xbookmark
         run("systemctl", "--user", "daemon-reload")
         run("systemctl", "--user", "enable", "--now", TIMER)
         warn "[xbookmark] systemd timer installed. Logs: #{log_path}"
-        warn "[xbookmark] note: run `loginctl enable-linger $USER` to fire while logged out." unless lingering?
+        ensure_lingering!
       end
 
       def uninstall(time: nil, dry_run: false)
@@ -61,7 +61,7 @@ module Xbookmark
         bin = xbookmark_bin
         <<~UNIT
           [Unit]
-          Description=xbookmark sync — pull new X bookmarks into the local vault
+          Description=xbookmark sync — pull new X bookmarks into the local bookmark wiki
           After=network-online.target
           Wants=network-online.target
 
@@ -101,6 +101,20 @@ module Xbookmark
         @lingering = out.to_s.include?("Linger=yes")
       rescue StandardError
         @lingering = false
+      end
+
+      def ensure_lingering!
+        return if lingering?
+
+        user = ENV.fetch("USER", "user")
+        if run("loginctl", "enable-linger", user)
+          @lingering = true
+          warn "[xbookmark] systemd linger enabled; timer can run while logged out."
+        else
+          warn "[xbookmark] warning: could not enable systemd linger automatically. Run `loginctl enable-linger #{user}` to let the timer fire while logged out."
+        end
+      rescue StandardError
+        warn "[xbookmark] warning: could not enable systemd linger automatically. Run `loginctl enable-linger #{ENV.fetch('USER', 'user')}` to let the timer fire while logged out."
       end
 
       def run(*argv)

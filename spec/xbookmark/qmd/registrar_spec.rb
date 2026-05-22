@@ -21,11 +21,11 @@ RSpec.describe Xbookmark::Qmd::Registrar do
     calls = []
     runner = ->(argv) {
       calls << argv
-      if argv[1] == "list" && calls.size > 1
+      if argv[1..2] == %w[collection list] && calls.size > 1
         ["bookmarks #{File.join(vault, 'bookmarks')}\n", "", DummyStatus.new(0)]
-      elsif argv[1] == "list"
+      elsif argv[1..2] == %w[collection list]
         ["", "", DummyStatus.new(0)]
-      elsif argv[1] == "register" || argv[1] == "index"
+      elsif argv[1..2] == %w[collection add]
         ["", "", DummyStatus.new(0)]
       else
         ["", "", DummyStatus.new(0)]
@@ -35,8 +35,26 @@ RSpec.describe Xbookmark::Qmd::Registrar do
     described_class.new(config: config, runner: runner).ensure_registered!
     described_class.new(config: config, runner: runner).ensure_registered!
 
-    register_calls = calls.count { |argv| argv[1] == "register" }
+    register_calls = calls.count { |argv| argv[1..2] == %w[collection add] }
     expect(register_calls).to eq(1)
+  end
+
+  it "falls back to legacy qmd register and index commands" do
+    calls = []
+    runner = ->(argv) {
+      calls << argv
+      case argv[1..2]
+      when %w[collection list], %w[collection add]
+        ["", "Unknown command", DummyStatus.new(1)]
+      else
+        ["", "", DummyStatus.new(0)]
+      end
+    }
+
+    described_class.new(config: config, runner: runner).ensure_registered!
+
+    expect(calls).to include(["qmd", "register", "--name", "bookmarks", "--path", File.join(vault, "bookmarks")])
+    expect(calls).to include(["qmd", "index", "--collection", "bookmarks"])
   end
 
   DummyStatus = Struct.new(:exit_status) do

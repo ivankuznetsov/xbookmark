@@ -35,8 +35,8 @@ fpm \
   --version "$VERSION" \
   --architecture amd64 \
   --maintainer "Ivan Kuznetsov <ivan@ikuznetsov.com>" \
-  --description "Sync X (Twitter) bookmarks into a local Obsidian + QMD vault." \
-  --url "https://github.com/asterio/xbookmark" \
+  --description "Sync X (Twitter) bookmarks into a local Obsidian-ready bookmark wiki." \
+  --url "https://github.com/ivankuznetsov/xbookmark" \
   --license "MIT" \
   --depends "ffmpeg" \
   --after-install "$(dirname "$0")/postinst" \

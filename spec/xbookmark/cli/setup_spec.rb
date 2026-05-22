@@ -26,7 +26,7 @@ RSpec.describe Xbookmark::CLI::Setup do
   end
 
   it "prompts for every REQUIRED_KEY when keystore is empty" do
-    input_lines.replace(["abc", "42", "secret", "", "n"])
+    input_lines.replace(["abc", "42", "secret", ""])
     run_setup
     expect(keystore.get("X_CLIENT_ID")).to eq("abc")
     expect(keystore.get("X_USER_ID")).to eq("42")
@@ -37,7 +37,7 @@ RSpec.describe Xbookmark::CLI::Setup do
   it "skips prompts for keys already set" do
     keystore.set("X_CLIENT_ID", "preset")
     keystore.set("X_USER_ID", "preset")
-    input_lines.replace(["", "", "n"]) # skip optionals, decline scheduler
+    input_lines.replace(["", ""]) # skip optionals
     run_setup
     expect(output.string).to include("X_CLIENT_ID: already set (skipping)")
     expect(output.string).to include("X_USER_ID: already set (skipping)")
@@ -50,8 +50,8 @@ RSpec.describe Xbookmark::CLI::Setup do
       allow(Xbookmark::Paths).to receive(:project_env_path).and_return(env_path)
       allow(Xbookmark::Paths).to receive(:user_env_path).and_return("/nonexistent")
 
-      # answers: import? yes, delete file? no, optionals empty, scheduler? no
-      input_lines.replace(["y", "n", "", "", "n"])
+      # answers: import? yes, delete file? no, optionals empty
+      input_lines.replace(["y", "n", "", ""])
       run_setup
       expect(keystore.get("X_CLIENT_ID")).to eq("from-env")
       expect(keystore.get("X_USER_ID")).to eq("99")
@@ -66,14 +66,14 @@ RSpec.describe Xbookmark::CLI::Setup do
       allow(Xbookmark::Paths).to receive(:project_env_path).and_return(env_path)
       allow(Xbookmark::Paths).to receive(:user_env_path).and_return("/nonexistent")
 
-      input_lines.replace(["y", "y", "", "", "n"])
+      input_lines.replace(["y", "y", "", ""])
       run_setup
       expect(File.file?(env_path)).to be false
     end
   end
 
-  it "calls Scheduler::Installer when the user confirms" do
-    input_lines.replace(["abc", "42", "", "", "y"])
+  it "installs the scheduler after setup without another prompt" do
+    input_lines.replace(["abc", "42", "", ""])
     expect(scheduler).to receive(:install)
     run_setup
   end
@@ -110,6 +110,17 @@ RSpec.describe Xbookmark::CLI::Setup do
       def input_io.tty?; false; end
       out = StringIO.new
       expect(described_class.first_run_check!(input: input_io, output: out, keystore: keystore)).to eq(0)
+    end
+
+    it "does not treat an incomplete env file as configured" do
+      Dir.mktmpdir do |dir|
+        env_path = File.join(dir, ".env")
+        File.write(env_path, "X_CLIENT_ID=abc\n")
+        allow(Xbookmark::Paths).to receive(:project_env_path).and_return(env_path)
+        allow(Xbookmark::Paths).to receive(:user_env_path).and_return("/nonexistent")
+
+        expect(described_class.env_file_configured?).to be(false)
+      end
     end
   end
 end

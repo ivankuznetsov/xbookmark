@@ -1,53 +1,42 @@
 ---
 title: Active Areas
 type: active-areas
-source: git log --name-only; git worktree list; .hive-state/stages/**/task.md; ../xbookmark.worktrees/*/git log
+source: git log --name-only; git status; README.md; lib/xbookmark/config.rb; lib/xbookmark/cli.rb
 created: 2026-05-14
-updated: 2026-05-14
+updated: 2026-05-22
 tags: [activity]
 ---
 
-**TLDR**: `main` has almost no source activity, but Hive worktrees show active CLI implementation and README/spec review work with recent wiki context restoration.
+**TLDR**: Production backfill reliability work has landed on `main`; the remaining live proof gap is that the X API currently exposes fewer than 100 bookmarks for this account.
 
-## Main Branch
+## Active Branch
 
-- `99559b4 chore: ignore .hive-state worktree`
-- `e960fed Initial commit`
+`main` includes the production setup/backfill fixes from PRs 10-12:
 
-Tracked source on `main` remains limited to `.gitignore` and `LICENSE`.
+- README setup now runs `bin/xbookmark install` as a required daily scheduler step instead of asking whether to install it.
+- Linux scheduler setup tries to enable systemd linger through `loginctl enable-linger <user>` so the daily timer can fire after logout.
+- Media downloads no longer impose the old 200 MB default cap; full-size X media is downloaded.
+- `WHISPER_MODEL=base.en` resolves to a local whisper.cpp `ggml-base.en.bin` model file when using `whisper-cli`/`whisper-cpp`; setup docs now include the model download step.
+- Whisper transcription extracts downloaded video audio with `ffmpeg`, treats no-audio MP4s as empty transcripts, uses duration-aware timeouts, and runs whisper.cpp with up to 8 CPU threads by default.
+- Large backfills now skip separate aux-page LLM summaries by default; author/topic/entity/thread pages are still written for Obsidian graph/backlinks, and `XBOOKMARK_AUX_SUMMARIES=true` restores the extra summaries.
+- `Xbookmark::Qmd::Registrar` tries current `qmd collection list`/`collection add` first and preserves legacy command fallbacks.
+- `Xbookmark::Enrich::Codex` unwraps current `codex exec --json` `item.completed` agent messages.
+- Specs cover the README setup contract, legacy registrar fallback, scheduler linger setup, and current Codex JSON event parsing.
+- The earlier `XBOOKMARK_WIKI_PATH` runtime wiki terminology is already on `main`.
+- Production verification and reusable lessons are summarized in [[live-production-learnings]].
 
-## Completed Implementation Worktree
+## Setup Reliability
 
-Branch `i-want-to-create-a-260504-1253` is marked complete in `.hive-state/stages/7-done/.../task.md` and contains the Ruby CLI implementation.
+The README now describes only implemented setup commands:
 
-Recent visible commits on that branch include:
+- `bin/xbookmark auth login`
+- `bin/xbookmark auth status`
+- `bin/xbookmark install`
+- `bin/xbookmark backfill [--limit N]`
+- `bin/xbookmark sync`
+- `bin/xbookmark find QUERY [--limit N]`
+- `bin/xbookmark install [--time HH:MM] [--dry-run] [--uninstall]`
 
-- `8f45a6d docs: clarify bookmarked_at semantics, drop Windows-only PATHEXT lookup`
-- `6ce9f75 fix(sync): only stamp last_sync on real runs, ensure qmd registration in reindex`
-- `ac74988 fix(render): stable bookmark date fallback, Obsidian-friendly media embeds`
-- `f49328e fix(qmd): surface JSON parse errors, exact collection match, require fileutils`
-- `d6c28ad fix(whisper): raise WhisperUnavailable for subprocess failure, bound runtime`
-- `950cd09 fix(link-fetcher): block SSRF to private/loopback/metadata addresses`
-- Earlier feature commits added scaffold/config, state, X API auth/client, media, transcription, enrichment, rendering, sync, CLI, QMD, scheduler, and acceptance tests.
-
-`git diff main...HEAD` in that worktree reports 72 files and 5155 insertions, including `Gemfile`, `xbookmark.gemspec`, `bin/xbookmark`, `lib/xbookmark/**/*.rb`, and `spec/**/*.rb`.
-
-## Active README Review Worktree
-
-Branch `create-proper-readme-md-for-260513-2ba1` is in `.hive-state/stages/5-review/...` and reached a pass-4 fix-guardrail wait after commit `8e6ad0e`.
-
-Recent visible commits on that branch include:
-
-- `8e6ad0e docs(readme): resolve pass 04 review findings`
-- `7d9fd00 docs(env): warn that .env.example must stay credential-free`
-- `66dd62c docs(readme): apply triage fix pass 04`
-- `b9a6482 fix(gitignore): ignore /.env to prevent X credential leaks`
-- Prior commits build the README sections and add `docs/assets/demo.gif`.
-
-`git diff main...HEAD` in that worktree reports README, `.env.example`, `.gitignore`, demo asset, managed `.llm-wiki/` scripts/config, agent context files, `raw/notes/.gitkeep`, and wiki pages.
-
-## Current Working Tree
-
-After unsetting wrapper-provided `GIT_DIR`/`GIT_INDEX_FILE`, `git status --short --untracked-files=all` in the README review worktree showed only this refresh's wiki edits.
+Deferred command shapes such as `schedule`, `auth refresh/logout`, `enrich`, `--config`, `backfill --since`, and `find --json` should stay out of setup docs until implemented.
 
 Related: [[architecture]], [[commands]], [[api]], [[dependencies]], [[gaps]].

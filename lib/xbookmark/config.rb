@@ -25,20 +25,21 @@ module Xbookmark
       :qmd_bin,
       :daily_sync_time,
       :min_run_interval_hours,
+      :aux_summaries,
       :env_file,
       :verbose,
       keyword_init: true
     ) unless defined?(Struct::XbookmarkConfig)
 
     class << self
-      def load(vault_override: nil, cwd: Dir.pwd, env: ENV.to_h.dup, verbose: false, keystore: :auto)
+      def load(wiki_override: nil, vault_override: nil, cwd: Dir.pwd, env: ENV.to_h.dup, verbose: false, keystore: :auto)
         loaded_env_files = load_env_files!(cwd: cwd, env: env)
         hydrate_from_keystore!(env, keystore: keystore)
         merged = env
 
         validate_required!(merged)
 
-        vault_path = vault_override || merged["XBOOKMARK_VAULT"] || default_vault_dir(merged)
+        vault_path = first_present(wiki_override, vault_override, configured_wiki_path(merged)) || default_wiki_dir(merged)
         vault_path = File.expand_path(vault_path)
 
         state_db_path = File.join(vault_path, ".xbookmark", "state.db")
@@ -63,6 +64,7 @@ module Xbookmark
           qmd_bin: merged["QMD_BIN"] || "qmd",
           daily_sync_time: merged["XBOOKMARK_DAILY_TIME"] || "06:00",
           min_run_interval_hours: (merged["XBOOKMARK_MIN_RUN_INTERVAL_HOURS"] || "20").to_f,
+          aux_summaries: truthy?(merged["XBOOKMARK_AUX_SUMMARIES"]),
           env_file: loaded_env_files.first,
           verbose: verbose
         )
@@ -127,13 +129,25 @@ module Xbookmark
         nil
       end
 
-      def default_vault_dir(env)
+      def truthy?(value)
+        %w[1 true yes on].include?(value.to_s.strip.downcase)
+      end
+
+      def configured_wiki_path(env)
+        first_present(env["XBOOKMARK_WIKI_PATH"], env["XBOOKMARK_VAULT"], env["OBSIDIAN_VAULT_PATH"])
+      end
+
+      def first_present(*values)
+        values.find { |value| value && !value.to_s.strip.empty? }
+      end
+
+      def default_wiki_dir(env)
         if Paths.macos? && env["XDG_DATA_HOME"].to_s.empty?
-          File.join(Paths.home, "Library", "Application Support", "xbookmark-vault")
+          File.join(Paths.home, "Library", "Application Support", "xbookmark-wiki")
         elsif env["XDG_DATA_HOME"] && !env["XDG_DATA_HOME"].to_s.empty?
-          File.join(env["XDG_DATA_HOME"], "xbookmark-vault")
+          File.join(env["XDG_DATA_HOME"], "xbookmark-wiki")
         else
-          File.join(Paths.home, ".local", "share", "xbookmark-vault")
+          File.join(Paths.home, ".local", "share", "xbookmark-wiki")
         end
       end
 

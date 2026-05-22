@@ -21,14 +21,14 @@ module Xbookmark
         require_relative "../x/auth"
         require_relative "../x/client"
 
-        config = Xbookmark::Config.load(vault_override: options[:vault], verbose: options[:verbose])
+        config = Xbookmark::Config.load(wiki_override: options[:wiki], vault_override: options[:vault], verbose: options[:verbose])
         store  = Xbookmark::State::Store.new(config.state_db_path)
         client = Xbookmark::X::Client.new(config: config, store: store)
         runner = Xbookmark::Sync::Runner.new(config: config, store: store, x_client: client)
 
         mode  = options[:limit] ? :backfill_limited : :backfill_full
         report = runner.run(mode: mode, limit: options[:limit])
-        puts report.to_s
+        puts report
         exit_with(report)
       end
 
@@ -38,13 +38,13 @@ module Xbookmark
         require_relative "../state/store"
         require_relative "../x/client"
 
-        config = Xbookmark::Config.load(vault_override: options[:vault], verbose: options[:verbose])
+        config = Xbookmark::Config.load(wiki_override: options[:wiki], vault_override: options[:vault], verbose: options[:verbose])
         store  = Xbookmark::State::Store.new(config.state_db_path)
         client = Xbookmark::X::Client.new(config: config, store: store)
         runner = Xbookmark::Sync::Runner.new(config: config, store: store, x_client: client)
 
         report = runner.run(mode: :sync, from_scheduler: options[:"from-scheduler"])
-        puts report.to_s
+        puts report
         exit_with(report)
       end
 
@@ -54,13 +54,13 @@ module Xbookmark
         require_relative "../state/store"
         require_relative "../x/client"
 
-        config = Xbookmark::Config.load(vault_override: options[:vault], verbose: options[:verbose])
+        config = Xbookmark::Config.load(wiki_override: options[:wiki], vault_override: options[:vault], verbose: options[:verbose])
         store  = Xbookmark::State::Store.new(config.state_db_path)
         client = Xbookmark::X::Client.new(config: config, store: store)
         runner = Xbookmark::Sync::Runner.new(config: config, store: store, x_client: client)
 
         report = runner.run(mode: :resync, tweet_id: tweet_id)
-        puts report.to_s
+        puts report
         exit_with(report)
       end
 

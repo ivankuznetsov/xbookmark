@@ -2,6 +2,7 @@
 
 require "xbookmark/media/downloader"
 require "xbookmark/x/bookmark"
+require "tempfile"
 
 RSpec.describe Xbookmark::Media::Downloader do
   let(:photo) do
@@ -57,5 +58,41 @@ RSpec.describe Xbookmark::Media::Downloader do
       stub_request(:get, "https://x/missing.jpg").to_return(status: 404)
       expect { described_class.new.download([bad], dir) }.to raise_error(Xbookmark::MediaError)
     end
+  end
+
+  it "does not impose a download size cap by default" do
+    tempfile = Tempfile.new("xbookmark-media")
+    tempfile.write("large")
+    tempfile.flush
+
+    allow(Down).to receive(:download).and_return(tempfile)
+
+    Dir.mktmpdir do |dir|
+      described_class.new.download([video], dir)
+    end
+
+    expect(Down).to have_received(:download)
+      .with("https://x/hi.mp4", open_timeout: 30, read_timeout: 30)
+  ensure
+    tempfile&.close
+    tempfile&.unlink
+  end
+
+  it "passes an explicit download size cap when configured" do
+    tempfile = Tempfile.new("xbookmark-media")
+    tempfile.write("capped")
+    tempfile.flush
+
+    allow(Down).to receive(:download).and_return(tempfile)
+
+    Dir.mktmpdir do |dir|
+      described_class.new(max_bytes: 123).download([video], dir)
+    end
+
+    expect(Down).to have_received(:download)
+      .with("https://x/hi.mp4", open_timeout: 30, read_timeout: 30, max_size: 123)
+  ensure
+    tempfile&.close
+    tempfile&.unlink
   end
 end

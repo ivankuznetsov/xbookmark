@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build-linux:
@@ -110,9 +110,11 @@ jobs:
           path: "xbookmark_*_amd64.deb"
 
   draft-release:
-    name: Draft GitHub Release
+    name: Create smokeable prerelease
     needs: [build-linux, build-macos, build-deb]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -122,7 +124,7 @@ jobs:
         run: |
           cd dist
           cat */*.sha256 > SHA256SUMS
-      - name: Create draft release
+      - name: Create prerelease
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
@@ -130,7 +132,7 @@ jobs:
         run: |
           gh release create "$TAG" \
             --title "$TAG" \
-            --draft \
+            --prerelease \
             --notes "Automated release for $TAG. See https://github.com/$REPO_FULL/blob/main/CHANGELOG.md" \
             dist/xbookmark-x86_64-linux/xbookmark-x86_64-linux \
             dist/xbookmark-arm64-darwin/xbookmark-arm64-darwin \
@@ -148,29 +150,41 @@ jobs:
         env:
           XBOOKMARK_TAG: ${{ github.ref_name }}
           XBOOKMARK_REPO: ${{ github.repository }}
-          XBOOKMARK_FORCE_BINARY: "1" # gem is not published in this pipeline
         run: sh ./install.sh
       - name: Smoke
         run: |
           export PATH="$HOME/.local/bin:$PATH"
           xbookmark version
-          xbookmark doctor || true
+          X_CLIENT_ID=dummy X_USER_ID=0 XBOOKMARK_WIKI_PATH=/tmp/xbookmark-wiki xbookmark doctor
           xbookmark uninstall --purge --yes
 
   smoke-brew:
-    name: Smoke-test Homebrew tap
+    name: Smoke-test Homebrew formula
     needs: draft-release
     runs-on: macos-14
-    continue-on-error: true # tap may not yet exist on first release
     steps:
-      - name: Tap + install
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: xbookmark-arm64-darwin
+          path: tap-binary
+      - name: Render local formula
+        env:
+          TAG: ${{ github.ref_name }}
+          REPO_FULL: ${{ github.repository }}
         run: |
-          brew tap ivankuznetsov/tap || true
-          brew install ivankuznetsov/tap/xbookmark
+          VERSION="${TAG#v}"
+          SHA=$(awk '{print $1}' tap-binary/xbookmark-arm64-darwin.sha256)
+          sed -e "s/__VERSION__/${VERSION}/g" \
+              -e "s/__REPO__/${REPO_FULL//\//\\/}/g" \
+              -e "s/__SHA256__/${SHA}/g" \
+              packaging/homebrew/xbookmark.rb.erb > xbookmark.rb
+      - name: Install local formula
+        run: brew install ./xbookmark.rb
       - name: Smoke
         run: |
           xbookmark version
-          xbookmark doctor || true
+          X_CLIENT_ID=dummy X_USER_ID=0 XBOOKMARK_WIKI_PATH=/tmp/xbookmark-wiki xbookmark doctor
           xbookmark uninstall --purge --yes
 
   smoke-aur:
@@ -180,24 +194,31 @@ jobs:
     container: archlinux:latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: xbookmark-x86_64-linux
+          path: aur-binary
       - name: Bootstrap arch container
         run: |
           pacman -Syu --noconfirm base-devel git sudo
           useradd -m build
           echo "build ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
-          cp packaging/aur/PKGBUILD.template /home/build/PKGBUILD
+          VERSION="${GITHUB_REF_NAME#v}"
+          SHA=$(awk '{print $1}' aur-binary/xbookmark-x86_64-linux.sha256)
+          sed -e "s/__VERSION__/${VERSION}/g" \
+              -e "s/__REPO__/${GITHUB_REPOSITORY//\//\\/}/g" \
+              -e "s/__SHA256__/${SHA}/g" \
+              packaging/aur/PKGBUILD.template > /home/build/PKGBUILD
+          cp packaging/aur/xbookmark.install /home/build/xbookmark.install
           chown -R build:build /home/build
       - name: makepkg
-        env:
-          TAG: ${{ github.ref_name }}
         run: |
           cd /home/build
-          sudo -u build sed -i "s/__VERSION__/${TAG#v}/g" PKGBUILD
           sudo -u build makepkg --noconfirm -si
       - name: Smoke
         run: |
           xbookmark version
-          xbookmark doctor || true
+          X_CLIENT_ID=dummy X_USER_ID=0 XBOOKMARK_WIKI_PATH=/tmp/xbookmark-wiki xbookmark doctor
           xbookmark uninstall --purge --yes
 
   smoke-deb:
@@ -215,21 +236,23 @@ jobs:
       - name: Smoke
         run: |
           xbookmark version
-          xbookmark doctor || true
+          X_CLIENT_ID=dummy X_USER_ID=0 XBOOKMARK_WIKI_PATH=/tmp/xbookmark-wiki xbookmark doctor
           xbookmark uninstall --purge --yes
 
   promote-latest:
     name: Promote release to latest
     needs: [smoke-curl, smoke-brew, smoke-aur, smoke-deb]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Promote
         env:
-            GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-            TAG: ${{ github.ref_name }}
-            REPO_FULL: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          REPO_FULL: ${{ github.repository }}
         run: |
-          gh release edit "$TAG" --draft=false --latest --repo "$REPO_FULL"
+          gh release edit "$TAG" --prerelease=false --latest --repo "$REPO_FULL"
 
   update-tap:
     name: Update Homebrew tap
@@ -299,6 +322,7 @@ jobs:
         with:
           pkgname: xbookmark
           pkgbuild: PKGBUILD
+          assets: packaging/aur/xbookmark.install
           commit_username: xbookmark-bot
           commit_email: xbookmark-bot@users.noreply.github.com
           ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}

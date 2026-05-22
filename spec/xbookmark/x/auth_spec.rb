@@ -23,6 +23,7 @@ RSpec.describe Xbookmark::X::Auth do
       qmd_bin: "qmd",
       daily_sync_time: "06:00",
       min_run_interval_hours: 20.0,
+      aux_summaries: false,
       env_file: env_path,
       verbose: false
     )
@@ -52,6 +53,32 @@ RSpec.describe Xbookmark::X::Auth do
       auth = described_class.new(config, opener: false, env_path: env_path)
       auth.write_tokens!({ "access_token" => "ACC2", "expires_in" => 60 }, preserve_refresh: true)
       expect(File.read(env_path)).to include("X_REFRESH_TOKEN=KEEP")
+    end
+  end
+
+  it "writes tokens to the keystore when no env file is loaded" do
+    keystore = Xbookmark::Keystore.new(backend: Xbookmark::Keystore::Memory.new)
+    config = fake_config(env_path: nil)
+    auth = described_class.new(config, opener: false, keystore: keystore)
+
+    auth.write_tokens!({ "access_token" => "ACC", "refresh_token" => "REF", "expires_in" => 7200 })
+
+    expect(keystore.get("X_ACCESS_TOKEN")).to eq("ACC")
+    expect(keystore.get("X_REFRESH_TOKEN")).to eq("REF")
+    expect(keystore.get("X_TOKEN_EXPIRES_AT")).to match(/\A\d+\z/)
+  end
+
+  it "keeps rotating tokens out of Keychain argv by using the stable user env file" do
+    Dir.mktmpdir do |dir|
+      env_path = File.join(dir, ".env")
+      backend = instance_double("KeychainBackend", name: "keychain")
+      keychain = Xbookmark::Keystore.new(backend: backend)
+      allow(Xbookmark::Paths).to receive(:user_env_path).and_return(env_path)
+
+      auth = described_class.new(fake_config(env_path: nil), opener: false, keystore: keychain)
+      auth.write_tokens!({ "access_token" => "ACC", "refresh_token" => "REF", "expires_in" => 7200 })
+
+      expect(File.read(env_path)).to include("X_ACCESS_TOKEN=ACC")
     end
   end
 

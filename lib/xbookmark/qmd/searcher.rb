@@ -25,7 +25,7 @@ module Xbookmark
           warn "[xbookmark] qmd query failed: #{err}"
           return []
         end
-        parse(out)
+        parse(out).first(limit.to_i)
       rescue Errno::ENOENT
         warn "[xbookmark] qmd binary not found at #{@config.qmd_bin}; install qmd or set QMD_BIN."
         []
