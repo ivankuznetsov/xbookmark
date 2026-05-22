@@ -37,7 +37,7 @@ module Xbookmark
 
         validate_required!(merged)
 
-        vault_path = wiki_override || vault_override || configured_wiki_path(merged) || default_wiki_dir(merged)
+        vault_path = first_present(wiki_override, vault_override, configured_wiki_path(merged)) || default_wiki_dir(merged)
         vault_path = File.expand_path(vault_path)
 
         state_db_path = File.join(vault_path, ".xbookmark", "state.db")
@@ -102,7 +102,11 @@ module Xbookmark
       end
 
       def configured_wiki_path(env)
-        env["XBOOKMARK_WIKI_PATH"] || env["XBOOKMARK_VAULT"] || env["OBSIDIAN_VAULT_PATH"]
+        first_present(env["XBOOKMARK_WIKI_PATH"], env["XBOOKMARK_VAULT"], env["OBSIDIAN_VAULT_PATH"])
+      end
+
+      def first_present(*values)
+        values.find { |value| value && !value.to_s.strip.empty? }
       end
 
       def default_wiki_dir(env)

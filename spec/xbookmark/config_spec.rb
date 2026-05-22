@@ -55,7 +55,17 @@ RSpec.describe Xbookmark::Config do
       config = described_class.load(cwd: cwd, env: {})
       expect(config.vault_path).to eq("/custom/wiki")
 
-      override = described_class.load(cwd: cwd, env: {}, wiki_override: "/override/wiki")
+      File.write(File.join(cwd, ".env"), <<~ENV)
+        X_CLIENT_ID=abc
+        X_USER_ID=42
+        XBOOKMARK_WIKI_PATH=/new/wiki
+        XBOOKMARK_VAULT=/legacy/vault
+        OBSIDIAN_VAULT_PATH=/legacy/obsidian
+      ENV
+      precedence = described_class.load(cwd: cwd, env: {})
+      expect(precedence.vault_path).to eq("/new/wiki")
+
+      override = described_class.load(cwd: cwd, env: {}, wiki_override: "/override/wiki", vault_override: "/override/vault")
       expect(override.vault_path).to eq("/override/wiki")
     end
   end
@@ -72,6 +82,24 @@ RSpec.describe Xbookmark::Config do
 
       override = described_class.load(cwd: cwd, env: {}, vault_override: "/override/vault")
       expect(override.vault_path).to eq("/override/vault")
+    end
+  end
+
+  it "ignores blank wiki path values when falling back" do
+    stub_platform_linux
+    with_tmp_home do |home|
+      Dir.mktmpdir do |cwd|
+        File.write(File.join(cwd, ".env"), "X_CLIENT_ID=abc\nX_USER_ID=42\nXBOOKMARK_WIKI_PATH=\nXBOOKMARK_VAULT=/legacy/vault\n")
+        legacy = described_class.load(cwd: cwd, env: {})
+        expect(legacy.vault_path).to eq("/legacy/vault")
+
+        File.write(File.join(cwd, ".env"), "X_CLIENT_ID=abc\nX_USER_ID=42\nXBOOKMARK_WIKI_PATH=\nXBOOKMARK_VAULT=\nOBSIDIAN_VAULT_PATH=\n")
+        default = described_class.load(cwd: cwd, env: {})
+        expect(default.vault_path).to eq(File.join(home, ".local", "share", "xbookmark-wiki"))
+
+        override = described_class.load(cwd: cwd, env: {}, wiki_override: "", vault_override: "/override/vault")
+        expect(override.vault_path).to eq("/override/vault")
+      end
     end
   end
 end

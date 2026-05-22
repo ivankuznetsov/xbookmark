@@ -270,7 +270,7 @@ bookmarks/2026/05/1789012345678901234.md  "Rails 8.0 ships with..."  @dhh
 bookmarks/2026/04/1788123456789012345.md  "A small Rails tip..."     @rosa
 ```
 
-`find` searches the entire wiki, so matches can span multiple month partitions
+`find` searches the entire bookmark wiki, so matches can span multiple month partitions
 in a single result set. The default `--type lex` sends a QMD lexical query:
 whitespace separates required terms, quoted text is matched as a phrase, and
 v1 does not support regex, prefix wildcards, or boolean operators. Use
