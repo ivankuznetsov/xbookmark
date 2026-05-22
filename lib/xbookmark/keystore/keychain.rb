@@ -7,14 +7,6 @@ module Xbookmark
     # macOS Keychain backend.  Shells out to `security` from Apple's
     # Security framework.
     class Keychain
-      def self.available?
-        ENV.fetch("PATH", "").split(File::PATH_SEPARATOR).each do |dir|
-          full = File.join(dir, "security")
-          return true if File.executable?(full) && !File.directory?(full)
-        end
-        false
-      end
-
       def name
         "keychain"
       end

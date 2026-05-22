@@ -6,10 +6,6 @@ module Xbookmark
     # callers that want to pre-seed values without touching the real
     # platform keychain or `.env` file.
     class Memory
-      def self.available?
-        true
-      end
-
       def initialize(initial = {})
         @data = initial.dup
       end

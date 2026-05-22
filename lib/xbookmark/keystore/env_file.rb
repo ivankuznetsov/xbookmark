@@ -9,10 +9,6 @@ module Xbookmark
     # The file is written with mode 0600 so the secrets are not group/
     # world-readable.
     class EnvFile
-      def self.available?
-        true # always usable as a fallback
-      end
-
       def initialize(path: nil)
         @path = path || default_path
       end
