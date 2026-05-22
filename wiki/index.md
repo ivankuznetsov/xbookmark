@@ -9,7 +9,7 @@ tags: [index, wiki]
 
 **TLDR**: Catalog of the LLM-maintained wiki for `xbookmark`.
 
-Page count: 10
+Page count: 11
 Updated: 2026-05-22
 
 ## Core Pages
@@ -21,6 +21,7 @@ Updated: 2026-05-22
 - [[dependencies]] - Ruby gem dependencies, external CLIs, X API, and local scheduler dependencies.
 - [[decisions]] - Repository, workflow, runtime, and setup decisions grounded in code/history.
 - [[active-areas]] - Current scheduler setup and QMD registration work on top of `main`.
+- [[live-production-learnings]] - Production backfill lessons, source limits, media/transcript fixes, QMD behavior, and reusable verification commands.
 
 ## Maintenance Pages
 

@@ -248,9 +248,15 @@ Example output:
 processed=100 written=100 skipped=0 failed=0 permanent_errors=0
 ```
 
-Without `--limit`, `backfill` paginates through all available bookmarks. With
-`--limit`, it stops after that many bookmarks, which is useful for testing a
-new setup.
+Without `--limit`, `backfill` paginates through all bookmarks currently exposed
+by the X API. With `--limit`, it stops after that many new bookmarks, which is
+useful for testing a new setup. X's bookmark endpoint allows at most 100 results
+per API page; xbookmark follows `meta.next_token` until X stops returning one.
+If X returns fewer bookmarks than your requested limit and no `next_token`, the
+source account/API state does not expose more bookmarks to ingest.
+
+Backfill is idempotent. Rerunning it skips bookmarks already marked `done`, and
+bookmark/media paths are deterministic by tweet ID.
 
 ### find
 
@@ -402,6 +408,11 @@ Run `codex login` again, then re-run `bin/xbookmark sync` or `bin/xbookmark back
 
 **X API rate-limited me.**
 `backfill` respects the published `bookmark.read` rate limits but a long backfill can still hit the current rate-limit window. Lower `--limit` and re-run later, or schedule a daily ingest instead. The X API [rate-limit reference](https://docs.x.com/x-api/fundamentals/rate-limits) on `docs.x.com` lists the current numbers.
+
+**Can I fetch more than 100 bookmarks at once?**
+No. X rejects bookmark requests with `max_results` above 100. To fetch more than
+100 total bookmarks, keep `max_results` at 100 and follow `meta.next_token`;
+xbookmark does this automatically during `backfill`.
 
 **Where are my markdown files?**
 Under `$XBOOKMARK_WIKI_PATH/bookmarks/YYYY/MM/DD/<id>.md`. The `bin/xbookmark find` output prints these paths so you can open them in your editor directly, or `cd "$(dirname ...)"` into the containing folder.

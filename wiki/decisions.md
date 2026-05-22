@@ -41,7 +41,8 @@ tags: [decisions]
 
 ## Recent History Signals
 
-- `main`: `b62f955 Merge pull request #9 from ivankuznetsov/ci/hive-style-checks`, which includes the runtime source and Hive-style CI.
-- Current branch: `fix/default-scheduler-install`, which makes `bin/xbookmark install` part of the default setup, enables systemd linger during Linux setup when possible, and aligns QMD registration with current CLI shape.
+- `main`: `3e6bbb0 Merge pull request #12 from ivankuznetsov/fix/find-limit-enforcement`, after the production setup/backfill hardening PRs landed.
+- Production validation showed the X bookmark endpoint currently exposes 98 live bookmark IDs with no `next_token`; the remaining 100-bookmark proof is source-data-limited rather than an xbookmark duplicate/pagination bug.
+- The most important production findings are summarized in [[live-production-learnings]].
 
 Related: [[architecture]], [[commands]], [[api]], [[data-model]], [[active-areas]], [[gaps]].
