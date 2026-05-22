@@ -1,17 +1,17 @@
 ---
 title: API Surface
 type: api
-source: lib/xbookmark/x/auth.rb; lib/xbookmark/x/client.rb; lib/xbookmark/qmd/searcher.rb; README.md; .env.example
+source: lib/xbookmark/x/auth.rb; lib/xbookmark/x/client.rb; lib/xbookmark/qmd/registrar.rb; lib/xbookmark/qmd/searcher.rb; README.md; .env.example
 created: 2026-05-14
 updated: 2026-05-22
 tags: [api, x-api, oauth, cli]
 ---
 
-**TLDR**: `xbookmark` has no web app routes; its external surface is a CLI, X API v2 calls, a temporary local OAuth callback, and QMD subprocess calls.
+**TLDR**: `xbookmark` has no web app routes; its external surface is a CLI, X API v2 calls, a temporary local OAuth callback, and QMD registration/search subprocess calls.
 
 ## Scope
 
-API facts are taken from the active PR branch and its README.
+API facts are taken from the current branch and its README.
 
 ## HTTP Routes
 
@@ -39,9 +39,13 @@ During `auth login`, `Xbookmark::X::Auth` starts a temporary WEBrick loopback se
 
 Requests include tweet, user, media, and expansion fields defined in `Xbookmark::X::Client`. The client retries selected 5xx responses through Faraday, refreshes once on 401 when a refresh token is present, raises `RateLimited` on 429, and raises transient errors for other non-success responses.
 
-## QMD Search Surface
+## QMD Subprocess Surface
 
 - Collection name is `bookmarks`.
+- `Qmd::Registrar#registered?` invokes `qmd collection list` first and falls back to legacy `qmd list`.
+- `Qmd::Registrar#register!` creates `<bookmark-wiki>/bookmarks`, invokes `qmd collection add <path> --name bookmarks`, and treats that current command as already indexed.
+- If the current registration command fails, the registrar falls back to legacy `qmd register --name bookmarks --path <path>` and then indexes with `qmd index --collection bookmarks`.
+- If legacy indexing fails, the registrar falls back once more to `qmd update` before warning.
 - `Qmd::Searcher` invokes `qmd query --collection bookmarks --types lex,vec --limit N --json QUERY`.
 - The CLI currently prints numbered text results with score, path, and optional snippet.
 

@@ -7,17 +7,17 @@ updated: 2026-05-22
 tags: [activity]
 ---
 
-**TLDR**: Current work is focused on making new xbookmark setups follow the implemented CLI, install the daily scheduler by default, and separate the runtime bookmark wiki from this repository's project LLM wiki.
+**TLDR**: Current work is focused on making new xbookmark setups install the daily scheduler by default, enabling Linux timers after logout, and keeping QMD registration compatible with current and legacy command shapes.
 
-## Active PR
+## Active Branch
 
-Branch `fix/wiki-path-config` updates the public setup contract and runtime terminology:
+Branch `fix/default-scheduler-install` is ahead of `main`:
 
-- Preferred runtime output path is `XBOOKMARK_WIKI_PATH`.
-- The runtime bookmark wiki is standalone and can be opened from Obsidian later.
-- The repository `wiki/` remains the project LLM wiki and is not the runtime output directory.
-- `--wiki` is the preferred CLI override; `--vault`, `XBOOKMARK_VAULT`, and `OBSIDIAN_VAULT_PATH` remain compatibility aliases.
-- New defaults use `xbookmark-wiki`; no migration from the previous local `xbookmark-vault` name is needed before release.
+- README setup now runs `bin/xbookmark install` as a required daily scheduler step instead of asking whether to install it.
+- Linux scheduler setup tries to enable systemd linger through `loginctl enable-linger <user>` so the daily timer can fire after logout.
+- `Xbookmark::Qmd::Registrar` tries current `qmd collection list`/`collection add` first and preserves legacy command fallbacks.
+- Specs cover the README setup contract and legacy registrar fallback.
+- The earlier `XBOOKMARK_WIKI_PATH` runtime wiki terminology is already on `main`.
 
 ## Setup Reliability
 

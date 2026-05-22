@@ -1,7 +1,7 @@
 ---
 title: Commands
 type: commands
-source: bin/xbookmark; lib/xbookmark/cli.rb; lib/xbookmark/cli/*.rb; lib/xbookmark/config.rb; README.md; .env.example
+source: bin/xbookmark; lib/xbookmark/cli.rb; lib/xbookmark/cli/*.rb; lib/xbookmark/config.rb; lib/xbookmark/qmd/registrar.rb; README.md; .env.example
 created: 2026-05-14
 updated: 2026-05-22
 tags: [commands, cli]
@@ -17,7 +17,7 @@ The README agent prompt should only reference implemented commands. A new setup 
 2. Copy `.env.example` to `.env`.
 3. Fill `X_CLIENT_ID`, `X_USER_ID`, optional `X_CLIENT_SECRET`, `X_REDIRECT_URI`, and `XBOOKMARK_WIKI_PATH`.
 4. Run `bin/xbookmark auth login`.
-5. Run `bin/xbookmark install` to install the daily scheduler.
+5. Run `bin/xbookmark install` to install the daily scheduler and, on Linux, enable systemd linger when possible.
 6. Verify with `bin/xbookmark --version` and `bin/xbookmark auth status`.
 
 The runtime bookmark wiki created at `XBOOKMARK_WIKI_PATH` is separate from this repository's project LLM wiki in `wiki/`.
@@ -33,7 +33,7 @@ The runtime bookmark wiki created at `XBOOKMARK_WIKI_PATH` is separate from this
 - `xbookmark resync TWEET_ID` re-fetches and reprocesses one tweet.
 - `xbookmark find QUERY [--limit N]` searches the QMD `bookmarks` collection and prints numbered text results. `Qmd::Searcher` invokes `qmd query --collection bookmarks --types lex,vec --limit N --json QUERY`.
 - `xbookmark doctor` checks platform, scheduler backend, bookmark wiki path, state DB path, `codex`, whisper, `qmd`, and X auth token presence.
-- `xbookmark install [--time HH:MM] [--dry-run] [--uninstall]` installs or removes the daily scheduler and registers QMD when installing.
+- `xbookmark install [--time HH:MM] [--dry-run] [--uninstall]` installs or removes the daily scheduler and registers QMD when installing. Linux installs also try to enable systemd linger so the timer can fire after logout.
 
 Global options visible in `Xbookmark::CLI` are `--wiki`, `--vault` as a legacy alias, and `--verbose`.
 
@@ -43,7 +43,9 @@ Configuration loaded by these commands comes from `XBOOKMARK_ENV_FILE`, `$PWD/.e
 
 - `backfill`, `sync`, and `resync` all load config, open the SQLite state store, create an X API client, and delegate to `Xbookmark::Sync::Runner`.
 - `find` delegates to `Xbookmark::Qmd::Searcher`.
-- `install` delegates to `Xbookmark::Scheduler::Factory` and `Xbookmark::Qmd::Registrar`. The registrar supports current QMD `collection add` and legacy `register`/`index` command shapes.
+- `install` delegates to `Xbookmark::Scheduler::Factory` and, when installing for real, `Xbookmark::Qmd::Registrar`; `--dry-run` and `--uninstall` do not register QMD.
+- `Xbookmark::Scheduler::Systemd` writes and enables the user timer, then runs `loginctl enable-linger <user>` when linger is not already enabled; failure is non-fatal and prints the manual command.
+- The registrar supports current QMD `collection list`/`collection add` command shapes and legacy `list`/`register`/`index` fallbacks, with `qmd update` as the final legacy indexing fallback.
 - `doctor` performs local binary and auth checks without running a sync.
 
 ## Deferred Public Surface

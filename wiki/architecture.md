@@ -11,7 +11,8 @@ tags: [architecture]
 
 ## Repository Shape
 
-- `main` historically tracked only `.gitignore` and `LICENSE`; the active PR carries the runtime CLI, README, env template, and project wiki updates.
+- `main` now tracks the runtime CLI, README, env template, CI config, specs, and project wiki after the README/wiki-path and CI work landed.
+- Current branch `fix/default-scheduler-install` has README setup changes, Linux linger enablement for scheduled timers, and QMD registrar compatibility fixes.
 - `.hive-state/config.yml` identifies the project as `xbookmark`, default branch `main`, worktree root `/home/asterio/Dev/xbookmark.worktrees`, and Hive review settings.
 
 ## Runtime CLI
@@ -26,8 +27,8 @@ The application is a Ruby command-line application named `xbookmark`. Its runtim
 - Media and transcription: `Xbookmark::Media::Downloader` downloads X media, and `Xbookmark::Transcribe::Whisper` shells out to a local whisper backend.
 - Enrichment: `Xbookmark::Enrich::Orchestrator` calls `Xbookmark::Enrich::Codex`, fetches allowed external links, runs image OCR/captioning, and returns structured enrichment data.
 - Rendering: `Xbookmark::Render::BookmarkRenderer` writes per-bookmark markdown; `Xbookmark::Render::AuxPage` maintains author, topic, entity, and thread pages.
-- Search: `Xbookmark::Qmd::Registrar` registers/indexes the `bookmarks` QMD collection; `Xbookmark::Qmd::Searcher` shells out to `qmd query`.
-- Scheduling: `Xbookmark::Scheduler::Systemd` installs a user timer on Linux; `Xbookmark::Scheduler::Launchd` installs a launch agent on macOS.
+- Search: `Xbookmark::Qmd::Registrar` registers the `bookmarks` QMD collection through current `qmd collection` commands with legacy fallbacks; `Xbookmark::Qmd::Searcher` shells out to `qmd query`.
+- Scheduling: `Xbookmark::Scheduler::Systemd` installs a user timer on Linux and tries to enable user linger; `Xbookmark::Scheduler::Launchd` installs a launch agent on macOS.
 
 Related details: [[commands]], [[data-model]], [[dependencies]].
 

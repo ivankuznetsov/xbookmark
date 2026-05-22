@@ -282,12 +282,15 @@ bin/xbookmark install --uninstall
 
 The scheduler is always daily. `--time` defaults to `06:00` local time.
 `--dry-run` prints the scheduler artifact without writing it. On Linux,
-xbookmark installs a systemd user timer. On macOS, it installs a launchd agent.
+xbookmark installs a systemd user timer and enables systemd linger for the
+current user when possible, so the timer can fire after logout. On macOS, it
+installs a launchd agent.
 
 Example output on Linux with systemd:
 
 ```
 [xbookmark] systemd timer installed. Logs: ~/.local/state/xbookmark/sync.log
+[xbookmark] systemd linger enabled; timer can run while logged out.
 ```
 
 Example output on macOS:
@@ -363,7 +366,9 @@ the scheduler artifact, either as a systemd `EnvironmentFile` or launchd
 `XBOOKMARK_ENV_FILE` environment variable.
 
 Scheduler selection is platform-based: macOS uses launchd, and Linux uses a
-systemd user timer.
+systemd user timer. Linux installs also try to enable systemd linger for the
+current user; if your system refuses that step, xbookmark prints the
+`loginctl enable-linger <user>` command to run manually.
 
 The artifact written depends on your OS:
 

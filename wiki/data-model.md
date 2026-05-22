@@ -11,7 +11,7 @@ tags: [data, sqlite, bookmark-wiki]
 
 ## Scope
 
-The data model is branch-scoped to `i-want-to-create-a-260504-1253`. The `main` branch does not yet track this runtime code or schema.
+The data model is tracked on `main`. Current branch `fix/default-scheduler-install` does not change the SQLite schema or bookmark wiki layout.
 
 ## SQLite State DB
 
