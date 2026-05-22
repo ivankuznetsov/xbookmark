@@ -17,7 +17,7 @@ The README agent prompt should only reference implemented commands. A new setup 
 2. Copy `.env.example` to `.env`.
 3. Fill `X_CLIENT_ID`, `X_USER_ID`, optional `X_CLIENT_SECRET`, `X_REDIRECT_URI`, and `XBOOKMARK_WIKI_PATH`.
 4. Run `bin/xbookmark auth login`.
-5. Optionally run `bin/xbookmark install` to install the daily scheduler.
+5. Run `bin/xbookmark install` to install the daily scheduler.
 6. Verify with `bin/xbookmark --version` and `bin/xbookmark auth status`.
 
 The runtime bookmark wiki created at `XBOOKMARK_WIKI_PATH` is separate from this repository's project LLM wiki in `wiki/`.
@@ -43,7 +43,7 @@ Configuration loaded by these commands comes from `XBOOKMARK_ENV_FILE`, `$PWD/.e
 
 - `backfill`, `sync`, and `resync` all load config, open the SQLite state store, create an X API client, and delegate to `Xbookmark::Sync::Runner`.
 - `find` delegates to `Xbookmark::Qmd::Searcher`.
-- `install` delegates to `Xbookmark::Scheduler::Factory` and `Xbookmark::Qmd::Registrar`.
+- `install` delegates to `Xbookmark::Scheduler::Factory` and `Xbookmark::Qmd::Registrar`. The registrar supports current QMD `collection add` and legacy `register`/`index` command shapes.
 - `doctor` performs local binary and auth checks without running a sync.
 
 ## Deferred Public Surface

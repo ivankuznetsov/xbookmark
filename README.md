@@ -30,6 +30,7 @@ Stop here and edit `.env` to fill in `X_CLIENT_ID`, `X_USER_ID`, and `XBOOKMARK_
 
 ```bash
 bin/xbookmark auth login
+bin/xbookmark install
 bin/xbookmark backfill --limit 100
 bin/xbookmark find 'rails'
 ```
@@ -51,7 +52,7 @@ Install and configure xbookmark from https://github.com/ivankuznetsov/xbookmark 
 1. Read README.md from that repo and follow the Installation section that matches my operating system.
 2. Follow the Configuration section: copy .env.example to .env, ask me for my X developer Client ID, numeric X user ID, and bookmark wiki path, and fill them in. Leave X_CLIENT_SECRET blank unless I say my X app is a confidential client.
 3. Run `bin/xbookmark auth login` so I can sign in to X in my browser.
-4. Ask me whether to install the daily scheduler (`bin/xbookmark install`).
+4. Install the daily scheduler with `bin/xbookmark install`.
 5. Verify with `bin/xbookmark --version` and `bin/xbookmark auth status`, then report the output.
 
 Stop and ask me before installing system packages with sudo, and before any step that would overwrite a file in my home directory.

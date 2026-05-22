@@ -28,13 +28,13 @@ tags: [decisions]
 - Use Codex headless CLI for LLM enrichment instead of a direct provider SDK.
 - Use local Whisper tooling for audio/video transcription.
 - Register and query a QMD collection named `bookmarks`.
-- Use systemd user timers on Linux and launchd on macOS for daily sync.
+- Use systemd user timers on Linux and launchd on macOS for daily sync, and make scheduler installation part of the default setup flow.
 - Fail closed for external link fetch safety by rejecting private, loopback, link-local, reserved, multicast, and metadata-address ranges.
 
 ## README Setup Decisions
 
 - The README agent prompt must only reference commands that exist in the CLI so fresh installs work without manual correction.
-- `bin/xbookmark install` is the scheduler command; do not document `schedule install/status/uninstall` until those subcommands exist.
+- `bin/xbookmark install` is the scheduler command and default setup step; do not document `schedule install/status/uninstall` until those subcommands exist.
 - `XBOOKMARK_ENV_FILE` is the alternate config-file selector; do not document `--config` or `XBOOKMARK_CONFIG` until implemented.
 - `XBOOKMARK_WIKI_PATH` and `--wiki` are the preferred bookmark wiki path controls. `XBOOKMARK_VAULT`, `OBSIDIAN_VAULT_PATH`, and `--vault` remain compatibility aliases.
 - `auth login` binds the callback host/port from `X_REDIRECT_URI`; there is no `auth login --port` option.

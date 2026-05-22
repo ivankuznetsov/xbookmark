@@ -6,6 +6,7 @@ RSpec.describe "README setup contract" do
   it "points new setups at the implemented scheduler command" do
     expect(readme).to include("bin/xbookmark install")
     expect(readme).not_to include("bin/xbookmark schedule")
+    expect(readme).not_to include("Ask me whether to install")
   end
 
   it "does not document deferred commands or config flags as available" do

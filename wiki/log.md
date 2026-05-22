@@ -59,3 +59,9 @@ Append-only log of meaningful wiki updates.
 **Pages updated:** wiki/dependencies.md, wiki/log.md
 **Decision:** CI runs RSpec, RuboCop with the 37signals omakase base, Brakeman, and bundler-audit. The local RuboCop config keeps xbookmark's existing array-bracket style to avoid a broad mechanical rewrite.
 **Source:** Hive `.github/workflows/ci.yml`, Hive Dependabot/PR template, xbookmark Gemfile, `.rubocop.yml`, `.github/workflows/ci.yml`, and local check outputs.
+
+## [2026-05-22T15:23:06Z] default scheduler setup refresh
+
+**Action:** Made daily scheduler installation part of the default setup contract and aligned QMD registration with the installed `qmd collection add` CLI while preserving legacy command fallback.
+**Pages updated:** wiki/commands.md, wiki/gaps.md, wiki/decisions.md, wiki/active-areas.md, wiki/log.md
+**Source:** `README.md`, `lib/xbookmark/qmd/registrar.rb`, `spec/xbookmark/qmd/registrar_spec.rb`, production install output.

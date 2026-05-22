@@ -7,7 +7,7 @@ updated: 2026-05-22
 tags: [activity]
 ---
 
-**TLDR**: Current work is focused on making new xbookmark setups follow the implemented CLI and on separating the runtime bookmark wiki from this repository's project LLM wiki.
+**TLDR**: Current work is focused on making new xbookmark setups follow the implemented CLI, install the daily scheduler by default, and separate the runtime bookmark wiki from this repository's project LLM wiki.
 
 ## Active PR
 
@@ -25,6 +25,7 @@ The README now describes only implemented setup commands:
 
 - `bin/xbookmark auth login`
 - `bin/xbookmark auth status`
+- `bin/xbookmark install`
 - `bin/xbookmark backfill [--limit N]`
 - `bin/xbookmark sync`
 - `bin/xbookmark find QUERY [--limit N]`
