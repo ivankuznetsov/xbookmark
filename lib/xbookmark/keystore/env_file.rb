@@ -9,12 +9,10 @@ module Xbookmark
     # The file is written with mode 0600 so the secrets are not group/
     # world-readable.
     class EnvFile
+      attr_reader :path
+
       def initialize(path: nil)
         @path = path || default_path
-      end
-
-      def path
-        @path
       end
 
       def name
