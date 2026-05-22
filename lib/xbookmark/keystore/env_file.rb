@@ -68,7 +68,13 @@ module Xbookmark
           k, _eq, v = line.partition("=")
           next if k.empty?
           # Strip surrounding quotes that dotenv-style writers add.
-          v = v.sub(/\A"(.*)"\z/, '\1').sub(/\A'(.*)'\z/, '\1')
+          # Inside double-quoted values, also unescape `\"` so secrets
+          # containing literal `"` round-trip without growing backslashes.
+          if (m = v.match(/\A"(.*)"\z/))
+            v = m[1].gsub(/\\"/, '"')
+          else
+            v = v.sub(/\A'(.*)'\z/, '\1')
+          end
           entries[k] = v
         end
         entries

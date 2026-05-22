@@ -140,6 +140,23 @@ RSpec.describe Xbookmark::Keystore::EnvFile do
       expect(backend.list_accounts).to contain_exactly("x_client_id", "x_user_id")
     end
   end
+
+  it "round-trips values containing inner double quotes without backslash accumulation" do
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, ".env")
+      backend = described_class.new(path: path)
+      secret = %q(s"e"cret)
+
+      backend.set(:x_client_secret, secret)
+      expect(backend.get(:x_client_secret)).to eq(secret)
+
+      # Re-write the same value and confirm it still reads back identical —
+      # this catches a writer that escapes on every set but a reader that
+      # never unescapes (each round adds one backslash).
+      backend.set(:x_client_secret, backend.get(:x_client_secret))
+      expect(backend.get(:x_client_secret)).to eq(secret)
+    end
+  end
 end
 
 RSpec.describe Xbookmark::Keystore::Importer do
