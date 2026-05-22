@@ -9,6 +9,8 @@ Transcripts (if any):
 %{transcripts}
 Image OCR / captions (if any):
 %{vision_blob}
+If images are attached to this request, inspect them directly and fill
+image_captions / image_ocr when useful.
 Linked article extracts (if any):
 %{link_blobs}
 Existing topic/entity slugs already in the bookmark wiki (use these instead of

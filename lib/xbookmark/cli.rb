@@ -54,6 +54,11 @@ module Xbookmark
     desc "find QUERY", "Search the bookmark wiki via QMD"
     method_option :limit, type: :numeric, default: 20
     def find(*query)
+      if query.empty? || [%w[--help], %w[-h]].include?(query)
+        self.class.command_help(shell, "find")
+        return
+      end
+
       Xbookmark::CLI::Find.new([], options).find_run(query.join(" "))
     end
 

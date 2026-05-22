@@ -27,6 +27,7 @@ module Xbookmark
         puts "state db: #{config.state_db_path}"
 
         check_bin("codex", config.codex_bin)
+        check_bin("ffmpeg", "ffmpeg")
         whisper = Xbookmark::Transcribe::Whisper.detect(config.whisper_bin)
         if whisper
           puts "whisper: ok (#{whisper})"

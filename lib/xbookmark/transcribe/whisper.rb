@@ -2,7 +2,11 @@
 
 require "open3"
 require "fileutils"
+require "etc"
 require "shellwords"
+require "tmpdir"
+
+require_relative "../../xbookmark"
 
 module Xbookmark
   module Transcribe
@@ -10,6 +14,9 @@ module Xbookmark
       CANDIDATE_BINS = %w[whisper-cli whisper-cpp whisper faster-whisper].freeze
       MIN_DURATION_MS = 1500
       DEFAULT_TIMEOUT = 300 # seconds — bound the whisper subprocess
+      TIMEOUT_SECONDS_PER_AUDIO_SECOND = 3
+      TIMEOUT_PADDING_SECONDS = 120
+      DEFAULT_THREADS = [[Etc.nprocessors, 8].min, 1].max
 
       class << self
         # Probes the configured / PATH for a known whisper binary.
@@ -50,19 +57,66 @@ module Xbookmark
         raise Xbookmark::WhisperUnavailable, "no whisper binary found in PATH" unless bin
 
         out_path = "#{media_path}.transcript.txt"
-        text = run_binary(bin, media_path)
+        text = transcribe_input(bin, media_path, duration_ms: duration_ms)
         File.write(out_path, text)
         text
       end
 
       private
 
-      def run_binary(bin, media_path)
+      def transcribe_input(bin, media_path, duration_ms:)
+        timeout = timeout_for(duration_ms)
+        return run_binary(bin, media_path) if @runner
+        return run_binary(bin, media_path, timeout: timeout) if wav_file?(media_path)
+
+        with_extracted_audio(media_path, timeout: timeout) do |audio_path|
+          run_binary(bin, audio_path, timeout: timeout)
+        end
+      end
+
+      def timeout_for(duration_ms)
+        return @timeout unless duration_ms
+
+        seconds = duration_ms.to_f / 1000
+        [@timeout, (seconds * TIMEOUT_SECONDS_PER_AUDIO_SECOND).ceil + TIMEOUT_PADDING_SECONDS].max
+      end
+
+      def wav_file?(media_path)
+        %w[.wav .wave].include?(File.extname(media_path).downcase)
+      end
+
+      def with_extracted_audio(media_path, timeout:)
+        ffmpeg = self.class.which("ffmpeg")
+        raise Xbookmark::WhisperUnavailable, "ffmpeg not found in PATH" unless ffmpeg
+
+        Dir.mktmpdir("xbookmark-whisper-") do |dir|
+          audio_path = File.join(dir, "#{File.basename(media_path, ".*")}.wav")
+          out, err, status = run_with_timeout(
+            [ffmpeg, "-y", "-v", "error", "-i", media_path, "-vn", "-ac", "1", "-ar", "16000", "-f", "wav", audio_path],
+            timeout
+          )
+
+          unless status.success? && File.size?(audio_path)
+            message = err.to_s.strip.empty? ? out.to_s.strip : err.to_s.strip
+            return "" if no_audio_stream?(message)
+
+            raise Xbookmark::WhisperUnavailable, "ffmpeg audio extraction failed: #{message}"
+          end
+
+          yield audio_path
+        end
+      end
+
+      def no_audio_stream?(message)
+        message.match?(/does not contain any stream|matches no streams|no audio streams?/i)
+      end
+
+      def run_binary(bin, media_path, timeout: @timeout)
         if @runner
           return @runner.call(bin, media_path, @model)
         end
         argv = build_argv(bin, media_path)
-        out, err, status = run_with_timeout(argv, @timeout)
+        out, err, status = run_with_timeout(argv, timeout)
         unless status.success?
           # Whisper failures belong in the WhisperUnavailable taxonomy —
           # the previous CodexError tag misled logs into blaming the LLM
@@ -75,8 +129,8 @@ module Xbookmark
       def run_with_timeout(argv, timeout)
         Open3.popen3(*argv) do |stdin, stdout, stderr, wait_thr|
           stdin.close
-          out_reader = Thread.new { stdout.read }
-          err_reader = Thread.new { stderr.read }
+          out_reader = Thread.new { stdout.read rescue "" }
+          err_reader = Thread.new { stderr.read rescue "" }
 
           if wait_thr.join(timeout).nil?
             pid = wait_thr.pid
@@ -99,13 +153,19 @@ module Xbookmark
         when "faster-whisper"
           [bin, "--model", @model, "--output", "-", media_path]
         when "whisper-cpp"
-          [bin, "--model", whisper_cpp_model(bin), "--output_format", "txt", "--output_dir", "-", media_path]
+          [bin, "--model", whisper_cpp_model(bin), "--threads", whisper_threads.to_s,
+           "--output_format", "txt", "--output_dir", "-", media_path]
         when "whisper"
           [bin, "--model", @model, "--output_format", "txt", "--output_dir", "-", media_path]
         else
           # whisper-cli (whisper.cpp): output to stdout via -nt -np
-          [bin, "-m", whisper_cpp_model(bin), "-nt", "-np", "-f", media_path]
+          [bin, "-m", whisper_cpp_model(bin), "-t", whisper_threads.to_s, "-nt", "-np", "-f", media_path]
         end
+      end
+
+      def whisper_threads
+        configured = ENV["WHISPER_THREADS"].to_i
+        configured.positive? ? configured : DEFAULT_THREADS
       end
 
       def whisper_cpp_model(bin)

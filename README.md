@@ -68,6 +68,7 @@ If you prefer to run the steps yourself, jump to [Installation](#installation) a
 - Full-text search over the bookmark wiki via a local QMD index (a markdown full-text search engine).
 - LLM enrichment (summary, tags) via the [`codex`](https://github.com/openai/codex) CLI.
 - Local Whisper transcription of audio and video linked from a bookmark.
+- Obsidian graph landing pages for authors, topics, entities, and threads.
 - Official X API v2 only, via OAuth 2.0 with PKCE.
 - MIT-licensed and runs entirely on your machine.
 
@@ -193,7 +194,11 @@ Install the [`codex` CLI](https://github.com/openai/codex), run `codex login` on
 
 ### Whisper backend
 
-Set `WHISPER_BACKEND` to either `whisper.cpp` (default, fast on CPU, one-time C++ build) or `faster-whisper` (Python, GPU-friendly) and ensure the matching backend is on your `PATH` — see [Prerequisites](#prerequisites). `WHISPER_MODEL` defaults to `base.en`; v1 accepts `tiny.en`, `base.en`, `small.en`, `medium.en`, `tiny`, `base`, `small`, `medium`, and `large-v3`. For `whisper.cpp`, model aliases resolve to `ggml-<model>.bin` in `WHISPER_MODEL_DIR`, the source checkout's `models/` directory next to `whisper-cli`, or `./models`.
+Set `WHISPER_BACKEND` to either `whisper.cpp` (default, fast on CPU, one-time C++ build) or `faster-whisper` (Python, GPU-friendly) and ensure the matching backend is on your `PATH` — see [Prerequisites](#prerequisites). `WHISPER_MODEL` defaults to `base.en`; v1 accepts `tiny.en`, `base.en`, `small.en`, `medium.en`, `tiny`, `base`, `small`, `medium`, and `large-v3`. For `whisper.cpp`, model aliases resolve to `ggml-<model>.bin` in `WHISPER_MODEL_DIR`, the source checkout's `models/` directory next to `whisper-cli`, or `./models`. `WHISPER_THREADS` optionally overrides the whisper.cpp CPU thread count; when it is blank, xbookmark uses up to 8 local CPU threads.
+
+### Aux page summaries
+
+Every enriched bookmark links to author, topic, entity, and thread landing pages so Obsidian's graph and backlinks work during large backfills. By default those landing pages are lightweight placeholders to keep the main bookmark pipeline fast. Set `XBOOKMARK_AUX_SUMMARIES=true` if you also want xbookmark to ask Codex for separate author/topic/entity page summaries during sync; that can add several extra LLM calls per bookmark.
 
 ### Bookmark wiki path
 
@@ -390,7 +395,7 @@ If the X token refresh fails during a scheduled run, the job exits non-zero and 
 xbookmark uses the official paid X API; see [What this will cost](#what-this-will-cost) in Configuration. Local LLM enrichment and Whisper transcription are free per-call, but you pay for whatever provider you point `codex` at.
 
 **Whisper transcription is slow.**
-The default is `WHISPER_MODEL=base.en`. Switch to a smaller accepted model such as `tiny.en`, or switch backend to `faster-whisper` and run it on a GPU. The [whisper.cpp build docs](https://github.com/ggml-org/whisper.cpp#quick-start) cover Metal, CUDA, and OpenBLAS acceleration.
+The default is `WHISPER_MODEL=base.en`. xbookmark extracts downloaded video audio with `ffmpeg`, runs whisper.cpp with up to 8 CPU threads by default, and extends the subprocess timeout for long videos based on their duration. For faster runs, set `WHISPER_THREADS` to a higher value your machine can spare, switch to a smaller accepted model such as `tiny.en`, or switch backend to `faster-whisper` and run it on a GPU. The [whisper.cpp build docs](https://github.com/ggml-org/whisper.cpp#quick-start) cover Metal, CUDA, and OpenBLAS acceleration.
 
 **codex auth expired.**
 Run `codex login` again, then re-run `bin/xbookmark sync` or `bin/xbookmark backfill --limit 100` — bookmarks left without `enriched_at` will be retried on the next pass.

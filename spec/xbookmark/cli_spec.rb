@@ -26,6 +26,12 @@ RSpec.describe Xbookmark::CLI do
     expect(out).to include("Override the bookmark wiki path")
   end
 
+  it "shows find help instead of searching for --help" do
+    out = capture_stdout { described_class.start(%w[find --help]) }
+    expect(out).to include("find QUERY")
+    expect(out).to include("Search the bookmark wiki via QMD")
+  end
+
   it "passes --wiki to top-level command handlers" do
     fake = instance_double(Xbookmark::CLI::Doctor, execute: nil)
     expect(Xbookmark::CLI::Doctor).to receive(:new) do |args, options|
