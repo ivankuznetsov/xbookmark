@@ -29,9 +29,8 @@ RSpec.describe Xbookmark::Enrich::Orchestrator do
     end
   end
 
-  it "happy path: plan -> link fetch -> final returns full result" do
+  it "happy path: fetches external links directly and final returns full result" do
     fake = FakeCodex.new
-    fake.push({ "fetch_external_links" => ["https://example.com/a"], "summarize_quoted_tweet" => false, "needs_image_ocr" => false })
     fake.push({
       "summary" => "Talks about ozempic dosing.",
       "tags" => ["health"],
@@ -52,11 +51,11 @@ RSpec.describe Xbookmark::Enrich::Orchestrator do
     # "Linked Articles" section without re-fetching.
     expect(result.link_blobs.size).to eq(1)
     expect(result.link_blobs.first[:url]).to eq("https://example.com/a")
+    expect(fake.calls.size).to eq(1)
   end
 
   it "marks result partial when retry still has empty required fields" do
     fake = FakeCodex.new
-    fake.push({ "fetch_external_links" => [], "summarize_quoted_tweet" => false, "needs_image_ocr" => false })
     fake.push({ "summary" => "x", "tags" => [], "topics" => ["t"], "entities" => [] })
     fake.push({ "summary" => "x", "tags" => [], "topics" => ["t"], "entities" => [] })
 
@@ -68,7 +67,6 @@ RSpec.describe Xbookmark::Enrich::Orchestrator do
 
   it "successful retry overwrites partial result" do
     fake = FakeCodex.new
-    fake.push({ "fetch_external_links" => [], "summarize_quoted_tweet" => false, "needs_image_ocr" => false })
     fake.push({ "summary" => "x", "tags" => [], "topics" => ["t"], "entities" => [] })
     fake.push({ "summary" => "x", "tags" => ["a"], "topics" => ["t"], "entities" => ["e"] })
 
@@ -78,5 +76,22 @@ RSpec.describe Xbookmark::Enrich::Orchestrator do
     expect(result.partial?).to be(false)
     expect(result.tags).to eq(["a"])
     expect(result.entities).to eq(["e"])
+  end
+
+  it "does not fetch X media/status URLs as article context" do
+    bookmark.urls = [{ url: "https://t.co/v", expanded_url: "https://x.com/alice/status/1/video/1" }]
+    fake = FakeCodex.new.push({
+      "summary" => "x",
+      "tags" => ["t"],
+      "topics" => ["topic"],
+      "entities" => ["entity"]
+    })
+
+    codex = Xbookmark::Enrich::Codex.new(bin: "codex", runner: fake)
+    orch = described_class.new(codex: codex, link_fetcher: link_fetcher)
+    result = orch.enrich(bookmark)
+
+    expect(result.link_blobs).to be_empty
+    expect(link_fetcher).not_to have_received(:fetch)
   end
 end

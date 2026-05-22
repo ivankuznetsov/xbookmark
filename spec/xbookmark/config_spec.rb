@@ -102,4 +102,14 @@ RSpec.describe Xbookmark::Config do
       end
     end
   end
+
+  it "keeps aux page summaries disabled unless explicitly enabled" do
+    Dir.mktmpdir do |cwd|
+      File.write(File.join(cwd, ".env"), "X_CLIENT_ID=abc\nX_USER_ID=42\n")
+      expect(described_class.load(cwd: cwd, env: {}).aux_summaries).to be(false)
+
+      File.write(File.join(cwd, ".env"), "X_CLIENT_ID=abc\nX_USER_ID=42\nXBOOKMARK_AUX_SUMMARIES=true\n")
+      expect(described_class.load(cwd: cwd, env: {}).aux_summaries).to be(true)
+    end
+  end
 end

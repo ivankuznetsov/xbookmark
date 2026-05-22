@@ -105,17 +105,18 @@ module Xbookmark
       end
 
       def ensure_aux_pages(bookmark, enrichment)
+        aux_orchestrator = @config.respond_to?(:aux_summaries) && @config.aux_summaries ? @orch : nil
         author = Xbookmark::Render::Wikilinks.author_slug(bookmark.author_handle)
-        author_page = Xbookmark::Render::AuthorPage.new(vault_path: @config.vault_path, store: @store, orchestrator: @orch)
+        author_page = Xbookmark::Render::AuthorPage.new(vault_path: @config.vault_path, store: @store, orchestrator: aux_orchestrator)
         snippet = bookmark.text.to_s
         author_page.ensure!(slug: author, label: "@#{bookmark.author_handle}", inputs: [snippet])
 
-        topic_page = Xbookmark::Render::TopicPage.new(vault_path: @config.vault_path, store: @store, orchestrator: @orch)
+        topic_page = Xbookmark::Render::TopicPage.new(vault_path: @config.vault_path, store: @store, orchestrator: aux_orchestrator)
         Array(enrichment.topics).each do |t|
           topic_page.ensure!(slug: Xbookmark::Render::Wikilinks.topic_slug(t), label: t, inputs: [snippet])
         end
 
-        entity_page = Xbookmark::Render::EntityPage.new(vault_path: @config.vault_path, store: @store, orchestrator: @orch)
+        entity_page = Xbookmark::Render::EntityPage.new(vault_path: @config.vault_path, store: @store, orchestrator: aux_orchestrator)
         Array(enrichment.entities).each do |e|
           entity_page.ensure!(slug: Xbookmark::Render::Wikilinks.entity_slug(e), label: e, inputs: [snippet])
         end

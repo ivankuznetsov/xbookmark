@@ -99,3 +99,17 @@ Append-only log of meaningful wiki updates.
 **Pages updated:** wiki/active-areas.md, wiki/dependencies.md, wiki/log.md
 **Production check:** Downloaded `ggml-base.en.bin` into the production whisper.cpp checkout and reran all Whisper-failed media rows; state ended with 31 bookmarks done and zero Whisper failures.
 **Source:** Live production resync failures, `lib/xbookmark/transcribe/whisper.rb`, `spec/xbookmark/transcribe/whisper_spec.rb`, `README.md`.
+
+## [2026-05-22T18:15:00Z] backfill speed path
+
+**Action:** Removed the planning Codex call from bookmark enrichment, filtered out X media/status URLs from article fetching, and made separate aux-page LLM summaries opt-in.
+**Pages updated:** wiki/architecture.md, wiki/data-model.md, wiki/active-areas.md, wiki/dependencies.md, wiki/log.md
+**Decision:** Bookmark notes remain enriched and link to author/topic/entity/thread pages. Aux landing pages are still written for Obsidian graph/backlinks, but their own summaries are disabled by default so 100+ bookmark backfills do not spend most runtime on per-slug summaries.
+**Source:** Live 31-bookmark production wiki had 302 aux pages and 300 aux summaries, far exceeding the bookmark-note work.
+
+## [2026-05-22T19:55:00Z] whisper media rerun fix
+
+**Action:** Fixed whisper.cpp transcription for downloaded X videos by extracting audio through `ffmpeg`, adding duration-aware timeouts for long media, using more CPU threads by default, and treating no-audio videos as empty transcripts instead of retry failures.
+**Pages updated:** wiki/architecture.md, wiki/dependencies.md, wiki/active-areas.md, wiki/log.md
+**Production check:** Reran Whisper over 20 production MP4 files. Eighteen produced non-empty transcript sidecars and were injected into bookmark markdown; two MP4s had no audio stream and cleanly produced empty transcript sidecars.
+**Source:** Live production media rerun, `lib/xbookmark/transcribe/whisper.rb`, `lib/xbookmark/cli/doctor.rb`, `spec/xbookmark/transcribe/whisper_spec.rb`, `README.md`, `.env.example`.

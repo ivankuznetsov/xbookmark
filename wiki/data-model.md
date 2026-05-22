@@ -7,7 +7,7 @@ updated: 2026-05-22
 tags: [data, sqlite, bookmark-wiki]
 ---
 
-**TLDR**: xbookmark stores sync metadata, bookmark status, and aux-page summaries in SQLite, while final user-facing data lives as markdown and media files in a standalone bookmark wiki.
+**TLDR**: xbookmark stores sync metadata, bookmark status, and optional aux-page summary metadata in SQLite, while final user-facing data lives as markdown and media files in a standalone bookmark wiki.
 
 ## Scope
 
@@ -61,6 +61,6 @@ Bookmark markdown frontmatter includes `xbookmark_schema`, tweet and author fiel
 
 ## Transactional Behavior
 
-`Xbookmark::Sync::Pipeline` processes one bookmark in scratch space, moves media into the final bookmark wiki location, writes markdown via `AtomicWriter`, then ensures aux pages and removes scratch. If a transient or permanent error occurs, scratch is removed and state is updated through `Store.record_failure`.
+`Xbookmark::Sync::Pipeline` processes one bookmark in scratch space, moves media into the final bookmark wiki location, writes markdown via `AtomicWriter`, then ensures aux pages and removes scratch. Author/topic/entity aux pages always exist for backlinks, but their own LLM summaries are only generated when `XBOOKMARK_AUX_SUMMARIES` is enabled. If a transient or permanent error occurs, scratch is removed and state is updated through `Store.record_failure`.
 
 Related: [[architecture]], [[commands]], [[dependencies]], [[gaps]].

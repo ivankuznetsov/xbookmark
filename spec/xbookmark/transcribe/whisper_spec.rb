@@ -61,6 +61,62 @@ RSpec.describe Xbookmark::Transcribe::Whisper do
     end
   end
 
+  it "extracts video audio before passing it to whisper.cpp" do
+    Dir.mktmpdir do |dir|
+      bin = File.join(dir, "whisper.cpp", "build", "bin", "whisper-cli")
+      model = File.join(dir, "whisper.cpp", "models", "ggml-base.en.bin")
+      video = File.join(dir, "clip.mp4")
+      FileUtils.mkdir_p(File.dirname(bin))
+      FileUtils.mkdir_p(File.dirname(model))
+      File.write(bin, "")
+      File.chmod(0o755, bin)
+      File.write(model, "model")
+      File.write(video, "fake")
+
+      status = instance_double(Process::Status, success?: true)
+      observed_argv = nil
+      observed_timeouts = []
+      allow(described_class).to receive(:which).with("ffmpeg").and_return("/usr/bin/ffmpeg")
+      whisper = described_class.new(binary: bin, model: "base.en")
+      allow(whisper).to receive(:run_with_timeout) do |argv, timeout|
+        observed_timeouts << timeout
+        if argv.first == "/usr/bin/ffmpeg"
+          File.write(argv.last, "wav")
+          ["", "", status]
+        else
+          observed_argv = argv
+          ["transcript", "", status]
+        end
+      end
+
+      expect(whisper.transcribe(video, duration_ms: 1_000_000)).to eq("transcript")
+      expect(observed_argv.last).to end_with(".wav")
+      expect(observed_timeouts).to all(eq(3120))
+    end
+  end
+
+  it "treats videos without audio streams as empty transcripts" do
+    Dir.mktmpdir do |dir|
+      bin = File.join(dir, "whisper.cpp", "build", "bin", "whisper-cli")
+      model = File.join(dir, "whisper.cpp", "models", "ggml-base.en.bin")
+      video = File.join(dir, "clip.mp4")
+      FileUtils.mkdir_p(File.dirname(bin))
+      FileUtils.mkdir_p(File.dirname(model))
+      File.write(bin, "")
+      File.chmod(0o755, bin)
+      File.write(model, "model")
+      File.write(video, "fake")
+
+      status = instance_double(Process::Status, success?: false)
+      allow(described_class).to receive(:which).with("ffmpeg").and_return("/usr/bin/ffmpeg")
+      whisper = described_class.new(binary: bin, model: "base.en")
+      allow(whisper).to receive(:run_with_timeout)
+        .and_return(["", "Output file does not contain any stream", status])
+
+      expect(whisper.transcribe(video, duration_ms: 5000)).to eq("")
+    end
+  end
+
   it "raises a setup error when a whisper.cpp model alias cannot be resolved" do
     Dir.mktmpdir do |dir|
       bin = File.join(dir, "whisper.cpp", "build", "bin", "whisper-cli")

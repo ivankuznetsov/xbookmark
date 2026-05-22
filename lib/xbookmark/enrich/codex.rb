@@ -10,7 +10,7 @@ module Xbookmark
     # stdout/stderr, parses JSON, validates against an optional schema, and
     # surfaces failures as Xbookmark::CodexError.
     class Codex
-      DEFAULT_TIMEOUT = 120
+      DEFAULT_TIMEOUT = 300
 
       # Wrapper events emitted by `codex exec --json`. The model body is
       # carried separately (either as a `model_message`/`agent_message`
@@ -73,8 +73,8 @@ module Xbookmark
       def invoke_with_timeout(argv, timeout)
         Open3.popen3(*argv) do |stdin, stdout, stderr, wait_thr|
           stdin.close
-          out_reader = Thread.new { stdout.read }
-          err_reader = Thread.new { stderr.read }
+          out_reader = Thread.new { stdout.read rescue "" }
+          err_reader = Thread.new { stderr.read rescue "" }
 
           if wait_thr.join(timeout).nil?
             pid = wait_thr.pid

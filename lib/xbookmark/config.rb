@@ -25,6 +25,7 @@ module Xbookmark
       :qmd_bin,
       :daily_sync_time,
       :min_run_interval_hours,
+      :aux_summaries,
       :env_file,
       :verbose,
       keyword_init: true
@@ -62,6 +63,7 @@ module Xbookmark
           qmd_bin: merged["QMD_BIN"] || "qmd",
           daily_sync_time: merged["XBOOKMARK_DAILY_TIME"] || "06:00",
           min_run_interval_hours: (merged["XBOOKMARK_MIN_RUN_INTERVAL_HOURS"] || "20").to_f,
+          aux_summaries: truthy?(merged["XBOOKMARK_AUX_SUMMARIES"]),
           env_file: loaded_env_files.first,
           verbose: verbose
         )
@@ -99,6 +101,10 @@ module Xbookmark
         Integer(value)
       rescue ArgumentError
         nil
+      end
+
+      def truthy?(value)
+        %w[1 true yes on].include?(value.to_s.strip.downcase)
       end
 
       def configured_wiki_path(env)

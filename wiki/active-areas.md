@@ -7,16 +7,18 @@ updated: 2026-05-22
 tags: [activity]
 ---
 
-**TLDR**: Current work is focused on making new xbookmark setups install the daily scheduler by default, enabling Linux timers after logout, and keeping QMD registration compatible with current and legacy command shapes.
+**TLDR**: Current work is focused on production backfill reliability: fast bookmark enrichment, full-size media downloads, and durable Whisper transcription for long X videos.
 
 ## Active Branch
 
-Branch `fix/default-scheduler-install` is ahead of `main`:
+Branch `fix/pipeline-backfill-speed` is ahead of `main`:
 
 - README setup now runs `bin/xbookmark install` as a required daily scheduler step instead of asking whether to install it.
 - Linux scheduler setup tries to enable systemd linger through `loginctl enable-linger <user>` so the daily timer can fire after logout.
 - Media downloads no longer impose the old 200 MB default cap; full-size X media is downloaded.
 - `WHISPER_MODEL=base.en` resolves to a local whisper.cpp `ggml-base.en.bin` model file when using `whisper-cli`/`whisper-cpp`; setup docs now include the model download step.
+- Whisper transcription extracts downloaded video audio with `ffmpeg`, treats no-audio MP4s as empty transcripts, uses duration-aware timeouts, and runs whisper.cpp with up to 8 CPU threads by default.
+- Large backfills now skip separate aux-page LLM summaries by default; author/topic/entity/thread pages are still written for Obsidian graph/backlinks, and `XBOOKMARK_AUX_SUMMARIES=true` restores the extra summaries.
 - `Xbookmark::Qmd::Registrar` tries current `qmd collection list`/`collection add` first and preserves legacy command fallbacks.
 - `Xbookmark::Enrich::Codex` unwraps current `codex exec --json` `item.completed` agent messages.
 - Specs cover the README setup contract, legacy registrar fallback, scheduler linger setup, and current Codex JSON event parsing.
