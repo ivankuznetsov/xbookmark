@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   test:
-    name: coverage (Ruby ${{ matrix.ruby }})
+    name: rspec (Ruby ${{ matrix.ruby }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
