@@ -24,7 +24,7 @@ jobs:
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Cache tebako build prerequisites
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.tebako
           key: tebako-x86_64-linux-${{ hashFiles('packaging/tebako/xbookmark.yml', 'Gemfile.lock') }}
@@ -59,7 +59,7 @@ jobs:
         run: brew install tebako
 
       - name: Cache tebako build prerequisites
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.tebako
           key: tebako-arm64-darwin-${{ hashFiles('packaging/tebako/xbookmark.yml', 'Gemfile.lock') }}
