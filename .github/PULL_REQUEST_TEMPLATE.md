@@ -5,7 +5,7 @@
 ## Test plan
 
 <!-- Bulleted checklist a reviewer can run.
-- [ ] `bundle exec rspec` green
+- [ ] `bundle exec rake coverage` green
 - [ ] `bundle exec rubocop --parallel` green
 - [ ] `bundle exec brakeman --force --no-pager --quiet --ignore-config config/brakeman.ignore` green
 - [ ] `bundle exec bundler-audit check --update` green

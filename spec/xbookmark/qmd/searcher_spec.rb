@@ -60,4 +60,47 @@ RSpec.describe Xbookmark::Qmd::Searcher do
       .to output(/qmd binary not found/).to_stderr
     expect(@hits).to eq([])
   end
+
+  it "returns [] and warns when qmd exits unsuccessfully" do
+    failing_status = Class.new do
+      def success?; false; end
+      def exitstatus; 1; end
+    end.new
+    runner = ->(_argv) { ["", "boom", failing_status] }
+
+    expect { @hits = described_class.new(config: config, runner: runner).search("x") }
+      .to output(/qmd query failed: boom/).to_stderr
+    expect(@hits).to eq([])
+  end
+
+  it "parses hits envelopes, rank/context aliases, empty output, and integer statuses" do
+    hits_json = { "hits" => [{ "file" => "/v/hit.md", "rank" => "7", "context" => "ctx" }] }.to_json
+    runner = ->(_argv) { [hits_json, "", 0] }
+
+    hits = described_class.new(config: config, runner: runner).search("x")
+
+    expect(hits).to eq([{ path: "/v/hit.md", score: 7.0, snippet: "ctx" }])
+
+    empty = described_class.new(config: config, runner: ->(_argv) { ["", "", 0] }).search("x")
+    expect(empty).to eq([])
+  end
+
+  it "raises and diagnoses non-JSON qmd output" do
+    runner = ->(_argv) { ["not json", "", status] }
+    searcher = described_class.new(config: config, runner: runner)
+
+    expect { searcher.search("x") }
+      .to output(/qmd output was not JSON:.*qmd raw output: not json/m).to_stderr
+      .and raise_error(JSON::ParserError)
+  end
+
+  it "uses Open3 capture when no runner is injected" do
+    searcher = described_class.new(config: config)
+
+    out, err, status = searcher.send(:capture, [RbConfig.ruby, "-e", "STDOUT.write 'ok'; STDERR.write 'err'"])
+
+    expect(out).to eq("ok")
+    expect(err).to eq("err")
+    expect(status).to be_success
+  end
 end

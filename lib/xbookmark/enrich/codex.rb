@@ -35,7 +35,7 @@ module Xbookmark
       def run(prompt:, images: [], json_schema: nil, timeout: DEFAULT_TIMEOUT, extra_argv: [])
         argv = build_argv(prompt: prompt, images: images, extra_argv: extra_argv)
 
-        out, err, status = invoke(argv, timeout: timeout)
+        out, err, status = invoke(argv, stdin_data: prompt, timeout: timeout)
         unless status_success?(status)
           raise Xbookmark::CodexError, "codex exited #{status_exit(status)}: #{err}"
         end
@@ -59,20 +59,20 @@ module Xbookmark
         argv = [@bin, "exec", "--json"]
         Array(images).each { |p| argv.push("--image", p.to_s) }
         argv.concat(extra_argv) if extra_argv && !extra_argv.empty?
-        argv.push("--", prompt)
+        argv.push("--", "-")
         argv
       end
 
       private
 
-      def invoke(argv, timeout:)
-        return @runner.call(argv, timeout) if @runner
-        invoke_with_timeout(argv, timeout)
+      def invoke(argv, stdin_data: "", timeout:)
+        return @runner.call(argv, timeout, stdin_data) if @runner
+        invoke_with_timeout(argv, timeout, stdin_data: stdin_data)
       end
 
-      def invoke_with_timeout(argv, timeout)
+      def invoke_with_timeout(argv, timeout, stdin_data: "")
         Open3.popen3(*argv) do |stdin, stdout, stderr, wait_thr|
-          stdin.close
+          input_writer = Thread.new { write_stdin(stdin, stdin_data) }
           out_reader = Thread.new { stdout.read rescue "" }
           err_reader = Thread.new { stderr.read rescue "" }
 
@@ -82,8 +82,19 @@ module Xbookmark
             raise Xbookmark::CodexError, "codex exceeded timeout of #{timeout}s"
           end
 
+          input_writer.value
           [out_reader.value, err_reader.value, wait_thr.value]
         end
+      end
+
+      def write_stdin(stdin, stdin_data)
+        begin
+          stdin.write(stdin_data.to_s) unless stdin_data.to_s.empty?
+        ensure
+          stdin.close
+        end
+      rescue IOError, Errno::EPIPE
+        nil
       end
 
       def kill_subprocess(pid, wait_thr)

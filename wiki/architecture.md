@@ -3,7 +3,7 @@ title: Architecture
 type: architecture
 source: git ls-files; lib/xbookmark/**/*.rb; README.md; .env.example; .llm-wiki/*
 created: 2026-05-14
-updated: 2026-05-22
+updated: 2026-05-25
 tags: [architecture]
 ---
 
@@ -11,8 +11,8 @@ tags: [architecture]
 
 ## Repository Shape
 
-- `main` now tracks the runtime CLI, README, env template, CI config, specs, and project wiki after the README/wiki-path and CI work landed.
-- Current branch `fix/default-scheduler-install` has README setup changes, Linux linger enablement for scheduled timers, and QMD registrar compatibility fixes.
+- `main` tracks the runtime CLI, README, env template, CI config, specs, and project wiki.
+- Production-hardening work includes 50-item X bookmark pagination, Codex stdin prompt delivery, stale service-tier cleanup, and the 100% coverage gate.
 - `.hive-state/config.yml` identifies the project as `xbookmark`, default branch `main`, worktree root `/home/asterio/Dev/xbookmark.worktrees`, and Hive review settings.
 
 ## Runtime CLI
@@ -29,6 +29,8 @@ The application is a Ruby command-line application named `xbookmark`. Its runtim
 - Rendering: `Xbookmark::Render::BookmarkRenderer` writes per-bookmark markdown; `Xbookmark::Render::AuxPage` maintains author, topic, entity, and thread pages. Aux landing pages are created during normal sync, but their separate LLM summaries are opt-in through `XBOOKMARK_AUX_SUMMARIES` so large backfills stay focused on bookmark notes.
 - Search: `Xbookmark::Qmd::Registrar` registers the `bookmarks` QMD collection through current `qmd collection` commands with legacy fallbacks; `Xbookmark::Qmd::Searcher` shells out to `qmd query`.
 - Scheduling: `Xbookmark::Scheduler::Systemd` installs a user timer on Linux and tries to enable user linger; `Xbookmark::Scheduler::Launchd` installs a launch agent on macOS.
+- Setup safety: `Xbookmark::CodexConfig` removes only stale invalid top-level `service_tier` values in `~/.codex/config.toml` or `$CODEX_HOME/config.toml`, preserves valid speed modes and project tables, and rewrites changed config files atomically with `0600` permissions.
+- Coverage: `bundle exec rake coverage` uses Ruby's built-in `Coverage` API while running RSpec, then aborts unless every counted line under `bin/` and `lib/` is covered.
 
 Related details: [[commands]], [[data-model]], [[dependencies]].
 

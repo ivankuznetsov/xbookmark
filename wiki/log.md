@@ -57,7 +57,7 @@ Append-only log of meaningful wiki updates.
 
 **Action:** Added Hive-style CI checks for xbookmark and updated contributor docs.
 **Pages updated:** wiki/dependencies.md, wiki/log.md
-**Decision:** CI runs RSpec, RuboCop with the 37signals omakase base, Brakeman, and bundler-audit. The local RuboCop config keeps xbookmark's existing array-bracket style to avoid a broad mechanical rewrite.
+**Decision:** CI runs the coverage Rake task, RuboCop with the 37signals omakase base, Brakeman, and bundler-audit. The local RuboCop config keeps xbookmark's existing array-bracket style to avoid a broad mechanical rewrite.
 **Source:** Hive `.github/workflows/ci.yml`, Hive Dependabot/PR template, xbookmark Gemfile, `.rubocop.yml`, `.github/workflows/ci.yml`, and local check outputs.
 
 ## [2026-05-22T15:23:06Z] default scheduler setup refresh
@@ -132,3 +132,31 @@ Append-only log of meaningful wiki updates.
 **Action:** Corrected the X bookmark pagination finding: production `max_results=100` returned 98 IDs and no token, but `max_results=50` returned 4,745 unique IDs over 95 pages. xbookmark should use 50-item bookmark pages.
 **Pages updated:** README.md, wiki/api.md, wiki/active-areas.md, wiki/commands.md, wiki/decisions.md, wiki/gaps.md, wiki/live-production-learnings.md, wiki/log.md
 **Source:** Read-only production X API probes from `/home/asterio/Dev/xbookmark.install/xbookmark`.
+
+## [2026-05-22T22:35:00Z] 100-percent coverage gate
+
+**Action:** Added real behavioral tests across CLI dispatch, config/path discovery, OAuth, X API retries/errors, QMD, scheduler install/uninstall/status, media/transcription, rendering, sync pipeline/runner, and the executable wrapper. Added `bundle exec rake coverage` using Ruby's built-in `Coverage` API to enforce 100% line coverage over `bin/` and `lib/`.
+**Pages updated:** wiki/dependencies.md, wiki/log.md
+**Bug fixed:** `LinkFetcher#resolve` now fails closed when DNS resolution raises after a hostname parse miss.
+**Verification:** After merging into current `main`, `bundle exec rake coverage` passed with 299 examples at 100.00% (2297/2297), and `bundle exec rubocop` passed with no offenses.
+**Source:** `Rakefile`, `bin/xbookmark`, `lib/xbookmark/enrich/link_fetcher.rb`, and expanded specs under `spec/`.
+
+## [2026-05-25T10:55:00Z] codex service tier setup fix
+
+**Action:** Added setup/install cleanup for stale invalid top-level Codex `service_tier` values after production wiki maintenance failed on `service_tier = "default"` and docs review showed setup should not force Codex speed modes.
+**Pages updated:** README.md, wiki/decisions.md, wiki/log.md
+**Source:** `lib/xbookmark/codex_config.rb`, `lib/xbookmark/cli/setup.rb`, `lib/xbookmark/cli/install.rb`, `spec/xbookmark/codex_config_spec.rb`, `spec/xbookmark/cli/setup_spec.rb`, `spec/xbookmark/cli_spec.rb`, `README.md`.
+
+## [2026-05-25T10:56:00Z] llm-wiki refresh
+
+**Action:** Refreshed project wiki pages from current config, recent log entries, cross-project wiki search, recent git history, coverage work, and Codex service-tier setup changes.
+**Pages updated:** wiki/architecture.md, wiki/api.md, wiki/commands.md, wiki/data-model.md, wiki/dependencies.md, wiki/active-areas.md, wiki/decisions.md, wiki/live-production-learnings.md, wiki/gaps.md, wiki/index.md, wiki/log.md
+**Main wiki:** searched `/home/asterio/wikis/master/wiki`; no xbookmark-specific page found. `~/wikis/main/wiki`, `../wikis/master/wiki`, and `../wikis/main/wiki` did not exist.
+**QMD:** review follow-up ran bounded `qmd search` queries for Codex service-tier and large-prompt terms; no indexed hits were returned. This refresh intentionally avoided `qmd update` and `qmd embed` because the wrapper script owns bounded qmd maintenance.
+**Source:** `.llm-wiki/config.json`, `AGENTS.md`, `CLAUDE.md`, `wiki/index.md`, `wiki/gaps.md`, recent `wiki/log.md`, `git log --name-status`, `git status --short`, `Rakefile`, `lib/xbookmark/codex_config.rb`, `lib/xbookmark/cli/setup.rb`, `lib/xbookmark/cli/install.rb`, `lib/xbookmark/enrich/link_fetcher.rb`, and related specs.
+
+## [2026-05-25T11:40:00Z] codex large prompt fix
+
+**Action:** Changed Codex enrichment invocation to pass prompts over stdin instead of argv after production backfill hit `Errno::E2BIG: Argument list too long - codex` on a large bookmark prompt.
+**Pages updated:** wiki/decisions.md, wiki/live-production-learnings.md, wiki/log.md
+**Source:** Live production backfill log, `lib/xbookmark/enrich/codex.rb`, `spec/xbookmark/enrich/codex_spec.rb`, `spec/xbookmark/enrich/orchestrator_spec.rb`, `spec/integration/v1_acceptance_spec.rb`.

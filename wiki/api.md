@@ -3,7 +3,7 @@ title: API Surface
 type: api
 source: lib/xbookmark/x/auth.rb; lib/xbookmark/x/client.rb; lib/xbookmark/qmd/registrar.rb; lib/xbookmark/qmd/searcher.rb; README.md; .env.example
 created: 2026-05-14
-updated: 2026-05-22
+updated: 2026-05-25
 tags: [api, x-api, oauth, cli]
 ---
 
@@ -55,8 +55,14 @@ Bookmark requests use 50-item pages and follow `meta.next_token`. Production tes
 - Current Codex emits final model text under `item.completed` events with an `item.type` of `agent_message`; xbookmark unwraps the nested `item.text` JSON.
 - Older model-message and plain JSON object output shapes remain accepted.
 
+## Codex Config File Surface
+
+- `Xbookmark::CodexConfig.default_path` reads `$CODEX_HOME/config.toml` when `CODEX_HOME` is set, otherwise `~/.codex/config.toml`.
+- `xbookmark setup` and non-dry-run `xbookmark install` remove only stale invalid top-level `service_tier` values before the first TOML table. Project-scoped tables such as `[projects."/tmp/app"]` and valid speed modes are preserved.
+- When the file is rewritten, xbookmark creates parent directories as needed, writes through an atomic temp-file replacement, and sets the config file mode to `0600`.
+
 ## Public Contract Notes
 
-The committed README documents the current CLI only. Deferred commands and flags are cataloged in [[commands]] so they are not accidentally exposed in setup docs before implementation.
+The current README documents the current CLI only. Deferred commands and flags are cataloged in [[commands]] so they are not accidentally exposed in setup docs before implementation.
 
 Related: [[commands]], [[architecture]], [[dependencies]], [[gaps]].

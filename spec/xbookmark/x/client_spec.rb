@@ -72,4 +72,59 @@ RSpec.describe Xbookmark::X::Client do
     expect(pages.first["data"].first["id"]).to eq("1004")
     expect(config.x_access_token).to eq("NEW")
   end
+
+  it "fetches individual tweets and conversation search results" do
+    stub_request(:get, "https://api.twitter.com/2/tweets/123")
+      .with(query: hash_including("expansions" => "author_id"))
+      .to_return(status: 200, body: { "data" => { "id" => "123" } }.to_json)
+    stub_request(:get, "https://api.twitter.com/2/tweets/search/recent")
+      .with(query: hash_including("query" => "conversation_id:abc", "max_results" => "10"))
+      .to_return(status: 200, body: { "data" => [{ "id" => "1" }] }.to_json)
+
+    client = described_class.new(config: config_with)
+
+    expect(client.get_tweet("123", expansions: "author_id")["data"]["id"]).to eq("123")
+    expect(client.conversation("abc", max_results: 10)["data"].first["id"]).to eq("1")
+  end
+
+  it "refreshes once after a 401 response and retries with the new token" do
+    config = config_with(access_token: "OLD", refresh_token: "REFRESH")
+    fake_auth = instance_double(Xbookmark::X::Auth)
+    refreshed = Xbookmark::X::Auth::AuthResult.new(
+      env_file: "/tmp/.env", access_token: "NEW", refresh_token: "ROTATED", expires_at: Time.now.to_i + 3600
+    )
+    allow(fake_auth).to receive(:refresh!).and_return(refreshed)
+    stub_request(:get, %r{api.twitter.com/2/tweets/123})
+      .to_return({ status: 401, body: "expired" },
+                 { status: 200, body: { "data" => { "id" => "123" } }.to_json })
+
+    client = described_class.new(config: config, auth: fake_auth)
+
+    expect(client.get_tweet("123")["data"]["id"]).to eq("123")
+    expect(config.x_access_token).to eq("NEW")
+    expect(config.x_refresh_token).to eq("ROTATED")
+  end
+
+  it "raises AuthError when the post-refresh retry still fails" do
+    config = config_with(access_token: "OLD", refresh_token: "REFRESH")
+    fake_auth = instance_double(Xbookmark::X::Auth)
+    allow(fake_auth).to receive(:refresh!)
+      .and_return(Xbookmark::X::Auth::AuthResult.new(env_file: "/tmp/.env", access_token: "NEW", refresh_token: "REFRESH", expires_at: Time.now.to_i + 3600))
+    stub_request(:get, %r{api.twitter.com/2/tweets/123})
+      .to_return({ status: 401, body: "expired" },
+                 { status: 403, body: "still forbidden" })
+
+    client = described_class.new(config: config, auth: fake_auth)
+
+    expect { client.get_tweet("123") }
+      .to raise_error(Xbookmark::AuthError, /X API auth failed \(403\): still forbidden/)
+  end
+
+  it "raises TransientError for non-auth, non-rate-limit API failures" do
+    stub_request(:get, %r{api.twitter.com/2/tweets/123})
+      .to_return(status: 503, body: "down")
+
+    expect { described_class.new(config: config_with).get_tweet("123") }
+      .to raise_error(Xbookmark::TransientError, /X API error 503: down/)
+  end
 end

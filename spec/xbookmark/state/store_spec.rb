@@ -71,6 +71,17 @@ RSpec.describe Xbookmark::State::Store do
     expect(store.cursor).to eq("abc")
   end
 
+  it "tracks sync timestamps and full backfill metadata" do
+    time = Time.utc(2026, 1, 1, 12, 0, 0)
+    store.mark_sync_started!(time)
+    store.mark_sync_finished!(time)
+    store.mark_full_backfill_complete!(time)
+
+    expect(store.get_meta("last_sync_at")).to eq(time.iso8601)
+    expect(store.last_sync_finished_at).to eq(time)
+    expect(store.get_meta("last_full_backfill_at")).to eq(time.iso8601)
+  end
+
   it "round-trips meta keys" do
     store.set_meta("foo", "bar")
     expect(store.get_meta("foo")).to eq("bar")
@@ -86,6 +97,29 @@ RSpec.describe Xbookmark::State::Store do
                       summary_input_digest: "deadbeef", summarized_at: t)
     page = store.find_page("topic", "ozempic")
     expect(page[:summary_input_digest]).to eq("deadbeef")
+  end
+
+  it "keeps existing page digest when an update omits a new digest and lists topic/entity slugs" do
+    store.upsert_page(kind: "topic", slug: "ozempic", path: "topics/ozempic.md",
+                      summary_input_digest: "digest", summarized_at: Time.utc(2026, 1, 1))
+    store.upsert_page(kind: "topic", slug: "ozempic", path: "topics/ozempic-new.md")
+    store.upsert_page(kind: "entity", slug: "novo", path: "entities/novo.md")
+    store.upsert_page(kind: "author", slug: "alice", path: "authors/alice.md")
+
+    page = store.find_page("topic", "ozempic")
+    expect(page[:path]).to eq("topics/ozempic-new.md")
+    expect(page[:summary_input_digest]).to eq("digest")
+    expect(store.all_topic_slugs).to contain_exactly("ozempic", "novo")
+  end
+
+  it "converts non-string timestamps when inserting pending bookmarks" do
+    store.upsert_pending(tweet_id: "time", author_handle: "alice", bookmarked_at: Time.utc(2026, 1, 1))
+
+    expect(store.find_bookmark("time")[:bookmarked_at]).to eq("2026-01-01T00:00:00Z")
+
+    parsed = double(:timestamp, to_s: "2026-02-03T04:05:06Z")
+    store.upsert_pending(tweet_id: "parsed", author_handle: "alice", bookmarked_at: parsed)
+    expect(store.find_bookmark("parsed")[:bookmarked_at]).to eq("2026-02-03T04:05:06Z")
   end
 
   it "persists to disk and re-opens cleanly" do

@@ -37,4 +37,9 @@ RSpec.describe "README setup contract" do
     expect(env_example).to include("X_REDIRECT_URI=http://127.0.0.1:8765/callback")
     expect(env_example).not_to include("--port")
   end
+
+  it "does not document a forced codex service tier" do
+    expect(readme).not_to include('service_tier = "flex"')
+    expect(readme).not_to include('service_tier = "fast"')
+  end
 end

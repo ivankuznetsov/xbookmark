@@ -4,11 +4,12 @@
 # JSON responses keyed by an arbitrary tag (or just LIFO order) so each
 # call returns the next pre-programmed response.
 class FakeCodex
-  attr_reader :calls
+  attr_reader :calls, :stdin_inputs
 
   def initialize
     @responses = []
     @calls = []
+    @stdin_inputs = []
   end
 
   def push(json)
@@ -16,8 +17,9 @@ class FakeCodex
     self
   end
 
-  def call(argv, _timeout)
+  def call(argv, _timeout, stdin_data = "")
     @calls << argv
+    @stdin_inputs << stdin_data
     response = @responses.shift
     raise "FakeCodex out of canned responses" if response.nil?
     if response.is_a?(Exception)

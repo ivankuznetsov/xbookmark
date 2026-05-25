@@ -3,7 +3,7 @@ title: Data Model
 type: data-model
 source: lib/xbookmark/state/migrations.rb; lib/xbookmark/state/store.rb; lib/xbookmark/render/bookmark_renderer.rb
 created: 2026-05-14
-updated: 2026-05-22
+updated: 2026-05-25
 tags: [data, sqlite, bookmark-wiki]
 ---
 
@@ -11,7 +11,7 @@ tags: [data, sqlite, bookmark-wiki]
 
 ## Scope
 
-The data model is tracked on `main`. Current branch `fix/default-scheduler-install` does not change the SQLite schema or bookmark wiki layout.
+The data model is tracked on `main`. Recent coverage-gate and Codex service-tier setup changes do not change the SQLite schema or bookmark wiki layout.
 
 ## SQLite State DB
 

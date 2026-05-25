@@ -98,4 +98,95 @@ RSpec.describe Xbookmark::Enrich::Orchestrator do
     expect(result.link_blobs).to be_empty
     expect(link_fetcher).not_to have_received(:fetch)
   end
+
+  it "fetches at most three unique external article URLs from string and hash inputs" do
+    bookmark.urls = [
+      "https://example.com/one",
+      { "expanded_url" => "https://example.com/two" },
+      { expanded_url: "https://example.com/three" },
+      { url: "https://example.com/four" },
+      { expanded_url: "not a url" },
+      { expanded_url: "https://t.co/skip" },
+      { expanded_url: "https://example.com/one" }
+    ]
+    fake = FakeCodex.new.push({
+      "summary" => "x",
+      "tags" => ["t"],
+      "topics" => ["topic"],
+      "entities" => ["entity"]
+    })
+    fetched = []
+    allow(link_fetcher).to receive(:fetch) do |url|
+      fetched << url
+      { url: url, final_url: url, title: url, byline: nil, text: "body", fetched_at: "now" }
+    end
+
+    described_class.new(codex: Xbookmark::Enrich::Codex.new(bin: "codex", runner: fake), link_fetcher: link_fetcher)
+      .enrich(bookmark)
+
+    expect(fetched).to eq(%w[
+      https://example.com/one
+      https://example.com/two
+      https://example.com/three
+    ])
+  end
+
+  it "falls back to the first partial result when retry raises" do
+    fake = FakeCodex.new
+    fake.push({ "summary" => "x", "tags" => [], "topics" => ["topic"], "entities" => [] })
+    fake.push(Xbookmark::PermanentError.new("bad retry"))
+
+    result = described_class.new(codex: Xbookmark::Enrich::Codex.new(bin: "codex", runner: fake), link_fetcher: link_fetcher)
+      .enrich(bookmark)
+
+    expect(result).to be_partial
+    expect(result.tags).to eq([])
+    expect(result.entities).to eq([])
+  end
+
+  it "includes quoted tweet text in retry prompts" do
+    bookmark.quoted_tweet = { "text" => "quoted context" }
+    fake = FakeCodex.new
+    fake.push({ "summary" => "x", "tags" => [], "topics" => ["topic"], "entities" => [] })
+    fake.push({ "summary" => "x", "tags" => ["tag"], "topics" => ["topic"], "entities" => ["entity"] })
+
+    described_class.new(codex: Xbookmark::Enrich::Codex.new(bin: "codex", runner: fake), link_fetcher: link_fetcher)
+      .enrich(bookmark)
+
+    expect(fake.stdin_inputs.last).to include("quoted context")
+  end
+
+  it "includes transcript snippets in retry prompts" do
+    fake = FakeCodex.new
+    fake.push({ "summary" => "x", "tags" => [], "topics" => ["topic"], "entities" => [] })
+    fake.push({ "summary" => "x", "tags" => ["tag"], "topics" => ["topic"], "entities" => ["entity"] })
+
+    described_class.new(codex: Xbookmark::Enrich::Codex.new(bin: "codex", runner: fake), link_fetcher: link_fetcher)
+      .enrich(bookmark, transcripts: { "video.mp4" => "spoken words" })
+
+    expect(fake.stdin_inputs.last).to include("[video.mp4]\nspoken words")
+  end
+
+  it "summarizes aux pages through codex templates" do
+    fake = FakeCodex.new
+    fake.push({ "summary" => "Topic summary" })
+    fake.push({ "summary" => "Author summary" })
+    orch = described_class.new(codex: Xbookmark::Enrich::Codex.new(bin: "codex", runner: fake), link_fetcher: link_fetcher)
+
+    expect(orch.summarize_topic(slug: "ozempic", snippets: %w[a b])).to eq("Topic summary")
+    expect(orch.summarize_author(handle: "alice", snippets: ["first"])).to eq("Author summary")
+    expect(fake.stdin_inputs.first).to include("ozempic")
+    expect(fake.stdin_inputs.last).to include("alice")
+  end
+
+  it "runs the vision prompt with image timeout when asked directly" do
+    fake = FakeCodex.new.push({ "captions" => { "a.jpg" => "cap" }, "ocr" => {} })
+    codex = Xbookmark::Enrich::Codex.new(bin: "codex", runner: fake)
+    orch = described_class.new(codex: codex, link_fetcher: link_fetcher)
+
+    result = orch.send(:vision_call, ["/tmp/a.jpg"])
+
+    expect(result["captions"]).to eq("a.jpg" => "cap")
+    expect(fake.calls.first).to include("--image", "/tmp/a.jpg")
+  end
 end

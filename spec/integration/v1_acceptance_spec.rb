@@ -95,10 +95,10 @@ RSpec.describe "v1 acceptance" do
   end
 
   let(:fake_codex_runner) do
-    # codex stub: parse argv to find the prompt (last arg after --), then
-    # respond deterministically based on which prompt template was used.
-    ->(argv, _timeout) {
-      prompt = argv.last
+    # codex stub: inspect the prompt passed over stdin, then respond
+    # deterministically based on which prompt template was used.
+    ->(_argv, _timeout, stdin_data = "") {
+      prompt = stdin_data
       response =
         if prompt.include?("Read the tweet and any media descriptions")
           { "fetch_external_links" => prompt.include?("example.com/article") ? ["https://example.com/article"] : [], "summarize_quoted_tweet" => false, "needs_image_ocr" => false }

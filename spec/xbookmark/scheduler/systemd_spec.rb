@@ -92,4 +92,84 @@ RSpec.describe Xbookmark::Scheduler::Systemd do
         .to output(/loginctl enable-linger #{Regexp.escape(user)}/).to_stderr
     end
   end
+
+  it "dry-run uninstall prints intended commands without deleting unit files" do
+    with_tmp_home do |home|
+      service = File.join(home, ".config/systemd/user", described_class::SERVICE)
+      timer = File.join(home, ".config/systemd/user", described_class::TIMER)
+      FileUtils.mkdir_p(File.dirname(service))
+      File.write(service, "service")
+      File.write(timer, "timer")
+
+      out = capture_stdout { described_class.new(config: config).uninstall(dry_run: true) }
+
+      expect(out).to include("systemctl --user disable --now xbookmark-sync.timer")
+      expect(File.exist?(service)).to be(true)
+      expect(File.exist?(timer)).to be(true)
+    end
+  end
+
+  it "uninstalls real unit files and reloads systemd" do
+    with_tmp_home do |home|
+      service = File.join(home, ".config/systemd/user", described_class::SERVICE)
+      timer = File.join(home, ".config/systemd/user", described_class::TIMER)
+      FileUtils.mkdir_p(File.dirname(service))
+      File.write(service, "service")
+      File.write(timer, "timer")
+      calls = []
+      sched = described_class.new(config: config)
+      allow(sched).to receive(:run) { |*argv| calls << argv; true }
+
+      sched.uninstall
+
+      expect(File.exist?(service)).to be(false)
+      expect(File.exist?(timer)).to be(false)
+      expect(calls).to include(["systemctl", "--user", "disable", "--now", described_class::TIMER])
+      expect(calls).to include(["systemctl", "--user", "daemon-reload"])
+    end
+  end
+
+  it "returns systemd status output" do
+    sched = described_class.new(config: config)
+    allow(sched).to receive(:capture).with("systemctl", "--user", "status", described_class::TIMER)
+      .and_return(["active\n", "", nil])
+
+    expect(sched.status).to eq("active\n")
+  end
+
+  it "warns when checking or enabling linger raises unexpectedly" do
+    with_tmp_home do
+      config.logs_dir = File.join(Dir.home, "logs")
+      sched = described_class.new(config: config)
+      allow(sched).to receive(:capture).and_raise("loginctl unavailable")
+      allow(sched).to receive(:run) do |*argv|
+        raise "no loginctl" if argv.first == "loginctl"
+
+        true
+      end
+
+      expect { sched.install(time: "06:00") }
+        .to output(/could not enable systemd linger automatically/).to_stderr
+    end
+  end
+
+  it "uses direct Open3 capture when no test runner is stubbed" do
+    sched = described_class.new(config: config)
+
+    out, err, status = sched.send(:capture, RbConfig.ruby, "-e", "STDOUT.write 'ok'; STDERR.write 'warn'")
+
+    expect(out).to eq("ok")
+    expect(err).to eq("warn")
+    expect(status).to be_success
+    expect(sched.send(:run, RbConfig.ruby, "-e", "exit 0")).to be(true)
+  end
+
+  def capture_stdout
+    old = $stdout
+    $stdout = StringIO.new
+    yield
+    $stdout.string
+  ensure
+    $stdout = old
+  end
 end

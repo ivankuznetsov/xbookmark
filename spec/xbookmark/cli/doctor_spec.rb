@@ -47,6 +47,45 @@ RSpec.describe Xbookmark::CLI::Doctor do
     expect(out).to match(/ffmpeg: sudo pacman -S --needed ffmpeg/)
   end
 
+  it "prints manual install guidance when no package manager is detected" do
+    allow(Xbookmark::System::PackageManager).to receive(:detect).and_return(:unknown)
+    allow_any_instance_of(described_class).to receive(:which).and_return(nil)
+    allow(Xbookmark::Transcribe::Whisper).to receive(:detect).and_return(nil)
+
+    out = run_doctor
+
+    expect(out).to include("no supported package manager detected")
+  end
+
+  it "reports an unavailable keystore backend" do
+    allow(Xbookmark::Keystore).to receive(:default).and_raise(StandardError)
+
+    out = run_doctor
+
+    expect(out).to include("keystore: unavailable (StandardError)")
+  end
+
+  it "prompts before running fix commands and skips declined commands" do
+    out = StringIO.new
+    input = StringIO.new("yes\nno\nyes\n")
+    doctor = described_class.new([], fix: true, output: out, input: input)
+    allow(doctor).to receive(:which).and_return(nil)
+    allow(Xbookmark::Transcribe::Whisper).to receive(:detect).and_return(nil)
+    allow(Xbookmark::System::PackageManager).to receive(:detect).and_return(:pacman)
+    allow(Xbookmark::System::PackageManager).to receive(:install_command) do |tool, manager:|
+      expect(manager).to eq(:pacman)
+      tool == "qmd" ? nil : ["echo", tool]
+    end
+
+    expect(doctor).to receive(:system).with("echo", "codex")
+    expect(doctor).to receive(:system).with("echo", "ffmpeg")
+
+    doctor.execute
+
+    expect(out.string).to include("qmd: install manually")
+    expect(out.string).to include("skipped whisper")
+  end
+
   it "skips the fix-up section when no tools are missing" do
     allow_any_instance_of(described_class).to receive(:which).and_return("/usr/bin/fake")
     allow(Xbookmark::Transcribe::Whisper).to receive(:detect).and_return("/usr/bin/whisper")
@@ -79,14 +118,38 @@ RSpec.describe Xbookmark::System::PackageManager do
     expect(described_class.detect).to eq(:pacman)
   end
 
+  it "detects apt, dnf, zypper, and unknown package managers in order" do
+    stub_platform_linux
+    allow(described_class).to receive(:which).with("brew").and_return(nil)
+    allow(described_class).to receive(:which).with("pacman").and_return(nil)
+    allow(described_class).to receive(:which).with("apt-get").and_return("/usr/bin/apt-get")
+    expect(described_class.detect).to eq(:apt)
+
+    allow(described_class).to receive(:which).with("apt-get").and_return(nil)
+    allow(described_class).to receive(:which).with("apt").and_return(nil)
+    allow(described_class).to receive(:which).with("dnf").and_return("/usr/bin/dnf")
+    expect(described_class.detect).to eq(:dnf)
+
+    allow(described_class).to receive(:which).with("dnf").and_return(nil)
+    allow(described_class).to receive(:which).with("zypper").and_return("/usr/bin/zypper")
+    expect(described_class.detect).to eq(:zypper)
+
+    allow(described_class).to receive(:which).with("zypper").and_return(nil)
+    expect(described_class.detect).to eq(:unknown)
+  end
+
   it "renders the correct install command per manager" do
     expect(described_class.install_command("ffmpeg", manager: :brew)).to eq(["brew", "install", "ffmpeg"])
     expect(described_class.install_command("ffmpeg", manager: :pacman)).to eq(["sudo", "pacman", "-S", "--needed", "ffmpeg"])
     expect(described_class.install_command("ffmpeg", manager: :apt)).to eq(["sudo", "apt-get", "install", "-y", "ffmpeg"])
+    expect(described_class.install_command("ffmpeg", manager: :dnf)).to eq(["sudo", "dnf", "install", "-y", "ffmpeg"])
+    expect(described_class.install_command("ffmpeg", manager: :zypper)).to eq(["sudo", "zypper", "install", "-y", "ffmpeg"])
+    expect(described_class.install_command("ffmpeg", manager: :unknown)).to be_nil
   end
 
   it "returns nil for tools we cannot install via the host package manager" do
     expect(described_class.install_command("qmd", manager: :pacman)).to be_nil
     expect(described_class.install_command("codex", manager: :brew)).to be_nil
+    expect(described_class.install_command("missing", manager: :brew)).to be_nil
   end
 end

@@ -95,4 +95,38 @@ RSpec.describe Xbookmark::Media::Downloader do
     tempfile&.close
     tempfile&.unlink
   end
+
+  it "downloads animated GIF videos, falls back to previews, and skips unknown media types" do
+    gif_with_variant = Xbookmark::X::Media.new(
+      media_key: "g1",
+      type: "animated_gif",
+      preview_image_url: "https://x/preview.jpg",
+      variants: [{ "content_type" => "video/mp4", "url" => "https://x/gif.mp4" }]
+    )
+    gif_preview = Xbookmark::X::Media.new(
+      media_key: "g2",
+      type: "animated_gif",
+      preview_image_url: "https://x/fallback.jpg",
+      variants: []
+    )
+    unknown = Xbookmark::X::Media.new(media_key: "u", type: "poll", variants: [])
+
+    Dir.mktmpdir do |dir|
+      seen = []
+      records = described_class.new(http: ->(url) { seen << url; "bytes" }).download([gif_with_variant, gif_preview, unknown], dir)
+
+      expect(seen).to eq(["https://x/gif.mp4", "https://x/fallback.jpg"])
+      expect(records.map { |record| record[:kind] }).to eq(%w[animated_gif animated_gif])
+    end
+  end
+
+  it "derives a stable fallback filename when a media URL has no basename" do
+    nameless = Xbookmark::X::Media.new(media_key: "m", type: "photo", url: "https://x", variants: [])
+
+    Dir.mktmpdir do |dir|
+      records = described_class.new(http: ->(_) { "bytes" }).download([nameless], dir)
+
+      expect(File.basename(records.first[:path])).to match(/\Amedia-[0-9a-f]{8}\z/)
+    end
+  end
 end

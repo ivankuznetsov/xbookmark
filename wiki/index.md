@@ -3,25 +3,25 @@ title: xbookmark Wiki
 type: index
 source: wiki/**/*.md
 created: 2026-05-14
-updated: 2026-05-22
+updated: 2026-05-25
 tags: [index, wiki]
 ---
 
 **TLDR**: Catalog of the LLM-maintained wiki for `xbookmark`.
 
 Page count: 11
-Updated: 2026-05-22
+Updated: 2026-05-25
 
 ## Core Pages
 
-- [[architecture]] - Branch-aware project architecture: runtime on `main` and current scheduler/QMD registration work.
-- [[api]] - External API, OAuth callback, X API, and QMD registration/search surfaces with README/implementation mismatches.
-- [[commands]] - CLI command surface and fresh setup contract.
+- [[architecture]] - Runtime architecture, production-hardening state, Codex config cleanup, QMD registration, scheduling, and coverage gate.
+- [[api]] - External API, OAuth callback, X API, QMD, Codex subprocess, and Codex config-file surfaces.
+- [[commands]] - CLI command surface, fresh setup contract, first-run setup wizard, install, and uninstall behavior.
 - [[data-model]] - SQLite state schema, bookmark wiki layout, statuses, modes, and transactional behavior.
-- [[dependencies]] - Ruby gem dependencies, external CLIs, X API, and local scheduler dependencies.
-- [[decisions]] - Repository, workflow, runtime, and setup decisions grounded in code/history.
-- [[active-areas]] - Current scheduler setup and QMD registration work on top of `main`.
-- [[live-production-learnings]] - Production backfill lessons, source limits, media/transcript fixes, QMD behavior, and reusable verification commands.
+- [[dependencies]] - Ruby gem dependencies, external CLIs, Codex/QMD/Whisper tools, scheduler tools, and contributor checks.
+- [[decisions]] - Repository, workflow, runtime, setup, service-tier, and coverage decisions grounded in code/history.
+- [[active-areas]] - Production hardening state, 50-item page-size landing, local coverage gate, and service-tier follow-up.
+- [[live-production-learnings]] - Production backfill lessons, source limits, media/transcript fixes, Codex/QMD behavior, and reusable verification commands.
 
 ## Maintenance Pages
 

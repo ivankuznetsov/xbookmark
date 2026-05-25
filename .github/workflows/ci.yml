@@ -28,8 +28,8 @@ jobs:
         with:
           ruby-version: ${{ matrix.ruby }}
           bundler-cache: true
-      - name: Run RSpec suite
-        run: bundle exec rspec
+      - name: Run RSpec suite with coverage gate
+        run: bundle exec rake coverage
 
   rubocop:
     name: rubocop (37signals omakase)
