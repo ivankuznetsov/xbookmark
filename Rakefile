@@ -1,20 +1,28 @@
 # frozen_string_literal: true
 
-require "rspec/core/rake_task"
+require "rake/testtask"
 
-RSpec::Core::RakeTask.new(:spec)
+Rake::TestTask.new(:test) do |t|
+  t.libs << "test"
+  t.libs << "lib"
+  t.pattern = "test/**/*_test.rb"
+  t.warning = false
+end
 
-task default: :spec
+task default: :test
 
-desc "Run specs and enforce 100% line coverage for lib/ and bin/"
+desc "Run tests and enforce 100% line coverage for lib/ and bin/"
 task :coverage do
   require "coverage"
-  require "rspec/core"
+  require "minitest"
 
   root = File.expand_path(__dir__)
   lib_dir = File.join(root, "lib")
+  test_dir = File.join(root, "test")
   $LOAD_PATH.unshift(lib_dir) unless $LOAD_PATH.include?(lib_dir)
+  $LOAD_PATH.unshift(test_dir) unless $LOAD_PATH.include?(test_dir)
 
+  ENV["XBOOKMARK_COVERAGE_RUNNER"] = "1"
   Coverage.start(lines: true)
 
   require "xbookmark"
@@ -22,7 +30,10 @@ task :coverage do
     require path.delete_prefix("#{lib_dir}/").delete_suffix(".rb")
   end
 
-  status = RSpec::Core::Runner.run(["--format", "progress", "spec"])
+  require "test_helper"
+  Dir[File.join(test_dir, "**/*_test.rb")].sort.each { |path| require path }
+
+  status = Minitest.run(["--seed", "1"])
   result = Coverage.result
   rows = XbookmarkCoverage.rows(result, root)
   covered = rows.sum { |row| row[:covered] }
@@ -39,7 +50,7 @@ task :coverage do
                 row[:missed].join(","))
   end
 
-  abort "RSpec failed" unless status.zero?
+  abort "Minitest failed" unless status
   abort "Coverage is below 100%" unless covered == total
 end
 

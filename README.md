@@ -441,11 +441,12 @@ No commitments, no timeline — just the directions I expect to take next.
 
 Dev setup is the same as a user install: `git clone`, `bundle install`, `cp .env.example .env`, and confirm with `bin/xbookmark --version`.
 
-Tests run with `bundle exec rake coverage`, which runs RSpec and enforces 100% line coverage for `bin/` and `lib/`. Routine contributor test runs stub external services and do not hit the X API.
+Tests run with `bundle exec rake test`. Routine contributor test runs stub external services and do not hit the X API. `bundle exec rake coverage` enforces 100% line coverage over `bin/` and `lib/`.
 
 Pull requests should be small and focused — one logical change per PR — and pass the same checks as CI before pushing:
 
 ```bash
+bundle exec rake test
 bundle exec rake coverage
 bundle exec rubocop --parallel
 bundle exec brakeman --force --no-pager --quiet --ignore-config config/brakeman.ignore
