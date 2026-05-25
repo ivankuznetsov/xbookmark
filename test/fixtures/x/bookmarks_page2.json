@@ -1,0 +1,23 @@
+{
+  "data": [
+    {
+      "id": "1004",
+      "author_id": "u1",
+      "text": "later tweet",
+      "created_at": "2026-01-04T00:00:00.000Z"
+    }
+  ],
+  "includes": {
+    "users": [
+      {
+        "id": "u1",
+        "username": "alice",
+        "name": "Alice",
+        "profile_image_url": "https://x/p1.jpg"
+      }
+    ]
+  },
+  "meta": {
+    "result_count": 1
+  }
+}

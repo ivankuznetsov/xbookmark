@@ -13,7 +13,7 @@ tags: [dependencies]
 
 The project contains:
 
-- `Gemfile` using `gemspec`, plus development/test gems `rspec`, `webmock`, and `rake`.
+- `Gemfile` using `gemspec`, plus development/test gems `minitest`, `mocha`, `webmock`, and `rake`.
 - `xbookmark.gemspec` with runtime dependencies:
   - `thor` for the CLI.
   - `dotenv` for env-file loading.
@@ -50,6 +50,7 @@ The runtime shells out to external tools:
 
 xbookmark mirrors Hive's baseline CI shape:
 
+- `bundle exec rake test`
 - `bundle exec rake coverage`
 - `bundle exec rubocop --parallel --format github`
 - `bundle exec brakeman --force --no-pager --quiet --format github --ignore-config config/brakeman.ignore`
@@ -58,7 +59,7 @@ xbookmark mirrors Hive's baseline CI shape:
 The `coverage` rake task uses Ruby's built-in `Coverage` API to enforce 100%
 line coverage for `bin/` and `lib/` without adding a new gem dependency.
 
-The development/test bundle includes `rspec`, `webmock`, `rake`, `rubocop`,
+The development/test bundle includes `minitest`, `mocha`, `webmock`, `rake`, `rubocop`,
 `rubocop-rails-omakase`, `brakeman`, and `bundler-audit`.
 
 Related: [[architecture]], [[commands]], [[api]], [[data-model]], [[gaps]].

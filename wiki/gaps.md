@@ -12,7 +12,8 @@
 - 2026-05-14: `qmd update`, `qmd embed`, and collection-scoped `qmd search` passed for `xbookmark`. QMD tries GPU first and falls back to CPU on this host because Vulkan headers are missing.
 - 2026-05-14: `qmd query` can still be slow under the sandboxed local-model path; use `qmd search` for maintenance checks and fall back to `rg` when semantic generation is too slow.
 - 2026-05-22: README command/config docs were reconciled to the implemented CLI so new setups do not follow unsupported `schedule`, `--config`, `auth refresh/logout`, `enrich`, or extra backfill/find flags.
-- 2026-05-22: README Ruby version and contributor checks were reconciled to the gemspec and RSpec-based test suite.
+- 2026-05-22: README Ruby version and contributor checks were reconciled to the gemspec and then-current test suite.
+- 2026-05-25: Test suite, CI, README, and dependency notes now use Minitest with fixture-backed data and the 100% coverage gate.
 - 2026-05-22: Scheduler installation is now part of the default setup flow, and QMD registration handles the current `qmd collection add` command shape.
 - 2026-05-22: Runtime source, specs, CI config, and project wiki are now on `main`; the older "runtime not on main" gap is resolved.
 - 2026-05-22: `.env.example` no longer references a nonexistent `auth login --port` option; setup uses `X_REDIRECT_URI`.

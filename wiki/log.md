@@ -145,7 +145,7 @@ Append-only log of meaningful wiki updates.
 
 **Action:** Added setup/install cleanup for stale invalid top-level Codex `service_tier` values after production wiki maintenance failed on `service_tier = "default"` and docs review showed setup should not force Codex speed modes.
 **Pages updated:** README.md, wiki/decisions.md, wiki/log.md
-**Source:** `lib/xbookmark/codex_config.rb`, `lib/xbookmark/cli/setup.rb`, `lib/xbookmark/cli/install.rb`, `spec/xbookmark/codex_config_spec.rb`, `spec/xbookmark/cli/setup_spec.rb`, `spec/xbookmark/cli_spec.rb`, `README.md`.
+**Source:** `lib/xbookmark/codex_config.rb`, `lib/xbookmark/cli/setup.rb`, `lib/xbookmark/cli/install.rb`, `test/xbookmark/codex_config_test.rb`, `test/xbookmark/cli/setup_test.rb`, `test/xbookmark/cli_test.rb`, `README.md`.
 
 ## [2026-05-25T10:56:00Z] llm-wiki refresh
 
@@ -159,4 +159,12 @@ Append-only log of meaningful wiki updates.
 
 **Action:** Changed Codex enrichment invocation to pass prompts over stdin instead of argv after production backfill hit `Errno::E2BIG: Argument list too long - codex` on a large bookmark prompt.
 **Pages updated:** wiki/decisions.md, wiki/live-production-learnings.md, wiki/log.md
-**Source:** Live production backfill log, `lib/xbookmark/enrich/codex.rb`, `spec/xbookmark/enrich/codex_spec.rb`, `spec/xbookmark/enrich/orchestrator_spec.rb`, `spec/integration/v1_acceptance_spec.rb`.
+**Source:** Live production backfill log, `lib/xbookmark/enrich/codex.rb`, `test/xbookmark/enrich/codex_test.rb`, `test/xbookmark/enrich/orchestrator_test.rb`, `test/integration/v1_acceptance_test.rb`.
+
+## [2026-05-25T00:00:00Z] minitest fixture migration
+
+**Action:** Migrated the RSpec suite to Minitest, replaced RSpec mocks with Mocha, moved tests from `spec/` to `test/`, and added JSON fixtures for X bookmark API pages.
+**Pages updated:** README.md, wiki/dependencies.md, wiki/gaps.md, wiki/log.md
+**Decision:** Contributor and CI test commands now use `bundle exec rake test`, while `bundle exec rake coverage` remains the enforced 100% line coverage gate for `bin/` and `lib/`.
+**Verification:** `bundle exec rake coverage` passed with 301 runs, 1053 assertions, and 100.00% coverage (2297/2297).
+**Source:** `Gemfile`, `Rakefile`, `.github/workflows/ci.yml`, `test/`, and `test/fixtures/x/`.

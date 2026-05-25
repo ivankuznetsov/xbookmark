@@ -28,7 +28,7 @@ jobs:
         with:
           ruby-version: ${{ matrix.ruby }}
           bundler-cache: true
-      - name: Run RSpec suite with coverage gate
+      - name: Run Minitest coverage gate
         run: bundle exec rake coverage
 
   rubocop:
