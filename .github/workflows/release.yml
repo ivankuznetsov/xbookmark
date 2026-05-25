@@ -42,7 +42,7 @@ jobs:
       - name: Compute SHA256
         run: sha256sum xbookmark-x86_64-linux > xbookmark-x86_64-linux.sha256
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: xbookmark-x86_64-linux
           path: |
@@ -77,7 +77,7 @@ jobs:
       - name: Compute SHA256
         run: shasum -a 256 xbookmark-arm64-darwin > xbookmark-arm64-darwin.sha256
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: xbookmark-arm64-darwin
           path: |
@@ -104,7 +104,7 @@ jobs:
         run: |
           chmod +x packaging/deb/fpm.sh
           packaging/deb/fpm.sh "${TAG#v}" xbookmark-x86_64-linux
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: xbookmark-deb
           path: "xbookmark_*_amd64.deb"
