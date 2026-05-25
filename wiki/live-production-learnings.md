@@ -1,10 +1,10 @@
 ---
 title: Live Production Learnings
 type: learnings
-source: production setup/backfill run; X API probes; QMD checks; PRs 10-12
+source: production setup/backfill run; X API probes; QMD checks; PRs 10-12; Codex service-tier setup fix
 created: 2026-05-22
-updated: 2026-05-22
-tags: [learnings, production, backfill, x-api, whisper, qmd]
+updated: 2026-05-25
+tags: [learnings, production, backfill, x-api, whisper, qmd, codex]
 ---
 
 **TLDR**: The production run proved the pipeline works for every bookmark the X API exposes, but also surfaced several setup, media, enrichment, and search assumptions that needed hardening before new installs can be trusted.
@@ -12,7 +12,7 @@ tags: [learnings, production, backfill, x-api, whisper, qmd]
 ## Most Important Findings
 
 1. **Use 50-item bookmark pages, not 100-item pages.**
-   The X bookmarks endpoint rejects `max_results=200`, but `max_results=100` is not reliable in production: it returned one page with 98 unique IDs and no `next_token`. The same live account with `max_results=50` returned 95 pages, 4,745 unique IDs, and tweets back to 2019-12-10. More than 100 bookmarks works by following `meta.next_token`, but xbookmark should request 50 per page.
+   The X bookmarks endpoint rejects `max_results=200`, but `max_results=100` is not reliable in production: it returned one page with 98 unique IDs and no `next_token`. The same live account with `max_results=50` returned 95 pages, 4,745 unique IDs, and tweets back to 2019-12-10. More than 100 bookmarks works by following `meta.next_token`, and xbookmark now requests 50 per page.
 
 2. **Fresh setup docs must match implemented commands exactly.**
    The README originally drifted toward commands that did not exist, such as `schedule install` and `auth login --port`. New setup should use `bin/xbookmark install`, `X_REDIRECT_URI`, `XBOOKMARK_WIKI_PATH`, and `XBOOKMARK_ENV_FILE`. Keep the runtime bookmark wiki separate from this repository's project LLM wiki.
@@ -46,6 +46,12 @@ tags: [learnings, production, backfill, x-api, whisper, qmd]
 
 12. **Scheduler verification is part of production readiness.**
     The installed Linux unit is `xbookmark-sync.timer`, not `xbookmark.timer`. It points at the production `.env` and runs `bin/xbookmark sync --from-scheduler` daily. `sync --from-scheduler` should skip cleanly when the recent-run guard applies. Incremental sync should start at the newest bookmark page and stop after a fully known page; X `next_token` values are page-traversal tokens, not durable cursors for future syncs.
+
+13. **Do not force Codex service tiers in user setup.**
+    A stale top-level `service_tier = "default"` in Codex config broke production wiki maintenance, and forcing Codex fast/flex modes would make scheduled enrichment cost behavior surprising. The setup path should remove stale top-level service-tier overrides and let Codex use its standard processing unless the user intentionally configures a speed mode.
+
+14. **Large enrichment prompts must go through stdin, not argv.**
+    A long production bookmark with media/transcript context hit `Errno::E2BIG: Argument list too long - codex` because the full prompt was passed as a command argument to `codex exec`. The stable invocation is `codex exec --json -- -` with the prompt written to stdin, while images stay as discrete `--image` arguments.
 
 ## Production Verification Snapshot
 

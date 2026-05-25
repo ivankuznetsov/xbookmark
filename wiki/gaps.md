@@ -2,8 +2,9 @@
 
 | Area | Gap | Notes |
 |------|-----|-------|
-| Production backfill completeness | Production wiki still needs a backfill rerun with 50-item pages | `max_results=100` returned only 98 IDs with no `next_token`, while `max_results=50` returned 4,745 unique IDs across 95 pages. Code and docs now need to standardize on 50-item pages before rerunning production. |
-| Cross-project wiki | No xbookmark-specific master page found | `/home/asterio/wikis/master/wiki` exists, but `rg` found no `xbookmark`-specific page during refresh. |
+| Production backfill completeness | Production wiki still needs a backfill rerun with 50-item pages | Code and docs now standardize on 50-item bookmark pages. The remaining uncertainty is production data completeness after rerunning against the 4,745 IDs found by the read-only probe. |
+| Codex service-tier cleanup | Needs live setup/install verification after commit | Current checkout code removes stale top-level `service_tier` overrides and specs cover the parser/setup/install paths, but this refresh did not run a real setup/install against a user's live Codex config. |
+| Cross-project wiki | No xbookmark-specific master page found | `/home/asterio/wikis/master/wiki` exists, but 2026-05-25 searches found no `xbookmark`-specific page. `~/wikis/main/wiki`, `../wikis/master/wiki`, and `../wikis/main/wiki` did not exist. |
 
 ## Resolved Bootstrap Validation
 
@@ -19,3 +20,4 @@
 - 2026-05-22: Live production backfill exposed a Codex JSONL event-shape drift; `item.completed` agent messages are now parsed.
 - 2026-05-22: Media download no longer has a default 200 MB cap; large X videos are allowed to download.
 - 2026-05-22: Live OAuth, bookmark API, production scheduler, QMD, media, transcript, enrichment, and duplicate checks were validated against the production install. Durable lessons are captured in [[live-production-learnings]].
+- 2026-05-25: `bundle exec rake coverage` is now the local 100% line-coverage gate for `bin/` and `lib/`; last recorded pass was 299 examples at 100.00% (2297/2297).

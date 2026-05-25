@@ -18,6 +18,7 @@ RSpec.describe Xbookmark::CLI::Setup do
   before do
     allow(Xbookmark::Paths).to receive(:project_env_path).and_return("/nonexistent-project-env")
     allow(Xbookmark::Paths).to receive(:user_env_path).and_return("/nonexistent-user-env")
+    allow(Xbookmark::CodexConfig).to receive(:new).and_return(instance_double(Xbookmark::CodexConfig, remove_service_tier_override!: false))
   end
 
   def run_setup(extra = {})
@@ -120,6 +121,28 @@ RSpec.describe Xbookmark::CLI::Setup do
     input_lines.replace(["abc", "42", "", ""])
     expect(scheduler).to receive(:install)
     run_setup
+  end
+
+  it "removes codex service_tier override during setup" do
+    codex_config = instance_double(Xbookmark::CodexConfig, remove_service_tier_override!: true)
+    allow(Xbookmark::CodexConfig).to receive(:new).and_return(codex_config)
+
+    input_lines.replace(["abc", "42", "", ""])
+    run_setup
+
+    expect(codex_config).to have_received(:remove_service_tier_override!)
+    expect(output.string).to include("codex service_tier: removed stale override")
+  end
+
+  it "reports codex service tier setup failures without failing setup" do
+    codex_config = instance_double(Xbookmark::CodexConfig)
+    allow(codex_config).to receive(:remove_service_tier_override!).and_raise(StandardError, "bad config")
+    allow(Xbookmark::CodexConfig).to receive(:new).and_return(codex_config)
+
+    input_lines.replace(["abc", "42", "", ""])
+
+    expect(run_setup).to eq(0)
+    expect(output.string).to include("codex service_tier setup failed: bad config")
   end
 
   it "reports scheduler installation failures without failing setup" do

@@ -14,6 +14,7 @@ module Xbookmark
 
       def execute
         require_relative "../config"
+        require_relative "../codex_config"
         require_relative "../scheduler/installer"
         require_relative "../qmd/registrar"
 
@@ -28,6 +29,7 @@ module Xbookmark
         if options[:uninstall]
           installer.uninstall(**scheduler_options)
         else
+          Xbookmark::CodexConfig.new.remove_service_tier_override! unless options[:"dry-run"]
           installer.install(**scheduler_options)
           unless options[:"dry-run"]
             registrar = Xbookmark::Qmd::Registrar.new(config: config)

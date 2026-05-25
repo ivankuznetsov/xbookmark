@@ -87,8 +87,9 @@ xbookmark ships pre-built single-file binaries for `x86_64-linux` and
 
 After install, run `xbookmark` once — it auto-launches the interactive
 setup wizard, which writes your X API credentials to the host keystore
-(libsecret on Linux, login Keychain on macOS) and optionally enables
-the daily sync timer.
+(libsecret on Linux, login Keychain on macOS), removes stale Codex
+service-tier overrides that can break scheduled runs, and enables the daily
+sync timer.
 
 ### Upgrades
 
@@ -191,7 +192,7 @@ then, use the published rate and quota on that page for your own estimate.
 
 ### codex authentication
 
-Install the [`codex` CLI](https://github.com/openai/codex), run `codex login` once, point `CODEX_PROFILE` at the profile you want xbookmark to use, and confirm with `codex whoami`.
+Install the [`codex` CLI](https://github.com/openai/codex), run `codex login` once, point `CODEX_PROFILE` at the profile you want xbookmark to use, and confirm with `codex whoami`. `xbookmark setup` and `xbookmark install` remove stale global `service_tier` overrides from `~/.codex/config.toml` so scheduled enrichment uses Codex's standard processing unless you intentionally enable a Codex speed mode yourself.
 
 ### Whisper backend
 

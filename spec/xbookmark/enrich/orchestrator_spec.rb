@@ -153,7 +153,7 @@ RSpec.describe Xbookmark::Enrich::Orchestrator do
     described_class.new(codex: Xbookmark::Enrich::Codex.new(bin: "codex", runner: fake), link_fetcher: link_fetcher)
       .enrich(bookmark)
 
-    expect(fake.calls.last.last).to include("quoted context")
+    expect(fake.stdin_inputs.last).to include("quoted context")
   end
 
   it "includes transcript snippets in retry prompts" do
@@ -164,7 +164,7 @@ RSpec.describe Xbookmark::Enrich::Orchestrator do
     described_class.new(codex: Xbookmark::Enrich::Codex.new(bin: "codex", runner: fake), link_fetcher: link_fetcher)
       .enrich(bookmark, transcripts: { "video.mp4" => "spoken words" })
 
-    expect(fake.calls.last.last).to include("[video.mp4]\nspoken words")
+    expect(fake.stdin_inputs.last).to include("[video.mp4]\nspoken words")
   end
 
   it "summarizes aux pages through codex templates" do
@@ -175,8 +175,8 @@ RSpec.describe Xbookmark::Enrich::Orchestrator do
 
     expect(orch.summarize_topic(slug: "ozempic", snippets: %w[a b])).to eq("Topic summary")
     expect(orch.summarize_author(handle: "alice", snippets: ["first"])).to eq("Author summary")
-    expect(fake.calls.first.last).to include("ozempic")
-    expect(fake.calls.last.last).to include("alice")
+    expect(fake.stdin_inputs.first).to include("ozempic")
+    expect(fake.stdin_inputs.last).to include("alice")
   end
 
   it "runs the vision prompt with image timeout when asked directly" do

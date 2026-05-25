@@ -248,10 +248,13 @@ RSpec.describe Xbookmark::CLI do
     config = test_config
     scheduler = instance_double(Xbookmark::Scheduler::Base)
     registrar = instance_double(Xbookmark::Qmd::Registrar)
+    codex_config = instance_double(Xbookmark::CodexConfig)
     allow(Xbookmark::Config).to receive(:load).and_return(config)
     allow(Xbookmark::Scheduler::Factory).to receive(:build).and_return(scheduler)
     allow(Xbookmark::Qmd::Registrar).to receive(:new).and_return(registrar)
+    allow(Xbookmark::CodexConfig).to receive(:new).and_return(codex_config)
 
+    expect(codex_config).to receive(:remove_service_tier_override!).once
     expect(scheduler).to receive(:install).with(time: "07:30", dry_run: false)
     expect(registrar).to receive(:ensure_registered!)
     Xbookmark::CLI::Install.new([], { time: "07:30", "dry-run": false }).execute

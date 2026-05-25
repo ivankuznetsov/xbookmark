@@ -13,6 +13,18 @@ RSpec.describe Xbookmark::Enrich::Codex do
     expect(fake.calls.first).to include("--json")
   end
 
+  it "passes prompts over stdin instead of argv" do
+    prompt = "x" * 200_000
+    fake = FakeCodex.new.push({ "tags" => ["a"] })
+    codex = described_class.new(bin: "codex", runner: fake)
+
+    codex.run(prompt: prompt, json_schema: { "type" => "object", "required" => %w[tags] })
+
+    expect(fake.calls.first.last(2)).to eq(["--", "-"])
+    expect(fake.calls.first).not_to include(prompt)
+    expect(fake.stdin_inputs.first).to eq(prompt)
+  end
+
   it "raises CodexError when codex exits non-zero" do
     fake = FakeCodex.new.push(2) # exit code
     codex = described_class.new(bin: "codex", runner: fake)
@@ -98,7 +110,7 @@ RSpec.describe Xbookmark::Enrich::Codex do
 
   it "invokes subprocesses with timeout handling" do
     codex = described_class.new(bin: "codex")
-    out, err, status = codex.send(:invoke_with_timeout, [RbConfig.ruby, "-e", "STDOUT.write 'ok'; STDERR.write 'warn'"], 2)
+    out, err, status = codex.send(:invoke_with_timeout, [RbConfig.ruby, "-e", "STDOUT.write STDIN.read; STDERR.write 'warn'"], 2, stdin_data: "ok")
 
     expect(out).to eq("ok")
     expect(err).to eq("warn")
@@ -109,12 +121,22 @@ RSpec.describe Xbookmark::Enrich::Codex do
     end.to raise_error(Xbookmark::CodexError, /exceeded timeout/)
   end
 
+  it "ignores broken stdin pipes after the child exits early" do
+    broken_stdin = instance_double(IO)
+    allow(broken_stdin).to receive(:write).and_raise(Errno::EPIPE)
+    allow(broken_stdin).to receive(:close)
+
+    expect(described_class.new(bin: "codex").send(:write_stdin, broken_stdin, "prompt")).to be_nil
+    expect(broken_stdin).to have_received(:close)
+  end
+
   it "routes through invoke_with_timeout when no runner is injected" do
     codex = described_class.new(bin: "codex")
     status = instance_double(Process::Status, success?: true, exitstatus: 0)
     allow(codex).to receive(:invoke_with_timeout).and_return(["{}", "", status])
 
-    expect(codex.send(:invoke, ["codex"], timeout: 1)).to eq(["{}", "", status])
+    expect(codex.send(:invoke, ["codex"], stdin_data: "prompt", timeout: 1)).to eq(["{}", "", status])
+    expect(codex).to have_received(:invoke_with_timeout).with(["codex"], 1, stdin_data: "prompt")
   end
 
   it "skips non-JSON model-message payloads before falling back to raw JSON parsing" do

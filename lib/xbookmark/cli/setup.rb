@@ -8,6 +8,7 @@ require_relative "../keystore"
 require_relative "../keystore/importer"
 require_relative "../scheduler/installer"
 require_relative "../config"
+require_relative "../codex_config"
 
 module Xbookmark
   class CLI
@@ -49,6 +50,7 @@ module Xbookmark
 
         prompt_for_missing_keys
 
+        ensure_codex_service_tier
         install_scheduler
 
         say ""
@@ -140,6 +142,15 @@ module Xbookmark
         say "  scheduler installed"
       rescue StandardError => e
         say "  scheduler install failed: #{e.message}"
+      end
+
+      def ensure_codex_service_tier
+        say ""
+        changed = Xbookmark::CodexConfig.new.remove_service_tier_override!
+        status = changed ? "removed stale override" : "standard"
+        say "  codex service_tier: #{status}"
+      rescue StandardError => e
+        say "  codex service_tier setup failed: #{e.message}"
       end
 
       def prompt(label, secret: false)
