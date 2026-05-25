@@ -25,19 +25,32 @@ RSpec.describe Xbookmark::CodexConfig do
     end
   end
 
-  it "removes an invalid top-level service tier" do
+  it "removes stale invalid top-level service tiers" do
     input = <<~TOML
       model = "gpt-5.5"
       service_tier = "default"
+      service_tier = "flex"
+      service_tier = 'default'
       [projects."/tmp/app"]
+      service_tier = "default"
       trust_level = "trusted"
     TOML
 
     expect(described_class.without_service_tier(input)).to eq(<<~TOML)
       model = "gpt-5.5"
       [projects."/tmp/app"]
+      service_tier = "default"
       trust_level = "trusted"
     TOML
+  end
+
+  it "preserves intentional valid speed tiers" do
+    input = <<~TOML
+      model = "gpt-5.5"
+      service_tier = "fast"
+    TOML
+
+    expect(described_class.without_service_tier(input)).to eq(input)
   end
 
   it "leaves configs without a service tier unchanged" do
@@ -72,6 +85,18 @@ RSpec.describe Xbookmark::CodexConfig do
 
       expect(File.read(path)).to eq("")
       expect(format("%o", File.stat(path).mode & 0o777)).to eq("600")
+    end
+  end
+
+  it "keeps the original config if atomic replacement fails" do
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, "config.toml")
+      File.write(path, "service_tier = \"default\"\nmodel = \"gpt-5.5\"\n")
+      allow(File).to receive(:rename).and_raise(Errno::EACCES)
+
+      expect { described_class.new(path: path).remove_service_tier_override! }.to raise_error(Errno::EACCES)
+      expect(File.read(path)).to eq("service_tier = \"default\"\nmodel = \"gpt-5.5\"\n")
+      expect(Dir.children(dir)).to eq(["config.toml"])
     end
   end
 end

@@ -87,9 +87,9 @@ xbookmark ships pre-built single-file binaries for `x86_64-linux` and
 
 After install, run `xbookmark` once — it auto-launches the interactive
 setup wizard, which writes your X API credentials to the host keystore
-(libsecret on Linux, login Keychain on macOS), removes stale Codex
-service-tier overrides that can break scheduled runs, and enables the daily
-sync timer.
+(libsecret on Linux, login Keychain on macOS), removes stale invalid Codex
+service-tier values that can break scheduled runs, and enables the daily sync
+timer.
 
 ### Upgrades
 
@@ -192,7 +192,7 @@ then, use the published rate and quota on that page for your own estimate.
 
 ### codex authentication
 
-Install the [`codex` CLI](https://github.com/openai/codex), run `codex login` once, point `CODEX_PROFILE` at the profile you want xbookmark to use, and confirm with `codex whoami`. `xbookmark setup` and `xbookmark install` remove stale global `service_tier` overrides from `~/.codex/config.toml` so scheduled enrichment uses Codex's standard processing unless you intentionally enable a Codex speed mode yourself.
+Install the [`codex` CLI](https://github.com/openai/codex), run `codex login` once, point `CODEX_PROFILE` at the profile you want xbookmark to use, and confirm with `codex whoami`. `xbookmark setup` and `xbookmark install` remove stale invalid global `service_tier` values from `~/.codex/config.toml` so scheduled enrichment is not blocked by old config, while preserving intentional valid Codex speed modes.
 
 ### Whisper backend
 
@@ -441,12 +441,12 @@ No commitments, no timeline — just the directions I expect to take next.
 
 Dev setup is the same as a user install: `git clone`, `bundle install`, `cp .env.example .env`, and confirm with `bin/xbookmark --version`.
 
-Tests run with `bundle exec rspec`. Routine contributor test runs stub external services and do not hit the X API.
+Tests run with `bundle exec rake coverage`, which runs RSpec and enforces 100% line coverage for `bin/` and `lib/`. Routine contributor test runs stub external services and do not hit the X API.
 
 Pull requests should be small and focused — one logical change per PR — and pass the same checks as CI before pushing:
 
 ```bash
-bundle exec rspec
+bundle exec rake coverage
 bundle exec rubocop --parallel
 bundle exec brakeman --force --no-pager --quiet --ignore-config config/brakeman.ignore
 bundle exec bundler-audit check --update

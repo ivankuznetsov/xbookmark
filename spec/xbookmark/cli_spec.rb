@@ -267,6 +267,24 @@ RSpec.describe Xbookmark::CLI do
     Xbookmark::CLI::Install.new([], { uninstall: true, "dry-run": false }).execute
   end
 
+  it "continues install when codex service tier cleanup fails" do
+    config = test_config
+    scheduler = instance_double(Xbookmark::Scheduler::Base)
+    registrar = instance_double(Xbookmark::Qmd::Registrar)
+    codex_config = instance_double(Xbookmark::CodexConfig)
+    allow(Xbookmark::Config).to receive(:load).and_return(config)
+    allow(Xbookmark::Scheduler::Factory).to receive(:build).and_return(scheduler)
+    allow(Xbookmark::Qmd::Registrar).to receive(:new).and_return(registrar)
+    allow(Xbookmark::CodexConfig).to receive(:new).and_return(codex_config)
+    allow(codex_config).to receive(:remove_service_tier_override!).and_raise(StandardError, "bad config")
+
+    expect(scheduler).to receive(:install).with(time: "06:00", dry_run: false)
+    expect(registrar).to receive(:ensure_registered!)
+
+    err = capture_stderr { Xbookmark::CLI::Install.new([], { "dry-run": false }).execute }
+    expect(err).to include("codex service_tier setup failed: bad config")
+  end
+
   it "routes setup and uninstall commands" do
     setup = instance_double(Xbookmark::CLI::Setup, execute: 0)
     expect(Xbookmark::CLI::Setup).to receive(:new).with([], kind_of(Hash)).and_return(setup)

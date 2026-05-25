@@ -14,7 +14,7 @@ Updated: 2026-05-25
 
 ## Core Pages
 
-- [[architecture]] - Runtime architecture, local HEAD/source state, Codex config cleanup, QMD registration, scheduling, and coverage gate.
+- [[architecture]] - Runtime architecture, production-hardening state, Codex config cleanup, QMD registration, scheduling, and coverage gate.
 - [[api]] - External API, OAuth callback, X API, QMD, Codex subprocess, and Codex config-file surfaces.
 - [[commands]] - CLI command surface, fresh setup contract, first-run setup wizard, install, and uninstall behavior.
 - [[data-model]] - SQLite state schema, bookmark wiki layout, statuses, modes, and transactional behavior.

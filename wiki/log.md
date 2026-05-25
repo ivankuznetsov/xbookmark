@@ -57,7 +57,7 @@ Append-only log of meaningful wiki updates.
 
 **Action:** Added Hive-style CI checks for xbookmark and updated contributor docs.
 **Pages updated:** wiki/dependencies.md, wiki/log.md
-**Decision:** CI runs RSpec, RuboCop with the 37signals omakase base, Brakeman, and bundler-audit. The local RuboCop config keeps xbookmark's existing array-bracket style to avoid a broad mechanical rewrite.
+**Decision:** CI runs the coverage Rake task, RuboCop with the 37signals omakase base, Brakeman, and bundler-audit. The local RuboCop config keeps xbookmark's existing array-bracket style to avoid a broad mechanical rewrite.
 **Source:** Hive `.github/workflows/ci.yml`, Hive Dependabot/PR template, xbookmark Gemfile, `.rubocop.yml`, `.github/workflows/ci.yml`, and local check outputs.
 
 ## [2026-05-22T15:23:06Z] default scheduler setup refresh
@@ -143,16 +143,16 @@ Append-only log of meaningful wiki updates.
 
 ## [2026-05-25T10:55:00Z] codex service tier setup fix
 
-**Action:** Added setup/install cleanup for stale top-level Codex `service_tier` overrides after production wiki maintenance failed on `service_tier = "default"` and docs review showed Codex fast mode should not be forced for maintenance.
+**Action:** Added setup/install cleanup for stale invalid top-level Codex `service_tier` values after production wiki maintenance failed on `service_tier = "default"` and docs review showed setup should not force Codex speed modes.
 **Pages updated:** README.md, wiki/decisions.md, wiki/log.md
 **Source:** `lib/xbookmark/codex_config.rb`, `lib/xbookmark/cli/setup.rb`, `lib/xbookmark/cli/install.rb`, `spec/xbookmark/codex_config_spec.rb`, `spec/xbookmark/cli/setup_spec.rb`, `spec/xbookmark/cli_spec.rb`, `README.md`.
 
 ## [2026-05-25T10:56:00Z] llm-wiki refresh
 
-**Action:** Refreshed project wiki pages from current config, recent log entries, cross-project wiki search, recent git history, local HEAD coverage work, and uncommitted Codex service-tier setup changes.
+**Action:** Refreshed project wiki pages from current config, recent log entries, cross-project wiki search, recent git history, coverage work, and Codex service-tier setup changes.
 **Pages updated:** wiki/architecture.md, wiki/api.md, wiki/commands.md, wiki/data-model.md, wiki/dependencies.md, wiki/active-areas.md, wiki/decisions.md, wiki/live-production-learnings.md, wiki/gaps.md, wiki/index.md, wiki/log.md
 **Main wiki:** searched `/home/asterio/wikis/master/wiki`; no xbookmark-specific page found. `~/wikis/main/wiki`, `../wikis/master/wiki`, and `../wikis/main/wiki` did not exist.
-**QMD:** not run; this refresh intentionally avoided `qmd update` and `qmd embed` because the wrapper script owns bounded qmd maintenance.
+**QMD:** review follow-up ran bounded `qmd search` queries for Codex service-tier and large-prompt terms; no indexed hits were returned. This refresh intentionally avoided `qmd update` and `qmd embed` because the wrapper script owns bounded qmd maintenance.
 **Source:** `.llm-wiki/config.json`, `AGENTS.md`, `CLAUDE.md`, `wiki/index.md`, `wiki/gaps.md`, recent `wiki/log.md`, `git log --name-status`, `git status --short`, `Rakefile`, `lib/xbookmark/codex_config.rb`, `lib/xbookmark/cli/setup.rb`, `lib/xbookmark/cli/install.rb`, `lib/xbookmark/enrich/link_fetcher.rb`, and related specs.
 
 ## [2026-05-25T11:40:00Z] codex large prompt fix

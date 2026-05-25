@@ -7,11 +7,11 @@ updated: 2026-05-25
 tags: [activity]
 ---
 
-**TLDR**: Production backfill reliability work and the 50-item bookmark pagination fix have landed; the current local follow-up is Codex service-tier setup cleanup plus keeping the 100% coverage gate current.
+**TLDR**: Production backfill reliability work, 50-item bookmark pagination, Codex service-tier cleanup, and the 100% coverage gate are the current hardening focus.
 
-## Active Branch
+## Current Hardening Surface
 
-`origin/main` includes the production setup/backfill fixes through PR #38, and local `main` is ahead with `355e958 test: enforce complete coverage`:
+The active production-hardening behavior is:
 
 - README setup now runs `bin/xbookmark install` as a required daily scheduler step instead of asking whether to install it.
 - Linux scheduler setup tries to enable systemd linger through `loginctl enable-linger <user>` so the daily timer can fire after logout.
@@ -23,18 +23,16 @@ tags: [activity]
 - `Xbookmark::Qmd::Registrar` tries current `qmd collection list`/`collection add` first and preserves legacy command fallbacks.
 - `Xbookmark::Enrich::Codex` unwraps current `codex exec --json` `item.completed` agent messages.
 - Specs cover the README setup contract, legacy registrar fallback, scheduler linger setup, and current Codex JSON event parsing.
-- `bundle exec rake coverage` now runs RSpec under Ruby's built-in `Coverage` API and enforces 100% line coverage for `bin/` and `lib/`.
+- `bundle exec rake coverage` runs RSpec under Ruby's built-in `Coverage` API and enforces 100% line coverage for `bin/` and `lib/`.
 - The earlier `XBOOKMARK_WIKI_PATH` runtime wiki terminology is already on `main`.
 - Production verification and reusable lessons are summarized in [[live-production-learnings]].
 
-## Current Checkout Follow-Up
+## Service-Tier Setup Cleanup
 
-`git status` on 2026-05-25 shows uncommitted service-tier setup work:
-
-- `lib/xbookmark/codex_config.rb` removes only top-level `service_tier = ...` entries from the Codex config and tightens rewritten file mode to `0600`.
+- `lib/xbookmark/codex_config.rb` removes only stale invalid top-level `service_tier` values from the Codex config, preserves valid speed modes and project tables, and rewrites changed files atomically with mode `0600`.
 - `xbookmark setup` calls that cleanup after collecting required X credentials and reports cleanup failures without failing the wizard.
-- `xbookmark install` calls the cleanup for real installs, but skips it for `--dry-run` and `--uninstall`.
-- Specs cover the config-file parser, setup wizard reporting, install invocation, and README contract against documented forced service tiers.
+- `xbookmark install` calls the cleanup for real installs, skips it for `--dry-run` and `--uninstall`, and treats cleanup failures as warnings so scheduler install and QMD registration can continue.
+- Specs cover the config-file parser, atomic replacement failure behavior, setup wizard reporting, install warning behavior, and README contract against documented forced service tiers.
 
 ## Setup Reliability
 

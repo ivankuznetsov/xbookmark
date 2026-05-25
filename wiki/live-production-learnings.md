@@ -48,7 +48,7 @@ tags: [learnings, production, backfill, x-api, whisper, qmd, codex]
     The installed Linux unit is `xbookmark-sync.timer`, not `xbookmark.timer`. It points at the production `.env` and runs `bin/xbookmark sync --from-scheduler` daily. `sync --from-scheduler` should skip cleanly when the recent-run guard applies. Incremental sync should start at the newest bookmark page and stop after a fully known page; X `next_token` values are page-traversal tokens, not durable cursors for future syncs.
 
 13. **Do not force Codex service tiers in user setup.**
-    A stale top-level `service_tier = "default"` in Codex config broke production wiki maintenance, and forcing Codex fast/flex modes would make scheduled enrichment cost behavior surprising. The setup path should remove stale top-level service-tier overrides and let Codex use its standard processing unless the user intentionally configures a speed mode.
+    A stale top-level `service_tier = "default"` in Codex config broke production wiki maintenance, and forcing Codex fast/flex modes would make scheduled enrichment cost behavior surprising. The setup path should remove stale invalid top-level service-tier values while preserving intentional valid speed modes.
 
 14. **Large enrichment prompts must go through stdin, not argv.**
     A long production bookmark with media/transcript context hit `Errno::E2BIG: Argument list too long - codex` because the full prompt was passed as a command argument to `codex exec`. The stable invocation is `codex exec --json -- -` with the prompt written to stdin, while images stay as discrete `--image` arguments.

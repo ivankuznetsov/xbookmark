@@ -3,7 +3,7 @@
 | Area | Gap | Notes |
 |------|-----|-------|
 | Production backfill completeness | Production wiki still needs a backfill rerun with 50-item pages | Code and docs now standardize on 50-item bookmark pages. The remaining uncertainty is production data completeness after rerunning against the 4,745 IDs found by the read-only probe. |
-| Codex service-tier cleanup | Needs live setup/install verification after commit | Current checkout code removes stale top-level `service_tier` overrides and specs cover the parser/setup/install paths, but this refresh did not run a real setup/install against a user's live Codex config. |
+| Codex service-tier cleanup | Needs live setup/install verification after commit | Current code removes stale invalid top-level `service_tier` values, preserves valid speed modes, and specs cover parser/setup/install/atomic-write paths, but this refresh did not run a real setup/install against a user's live Codex config. |
 | Cross-project wiki | No xbookmark-specific master page found | `/home/asterio/wikis/master/wiki` exists, but 2026-05-25 searches found no `xbookmark`-specific page. `~/wikis/main/wiki`, `../wikis/master/wiki`, and `../wikis/main/wiki` did not exist. |
 
 ## Resolved Bootstrap Validation

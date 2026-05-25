@@ -58,8 +58,8 @@ Bookmark requests use 50-item pages and follow `meta.next_token`. Production tes
 ## Codex Config File Surface
 
 - `Xbookmark::CodexConfig.default_path` reads `$CODEX_HOME/config.toml` when `CODEX_HOME` is set, otherwise `~/.codex/config.toml`.
-- `xbookmark setup` and non-dry-run `xbookmark install` remove only a top-level `service_tier = ...` line before the first TOML table. Project-scoped tables such as `[projects."/tmp/app"]` are preserved.
-- When the file is rewritten, xbookmark creates parent directories as needed and sets the config file mode to `0600`.
+- `xbookmark setup` and non-dry-run `xbookmark install` remove only stale invalid top-level `service_tier` values before the first TOML table. Project-scoped tables such as `[projects."/tmp/app"]` and valid speed modes are preserved.
+- When the file is rewritten, xbookmark creates parent directories as needed, writes through an atomic temp-file replacement, and sets the config file mode to `0600`.
 
 ## Public Contract Notes
 

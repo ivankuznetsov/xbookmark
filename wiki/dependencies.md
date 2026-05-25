@@ -32,7 +32,7 @@ The runtime shells out to external tools:
 
 - `codex` for LLM enrichment via `codex exec --json`.
   - Bookmark-note enrichment always uses Codex. Separate author/topic/entity page summaries are opt-in with `XBOOKMARK_AUX_SUMMARIES=true` because they add many extra Codex calls during backfill.
-  - Setup/install cleanup edits `~/.codex/config.toml` or `$CODEX_HOME/config.toml` only to remove stale top-level `service_tier` overrides that can break scheduled runs or force Codex speed modes.
+  - Setup/install cleanup edits `~/.codex/config.toml` or `$CODEX_HOME/config.toml` only to remove stale invalid top-level `service_tier` values that can break scheduled runs; valid speed modes are preserved.
 - `qmd` for search collection registration, indexing, and querying.
 - A whisper backend, detected from `WHISPER_BIN` or PATH candidates `whisper-cli`, `whisper-cpp`, `whisper`, and `faster-whisper`.
   - For whisper.cpp binaries, model aliases such as `base.en` resolve to `ggml-base.en.bin` under `WHISPER_MODEL_DIR`, the source checkout's `models/` directory next to the binary, or `./models`.
@@ -50,7 +50,6 @@ The runtime shells out to external tools:
 
 xbookmark mirrors Hive's baseline CI shape:
 
-- `bundle exec rspec`
 - `bundle exec rake coverage`
 - `bundle exec rubocop --parallel --format github`
 - `bundle exec brakeman --force --no-pager --quiet --format github --ignore-config config/brakeman.ignore`

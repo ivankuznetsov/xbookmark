@@ -22,7 +22,7 @@ The README agent prompt should only reference implemented commands. A new setup 
 
 The runtime bookmark wiki created at `XBOOKMARK_WIKI_PATH` is separate from this repository's project LLM wiki in `wiki/`.
 
-Packaged binary installs also support running `xbookmark` with no arguments in a TTY. That first-run path launches `xbookmark setup`, writes required X credentials into the keystore when available, removes stale top-level Codex `service_tier` overrides, and installs the daily scheduler.
+Packaged binary installs also support running `xbookmark` with no arguments in a TTY. That first-run path launches `xbookmark setup`, writes required X credentials into the keystore when available, removes stale invalid top-level Codex `service_tier` values, and installs the daily scheduler.
 
 ## Implemented Command Surface
 
@@ -35,8 +35,8 @@ Packaged binary installs also support running `xbookmark` with no arguments in a
 - `xbookmark resync TWEET_ID` re-fetches and reprocesses one tweet.
 - `xbookmark find QUERY [--limit N]` searches the QMD `bookmarks` collection and prints numbered text results. `Qmd::Searcher` invokes `qmd query --collection bookmarks --types lex,vec --limit N --json QUERY` and caps parsed results to `N` even if the installed QMD returns extra hits.
 - `xbookmark doctor` checks platform, scheduler backend, bookmark wiki path, state DB path, `codex`, whisper, `qmd`, and X auth token presence.
-- `xbookmark install [--time HH:MM] [--dry-run] [--uninstall]` installs or removes the daily scheduler and registers QMD when installing. Non-dry-run installs also remove stale top-level Codex `service_tier` overrides before writing scheduler state. Linux installs try to enable systemd linger so the timer can fire after logout.
-- `xbookmark setup` is the interactive first-run wizard. It imports legacy env-file credentials into the active keystore, prompts for missing X keys, removes stale Codex `service_tier` overrides, and installs the scheduler. Service-tier cleanup and scheduler failures are reported but do not abort the wizard.
+- `xbookmark install [--time HH:MM] [--dry-run] [--uninstall]` installs or removes the daily scheduler and registers QMD when installing. Non-dry-run installs also remove stale invalid top-level Codex `service_tier` values before writing scheduler state, but cleanup failures are warnings. Linux installs try to enable systemd linger so the timer can fire after logout.
+- `xbookmark setup` is the interactive first-run wizard. It imports legacy env-file credentials into the active keystore, prompts for missing X keys, removes stale invalid Codex `service_tier` values, and installs the scheduler. Service-tier cleanup and scheduler failures are reported but do not abort the wizard.
 - `xbookmark uninstall --purge [--yes] [--dry-run]` removes scheduler units, keystore entries, and the config directory after explicit purge confirmation.
 
 Global options visible in `Xbookmark::CLI` are `--wiki`, `--vault` as a legacy alias, and `--verbose`.

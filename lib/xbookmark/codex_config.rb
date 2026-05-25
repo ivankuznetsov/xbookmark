@@ -1,9 +1,12 @@
 # frozen_string_literal: true
 
 require "fileutils"
+require "securerandom"
 
 module Xbookmark
   class CodexConfig
+    STALE_SERVICE_TIER_VALUES = %w[default flex].freeze
+
     attr_reader :path
 
     def initialize(path: nil)
@@ -21,8 +24,7 @@ module Xbookmark
       return false if updated == current
 
       FileUtils.mkdir_p(File.dirname(path))
-      File.open(path, File::WRONLY | File::CREAT | File::TRUNC, 0o600) { |file| file.write(updated) }
-      File.chmod(0o600, path)
+      atomic_write(updated)
       true
     end
 
@@ -30,9 +32,31 @@ module Xbookmark
       lines = content.lines
       table_index = lines.find_index { |line| line.match?(/\A\s*\[/) } || lines.length
 
-      top_level_key_index = lines[0...table_index].find_index { |line| line.match?(/\A\s*service_tier\s*=/) }
-      lines.delete_at(top_level_key_index) if top_level_key_index
-      lines.join
+      lines.each_with_index.reject { |(line, index)| index < table_index && stale_service_tier?(line) }
+           .map(&:first)
+           .join
+    end
+
+    def self.stale_service_tier?(line)
+      match = line.match(/\A\s*service_tier\s*=\s*(?:"([^"]+)"|'([^']+)'|([A-Za-z0-9_-]+))/)
+      return false unless match
+
+      STALE_SERVICE_TIER_VALUES.include?((match[1] || match[2] || match[3]).to_s)
+    end
+
+    private
+
+    def atomic_write(content)
+      tmp_path = File.join(File.dirname(path), ".#{File.basename(path)}.#{Process.pid}.#{SecureRandom.hex(4)}.tmp")
+      File.open(tmp_path, File::WRONLY | File::CREAT | File::EXCL, 0o600) do |file|
+        file.write(content)
+        file.flush
+        file.fsync
+      end
+      File.rename(tmp_path, path)
+      File.chmod(0o600, path)
+    ensure
+      File.delete(tmp_path) if tmp_path && File.exist?(tmp_path)
     end
   end
 end

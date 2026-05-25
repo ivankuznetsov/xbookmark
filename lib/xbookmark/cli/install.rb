@@ -29,13 +29,21 @@ module Xbookmark
         if options[:uninstall]
           installer.uninstall(**scheduler_options)
         else
-          Xbookmark::CodexConfig.new.remove_service_tier_override! unless options[:"dry-run"]
+          cleanup_codex_service_tier unless options[:"dry-run"]
           installer.install(**scheduler_options)
           unless options[:"dry-run"]
             registrar = Xbookmark::Qmd::Registrar.new(config: config)
             registrar.ensure_registered!
           end
         end
+      end
+
+      private
+
+      def cleanup_codex_service_tier
+        Xbookmark::CodexConfig.new.remove_service_tier_override!
+      rescue StandardError => e
+        warn "[xbookmark] codex service_tier setup failed: #{e.message}"
       end
     end
   end

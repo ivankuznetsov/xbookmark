@@ -24,7 +24,7 @@ task :coverage do
 
   status = RSpec::Core::Runner.run(["--format", "progress", "spec"])
   result = Coverage.result
-  rows = coverage_rows(result, root)
+  rows = XbookmarkCoverage.rows(result, root)
   covered = rows.sum { |row| row[:covered] }
   total = rows.sum { |row| row[:total] }
 
@@ -43,12 +43,20 @@ task :coverage do
   abort "Coverage is below 100%" unless covered == total
 end
 
-def coverage_rows(result, root)
-  prefix = "#{root}/"
-  result.each_with_object([]) do |(file, data), rows|
-    next unless file.start_with?("#{prefix}lib/") || file.start_with?("#{prefix}bin/")
+module XbookmarkCoverage
+  module_function
 
-    lines = data[:lines] || data
+  def rows(result, root)
+    prefix = "#{root}/"
+    result.each_with_object([]) do |(file, data), rows|
+      next unless file.start_with?("#{prefix}lib/") || file.start_with?("#{prefix}bin/")
+
+      row = row_for(file, data[:lines] || data, prefix)
+      rows << row if row
+    end
+  end
+
+  def row_for(file, lines, prefix)
     covered = 0
     total = 0
     missed = []
@@ -62,8 +70,8 @@ def coverage_rows(result, root)
         missed << index + 1
       end
     end
-    next if total.zero?
+    return nil if total.zero?
 
-    rows << { path: file.delete_prefix(prefix), covered: covered, total: total, missed: missed }
+    { path: file.delete_prefix(prefix), covered: covered, total: total, missed: missed }
   end
 end

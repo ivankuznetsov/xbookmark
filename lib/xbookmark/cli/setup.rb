@@ -147,7 +147,7 @@ module Xbookmark
       def ensure_codex_service_tier
         say ""
         changed = Xbookmark::CodexConfig.new.remove_service_tier_override!
-        status = changed ? "removed stale override" : "standard"
+        status = changed ? "removed stale override" : "unchanged"
         say "  codex service_tier: #{status}"
       rescue StandardError => e
         say "  codex service_tier setup failed: #{e.message}"
