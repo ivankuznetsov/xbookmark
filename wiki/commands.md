@@ -1,9 +1,9 @@
 ---
 title: Commands
 type: commands
-source: bin/xbookmark; lib/xbookmark/cli.rb; lib/xbookmark/cli/*.rb; lib/xbookmark/config.rb; lib/xbookmark/qmd/registrar.rb; README.md; .env.example
+source: bin/xbookmark; lib/xbookmark/cli.rb; lib/xbookmark/cli/*.rb; lib/xbookmark/config.rb; lib/xbookmark/x/auth.rb; lib/xbookmark/qmd/registrar.rb; README.md; .env.example
 created: 2026-05-14
-updated: 2026-05-25
+updated: 2026-05-30
 tags: [commands, cli]
 ---
 
@@ -28,7 +28,7 @@ Packaged binary installs also support running `xbookmark` with no arguments in a
 
 - `bin/xbookmark` requires `lib/xbookmark/cli` and starts `Xbookmark::CLI`.
 - `xbookmark version` prints `Xbookmark::VERSION`.
-- `xbookmark auth login` runs OAuth 2.0 PKCE against X and writes tokens to the configured env file.
+- `xbookmark auth login` runs OAuth 2.0 PKCE against X and writes tokens to the loaded env file when one is active, to the stable user env file when keychain is the only automatic store, or to the active keystore backend otherwise.
 - `xbookmark auth status` reports whether an access token is present.
 - `xbookmark backfill [--limit N]` runs a limited test backfill when `--limit` is present and a full backfill otherwise.
 - `xbookmark sync [--from-scheduler]` runs incremental sync; scheduler invocations can skip if the last completed sync is too recent.
@@ -59,6 +59,7 @@ Do not document these commands as available until implementation lands:
 
 - `auth refresh`
 - `auth logout`
+- provider-specific auth-routing commands
 - `enrich`
 - `schedule install/status/uninstall`
 - `backfill --since`, `--dry-run`, or `--overwrite`

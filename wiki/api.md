@@ -1,13 +1,13 @@
 ---
 title: API Surface
 type: api
-source: lib/xbookmark/x/auth.rb; lib/xbookmark/x/client.rb; lib/xbookmark/qmd/registrar.rb; lib/xbookmark/qmd/searcher.rb; README.md; .env.example
+source: lib/xbookmark/x/auth.rb; lib/xbookmark/x/client.rb; lib/xbookmark/qmd/registrar.rb; lib/xbookmark/qmd/searcher.rb; lib/xbookmark/keystore/auth_config.rb; lib/xbookmark/keystore/one_password.rb; README.md; .env.example
 created: 2026-05-14
-updated: 2026-05-25
+updated: 2026-05-30
 tags: [api, x-api, oauth, cli]
 ---
 
-**TLDR**: `xbookmark` has no web app routes; its external surface is a CLI, X API v2 calls, a temporary local OAuth callback, and QMD registration/search subprocess calls.
+**TLDR**: `xbookmark` has no web app routes; its external surface is a CLI, X API v2 calls, a temporary local OAuth callback, QMD/Codex subprocess calls, and local auth-routing config.
 
 ## Scope
 
@@ -27,7 +27,7 @@ During `auth login`, `Xbookmark::X::Auth` starts a temporary WEBrick loopback se
 - PKCE method: S256.
 - The callback URI comes from `X_REDIRECT_URI`; `.env.example` uses `http://127.0.0.1:8765/callback`. If the env key is omitted, config falls back to the internal local port default.
 - Refresh is implemented in `Xbookmark::X::Auth#refresh!` for the API client, but no `xbookmark auth refresh` CLI command exists yet.
-- Tokens are persisted by updating the configured env file with `0600` permissions.
+- Tokens are persisted by updating the loaded env file with `0600` permissions when one is active. Without a loaded env file, token writes go to the active keystore backend except for the macOS keychain path, where rotating OAuth tokens stay in the stable user env file because the `security` CLI accepts generic-password values as argv.
 
 ## X API Client Surface
 
@@ -60,6 +60,13 @@ Bookmark requests use 50-item pages and follow `meta.next_token`. Production tes
 - `Xbookmark::CodexConfig.default_path` reads `$CODEX_HOME/config.toml` when `CODEX_HOME` is set, otherwise `~/.codex/config.toml`.
 - `xbookmark setup` and non-dry-run `xbookmark install` remove only stale invalid top-level `service_tier` values before the first TOML table. Project-scoped tables such as `[projects."/tmp/app"]` and valid speed modes are preserved.
 - When the file is rewritten, xbookmark creates parent directories as needed, writes through an atomic temp-file replacement, and sets the config file mode to `0600`.
+
+## Auth Routing Config Surface
+
+- `Xbookmark::Keystore::AuthConfig.default_path` is `Xbookmark::Paths.default_config_dir/auth.toml`, normally `~/.config/xbookmark/auth.toml`.
+- The TOML file records provider backend routing, not secret values. Supported backend strings in the class are `keychain` and `1password`.
+- 1Password entries must use an `op://` reference. The actual secret is read later by the `op` CLI backend.
+- The current inspected CLI exposes only `auth login` and `auth status`; no public command for selecting or removing provider-specific auth routing is present yet.
 
 ## Public Contract Notes
 

@@ -3,24 +3,24 @@ title: xbookmark Wiki
 type: index
 source: wiki/**/*.md
 created: 2026-05-14
-updated: 2026-05-25
+updated: 2026-05-30
 tags: [index, wiki]
 ---
 
 **TLDR**: Catalog of the LLM-maintained wiki for `xbookmark`.
 
 Page count: 11
-Updated: 2026-05-25
+Updated: 2026-05-30
 
 ## Core Pages
 
-- [[architecture]] - Runtime architecture, production-hardening state, Codex config cleanup, QMD registration, scheduling, and coverage gate.
-- [[api]] - External API, OAuth callback, X API, QMD, Codex subprocess, and Codex config-file surfaces.
-- [[commands]] - CLI command surface, fresh setup contract, first-run setup wizard, install, and uninstall behavior.
-- [[data-model]] - SQLite state schema, bookmark wiki layout, statuses, modes, and transactional behavior.
-- [[dependencies]] - Ruby gem dependencies, external CLIs, Codex/QMD/Whisper tools, scheduler tools, and contributor checks.
-- [[decisions]] - Repository, workflow, runtime, setup, service-tier, and coverage decisions grounded in code/history.
-- [[active-areas]] - Production hardening state, 50-item page-size landing, local coverage gate, and service-tier follow-up.
+- [[architecture]] - Runtime architecture, credential storage, production-hardening state, Codex config cleanup, QMD registration, scheduling, and coverage gate.
+- [[api]] - External API, OAuth callback, X API, QMD, Codex subprocess, Codex config-file, and auth-routing config surfaces.
+- [[commands]] - CLI command surface, fresh setup contract, token persistence behavior, first-run setup wizard, install, and uninstall behavior.
+- [[data-model]] - SQLite state schema, bookmark wiki layout, auth-routing TOML artifact, statuses, modes, and transactional behavior.
+- [[dependencies]] - Ruby gem dependencies, TOML auth routing, external CLIs, Codex/QMD/Whisper tools, credential-store tools, scheduler tools, and contributor checks.
+- [[decisions]] - Repository, workflow, runtime, setup, service-tier, auth-routing, and coverage decisions grounded in code/history.
+- [[active-areas]] - Production hardening state, keystore auth routing, 50-item page-size landing, local coverage gate, and service-tier follow-up.
 - [[live-production-learnings]] - Production backfill lessons, source limits, media/transcript fixes, Codex/QMD behavior, and reusable verification commands.
 
 ## Maintenance Pages

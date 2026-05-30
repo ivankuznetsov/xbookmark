@@ -3,7 +3,7 @@ title: Decisions
 type: decisions
 source: git log; git worktree list; .hive-state/config.yml; lib/xbookmark/**/*.rb; README.md; .env.example
 created: 2026-05-14
-updated: 2026-05-25
+updated: 2026-05-30
 tags: [decisions]
 ---
 
@@ -29,6 +29,7 @@ tags: [decisions]
 - Use Codex headless CLI for LLM enrichment instead of a direct provider SDK.
 - Pass Codex prompts over stdin instead of argv so large bookmark/media/transcript prompts do not exceed OS argument-size limits.
 - Remove stale invalid top-level Codex `service_tier` values during setup/install so scheduled enrichment and wiki maintenance are not blocked by old `default`/`flex` config, while preserving intentional valid speed modes.
+- Keep provider auth routing metadata in `~/.config/xbookmark/auth.toml` using TOML and `0600` permissions; the file records backend choices and optional `op://` references, while secret values remain in the selected credential backend.
 - Use local Whisper tooling for audio/video transcription.
 - Register and query a QMD collection named `bookmarks`; current QMD `collection list`/`collection add` commands are preferred, with legacy `list`/`register`/`index` fallbacks.
 - Use systemd user timers on Linux and launchd on macOS for daily sync, make scheduler installation part of the default setup flow, and enable Linux systemd linger when possible so daily timers can run after logout.
@@ -45,6 +46,7 @@ tags: [decisions]
 ## Recent History Signals
 
 - `origin/main`: `64ba268 Merge pull request #38 from ivankuznetsov/fix/paginate-bookmarks-stable-page-size`, after the production setup/backfill hardening PRs landed.
+- Current inspected HEAD `57ced9b` adds `Xbookmark::Keystore::AuthConfig` plus `tomlrb (~> 2.0)` for provider auth routing.
 - `Xbookmark::CodexConfig` owns Codex config cleanup for setup/install and rewrites changed config files atomically with `0600` permissions.
 - Production validation showed the X bookmark endpoint exposes thousands of bookmarks when requested at 50 per page. The earlier 98-bookmark result was caused by using `max_results=100`, which returned no `next_token`.
 - The most important production findings are summarized in [[live-production-learnings]].

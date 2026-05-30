@@ -1,13 +1,13 @@
 ---
 title: Active Areas
 type: active-areas
-source: git log --name-only; git status; README.md; lib/xbookmark/config.rb; lib/xbookmark/cli.rb
+source: git log --name-only; git status; README.md; lib/xbookmark/config.rb; lib/xbookmark/cli.rb; lib/xbookmark/keystore/auth_config.rb
 created: 2026-05-14
-updated: 2026-05-25
+updated: 2026-05-30
 tags: [activity]
 ---
 
-**TLDR**: Production backfill reliability work, 50-item bookmark pagination, Codex service-tier cleanup, and the 100% coverage gate are the current hardening focus.
+**TLDR**: Production backfill reliability work, keystore auth routing, 50-item bookmark pagination, Codex service-tier cleanup, and the 100% coverage gate are the current hardening focus.
 
 ## Current Hardening Surface
 
@@ -22,8 +22,9 @@ The active production-hardening behavior is:
 - Large backfills now skip separate aux-page LLM summaries by default; author/topic/entity/thread pages are still written for Obsidian graph/backlinks, and `XBOOKMARK_AUX_SUMMARIES=true` restores the extra summaries.
 - `Xbookmark::Qmd::Registrar` tries current `qmd collection list`/`collection add` first and preserves legacy command fallbacks.
 - `Xbookmark::Enrich::Codex` unwraps current `codex exec --json` `item.completed` agent messages.
+- `Xbookmark::Keystore::AuthConfig` adds TOML-backed provider auth routing for `keychain` and `1password` backends without putting secret values in `~/.config/xbookmark/auth.toml`.
 - Specs cover the README setup contract, legacy registrar fallback, scheduler linger setup, and current Codex JSON event parsing.
-- `bundle exec rake coverage` runs RSpec under Ruby's built-in `Coverage` API and enforces 100% line coverage for `bin/` and `lib/`.
+- `bundle exec rake coverage` runs Minitest under Ruby's built-in `Coverage` API and enforces 100% line coverage for `bin/` and `lib/`.
 - The earlier `XBOOKMARK_WIKI_PATH` runtime wiki terminology is already on `main`.
 - Production verification and reusable lessons are summarized in [[live-production-learnings]].
 
