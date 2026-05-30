@@ -61,7 +61,7 @@ Bookmark markdown frontmatter includes `xbookmark_schema`, tweet and author fiel
 
 ## Local Config Artifacts
 
-`Xbookmark::Keystore::AuthConfig` manages `~/.config/xbookmark/auth.toml`. It stores provider sections with a `backend` value (`keychain` or `1password`) and an optional `ref` for `op://` references. The file is written with mode `0600` and is updated through a temp-file rename under a sibling lock, but it does not contain secret values.
+`Xbookmark::Keystore::AuthConfig` manages `~/.config/xbookmark/auth.toml`. It stores provider sections with a `backend` value (`keychain` or `1password`) and an optional `ref` for `op://` references. The file is written with mode `0600` and is updated through a temp-file rename under a sibling lock, but it does not contain secret values. Public updates currently come from `xbookmark auth login PROVIDER`, `xbookmark auth bind PROVIDER OP_REF`, and `xbookmark auth rm PROVIDER`.
 
 ## Transactional Behavior
 

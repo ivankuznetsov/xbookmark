@@ -43,7 +43,7 @@ The runtime shells out to external tools:
 - Credential-store tools:
   - macOS uses the `security` CLI for login Keychain access.
   - Linux uses `secret-tool` when a D-Bus session is available, otherwise xbookmark falls back to a `0600` env file under `~/.config/xbookmark/.env`.
-  - The 1Password backend shells out to `op read --no-newline <op://...>`; `AuthConfig` records provider routing and optional `op://` refs in `~/.config/xbookmark/auth.toml` with mode `0600`, but not secret values.
+  - The 1Password backend shells out to `op read --no-newline <op://...>`; `AuthConfig` records provider routing and optional `op://` refs in `~/.config/xbookmark/auth.toml` with mode `0600`, but not secret values. `xbookmark auth bind` also smoke-checks the reference when `op` is installed.
 - System scheduler tools: `systemctl --user` and `loginctl` on Linux, and `launchctl` on macOS.
 
 ## External Services

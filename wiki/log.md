@@ -177,3 +177,13 @@ Append-only log of meaningful wiki updates.
 **Uncertainty recorded:** AuthConfig storage exists and is tested directly, but no public AuthConfig routing CLI or README contract was found in this refresh.
 **QMD:** `qmd search` was read-only and returned no results for the new auth-routing dependency terms; did not run `qmd update` or `qmd embed` because the post-commit wrapper owns bounded qmd maintenance.
 **Source:** `AGENTS.md`, `.llm-wiki/config.json`, wiki index/dependencies/gaps/recent log, committed diff `57ced9b`, `Gemfile`, `Gemfile.lock`, `xbookmark.gemspec`, `Rakefile`, `README.md`, `lib/xbookmark/keystore/*.rb`, `lib/xbookmark/x/auth.rb`, `lib/xbookmark/cli/auth.rb`, and `test/xbookmark/keystore/*_test.rb`.
+
+## [2026-05-30T14:10:56Z] auth routing wiki correction
+
+**Action:** Corrected the wiki refresh after the HEAD wiki commit missed later provider auth-routing CLI and README changes on the branch.
+**Pages updated:** wiki/api.md, wiki/commands.md, wiki/active-areas.md, wiki/architecture.md, wiki/data-model.md, wiki/dependencies.md, wiki/decisions.md, wiki/gaps.md, wiki/index.md, wiki/log.md
+**Correction:** Public provider credential commands now exist: `auth login PROVIDER`, `auth bind PROVIDER OP_REF`, `auth list`, `auth show PROVIDER`, and `auth rm PROVIDER`.
+**Uncertainty recorded:** Real host credential stores were not exercised in this refresh; tests cover the command and resolver plumbing with shims/mocks.
+**Main wiki:** searched `/home/asterio/wikis/master/wiki` for xbookmark/auth-routing terms; no relevant page was found. `~/wikis/main/wiki`, `../wikis/master/wiki`, and `../wikis/main/wiki` did not exist.
+**QMD:** Ran read-only `qmd search "xbookmark auth.toml AuthConfig tomlrb"` and got no results. Did not run `qmd update` or `qmd embed`; the post-commit wrapper owns bounded qmd maintenance.
+**Source:** `AGENTS.md`, `.llm-wiki/config.json`, required wiki pages and recent log, HEAD wiki diff `7323a6d`, recent auth commits `57ced9b..40064cd`, `README.md`, `lib/xbookmark/cli.rb`, `lib/xbookmark/cli/auth.rb`, `lib/xbookmark/keystore/auth_config.rb`, `lib/xbookmark/keystore/resolver.rb`, `lib/xbookmark/keystore/provider.rb`, `xbookmark.gemspec`, and auth-related tests.

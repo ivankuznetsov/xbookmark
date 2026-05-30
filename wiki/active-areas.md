@@ -1,7 +1,7 @@
 ---
 title: Active Areas
 type: active-areas
-source: git log --name-only; git status; README.md; lib/xbookmark/config.rb; lib/xbookmark/cli.rb; lib/xbookmark/keystore/auth_config.rb
+source: git log --name-only; git status; README.md; lib/xbookmark/config.rb; lib/xbookmark/cli.rb; lib/xbookmark/cli/auth.rb; lib/xbookmark/keystore/auth_config.rb; lib/xbookmark/keystore/resolver.rb
 created: 2026-05-14
 updated: 2026-05-30
 tags: [activity]
@@ -22,7 +22,7 @@ The active production-hardening behavior is:
 - Large backfills now skip separate aux-page LLM summaries by default; author/topic/entity/thread pages are still written for Obsidian graph/backlinks, and `XBOOKMARK_AUX_SUMMARIES=true` restores the extra summaries.
 - `Xbookmark::Qmd::Registrar` tries current `qmd collection list`/`collection add` first and preserves legacy command fallbacks.
 - `Xbookmark::Enrich::Codex` unwraps current `codex exec --json` `item.completed` agent messages.
-- `Xbookmark::Keystore::AuthConfig` adds TOML-backed provider auth routing for `keychain` and `1password` backends without putting secret values in `~/.config/xbookmark/auth.toml`.
+- `Xbookmark::Keystore::AuthConfig` adds TOML-backed provider auth routing for `keychain` and `1password` backends without putting secret values in `~/.config/xbookmark/auth.toml`; public commands now cover provider login, 1Password binding, listing, diagnostic resolution, and removal.
 - Specs cover the README setup contract, legacy registrar fallback, scheduler linger setup, and current Codex JSON event parsing.
 - `bundle exec rake coverage` runs Minitest under Ruby's built-in `Coverage` API and enforces 100% line coverage for `bin/` and `lib/`.
 - The earlier `XBOOKMARK_WIKI_PATH` runtime wiki terminology is already on `main`.
@@ -41,6 +41,11 @@ The README now describes only implemented setup commands:
 
 - `bin/xbookmark auth login`
 - `bin/xbookmark auth status`
+- `xbookmark auth login PROVIDER`
+- `xbookmark auth bind PROVIDER OP_REF`
+- `xbookmark auth list`
+- `xbookmark auth show PROVIDER`
+- `xbookmark auth rm PROVIDER`
 - `bin/xbookmark install`
 - `bin/xbookmark backfill [--limit N]`
 - `bin/xbookmark sync`

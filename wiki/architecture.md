@@ -21,7 +21,7 @@ The application is a Ruby command-line application named `xbookmark`. Its runtim
 
 - Entry point: `bin/xbookmark` dispatches to `Xbookmark::CLI` in `lib/xbookmark/cli.rb`.
 - Configuration: `Xbookmark::Config` reads `.env` sources and XDG/macOS defaults, hydrates missing known keys from the best-effort keystore, and requires `X_CLIENT_ID` and `X_USER_ID`.
-- Credential storage: `Xbookmark::Keystore` chooses macOS Keychain, Linux libsecret, or an env-file fallback; `Xbookmark::Keystore::AuthConfig` reads/writes provider backend routing in `~/.config/xbookmark/auth.toml` without storing secret values.
+- Credential storage: `Xbookmark::Keystore` chooses macOS Keychain, Linux libsecret, or an env-file fallback; `Xbookmark::Keystore::AuthConfig` reads/writes provider backend routing in `~/.config/xbookmark/auth.toml` without storing secret values, and `Xbookmark::Keystore::Resolver` applies the CI/env, auth-routing, keychain/1Password, and env-fallback priority chain.
 - X API integration: `Xbookmark::X::Auth` handles OAuth 2.0 PKCE and token refresh; `Xbookmark::X::Client` reads X bookmarks and tweet details from X API v2.
 - State: `Xbookmark::State::Store` keeps local SQLite state under `<bookmark-wiki>/.xbookmark/state.db`.
 - Sync loop: `Xbookmark::Sync::Runner` drives backfill, sync, and resync modes; `Xbookmark::Sync::Pipeline` processes one bookmark at a time.

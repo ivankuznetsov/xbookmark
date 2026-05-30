@@ -15,8 +15,8 @@ Updated: 2026-05-30
 ## Core Pages
 
 - [[architecture]] - Runtime architecture, credential storage, production-hardening state, Codex config cleanup, QMD registration, scheduling, and coverage gate.
-- [[api]] - External API, OAuth callback, X API, QMD, Codex subprocess, Codex config-file, and auth-routing config surfaces.
-- [[commands]] - CLI command surface, fresh setup contract, token persistence behavior, first-run setup wizard, install, and uninstall behavior.
+- [[api]] - External API, OAuth callback, X API, QMD, Codex subprocess, Codex config-file, auth-routing config, and provider credential surfaces.
+- [[commands]] - CLI command surface, fresh setup contract, token persistence behavior, provider auth routing, first-run setup wizard, install, and uninstall behavior.
 - [[data-model]] - SQLite state schema, bookmark wiki layout, auth-routing TOML artifact, statuses, modes, and transactional behavior.
 - [[dependencies]] - Ruby gem dependencies, TOML auth routing, external CLIs, Codex/QMD/Whisper tools, credential-store tools, scheduler tools, and contributor checks.
 - [[decisions]] - Repository, workflow, runtime, setup, service-tier, auth-routing, and coverage decisions grounded in code/history.

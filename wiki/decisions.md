@@ -30,6 +30,7 @@ tags: [decisions]
 - Pass Codex prompts over stdin instead of argv so large bookmark/media/transcript prompts do not exceed OS argument-size limits.
 - Remove stale invalid top-level Codex `service_tier` values during setup/install so scheduled enrichment and wiki maintenance are not blocked by old `default`/`flex` config, while preserving intentional valid speed modes.
 - Keep provider auth routing metadata in `~/.config/xbookmark/auth.toml` using TOML and `0600` permissions; the file records backend choices and optional `op://` references, while secret values remain in the selected credential backend.
+- Expose provider credential management through `xbookmark auth login PROVIDER`, `auth bind`, `auth list`, `auth show`, and `auth rm`, with `auth show` reserved for diagnostics/scripts because it prints the resolved secret.
 - Use local Whisper tooling for audio/video transcription.
 - Register and query a QMD collection named `bookmarks`; current QMD `collection list`/`collection add` commands are preferred, with legacy `list`/`register`/`index` fallbacks.
 - Use systemd user timers on Linux and launchd on macOS for daily sync, make scheduler installation part of the default setup flow, and enable Linux systemd linger when possible so daily timers can run after logout.
@@ -45,8 +46,8 @@ tags: [decisions]
 
 ## Recent History Signals
 
-- `origin/main`: `64ba268 Merge pull request #38 from ivankuznetsov/fix/paginate-bookmarks-stable-page-size`, after the production setup/backfill hardening PRs landed.
-- Current inspected HEAD `57ced9b` adds `Xbookmark::Keystore::AuthConfig` plus `tomlrb (~> 2.0)` for provider auth routing.
+- `origin/main`: `7c554ba Merge pull request #45 from ivankuznetsov/minitest-fixtures-coverage`, after the Minitest fixture migration and coverage gate landed.
+- Current inspected branch adds `Xbookmark::Keystore::AuthConfig`, the `tomlrb (~> 2.0)` runtime dependency, a 1Password backend, resolver priority chain, provider auth CLI commands, README Secrets docs, integration tests, and extra keychain/noecho coverage across commits `57ced9b` through `40064cd`.
 - `Xbookmark::CodexConfig` owns Codex config cleanup for setup/install and rewrites changed config files atomically with `0600` permissions.
 - Production validation showed the X bookmark endpoint exposes thousands of bookmarks when requested at 50 per page. The earlier 98-bookmark result was caused by using `max_results=100`, which returned no `next_token`.
 - The most important production findings are summarized in [[live-production-learnings]].
