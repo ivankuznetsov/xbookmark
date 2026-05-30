@@ -168,3 +168,12 @@ Append-only log of meaningful wiki updates.
 **Decision:** Contributor and CI test commands now use `bundle exec rake test`, while `bundle exec rake coverage` remains the enforced 100% line coverage gate for `bin/` and `lib/`.
 **Verification:** `bundle exec rake coverage` passed with 301 runs, 1053 assertions, and 100.00% coverage (2297/2297).
 **Source:** `Gemfile`, `Rakefile`, `.github/workflows/ci.yml`, `test/`, and `test/fixtures/x/`.
+
+## [2026-05-30T13:59:52Z] dependency coverage refresh
+
+**Action:** Refreshed dependency and related wiki coverage after commit `57ced9b` added AuthConfig TOML routing.
+**Pages updated:** wiki/dependencies.md, wiki/architecture.md, wiki/data-model.md, wiki/commands.md, wiki/api.md, wiki/active-areas.md, wiki/decisions.md, wiki/gaps.md, wiki/index.md, wiki/log.md
+**Dependency change:** `tomlrb (~> 2.0)` is now a runtime dependency, locked as `tomlrb 2.0.4`, for `~/.config/xbookmark/auth.toml` parsing.
+**Uncertainty recorded:** AuthConfig storage exists and is tested directly, but no public AuthConfig routing CLI or README contract was found in this refresh.
+**QMD:** `qmd search` was read-only and returned no results for the new auth-routing dependency terms; did not run `qmd update` or `qmd embed` because the post-commit wrapper owns bounded qmd maintenance.
+**Source:** `AGENTS.md`, `.llm-wiki/config.json`, wiki index/dependencies/gaps/recent log, committed diff `57ced9b`, `Gemfile`, `Gemfile.lock`, `xbookmark.gemspec`, `Rakefile`, `README.md`, `lib/xbookmark/keystore/*.rb`, `lib/xbookmark/x/auth.rb`, `lib/xbookmark/cli/auth.rb`, and `test/xbookmark/keystore/*_test.rb`.
