@@ -3,7 +3,7 @@ title: Commands
 type: commands
 source: bin/xbookmark; lib/xbookmark/cli.rb; lib/xbookmark/cli/*.rb; lib/xbookmark/config.rb; lib/xbookmark/x/auth.rb; lib/xbookmark/keystore/auth_config.rb; lib/xbookmark/keystore/resolver.rb; lib/xbookmark/qmd/registrar.rb; README.md; .env.example
 created: 2026-05-14
-updated: 2026-05-30
+updated: 2026-06-06
 tags: [commands, cli]
 ---
 
@@ -33,7 +33,7 @@ Packaged binary installs also support running `xbookmark` with no arguments in a
 - `xbookmark auth bind PROVIDER OP_REF` records a 1Password `op://` reference in `auth.toml` and smoke-checks it immediately when the `op` CLI is available.
 - `xbookmark auth list` shows configured provider names and backends without printing secret values.
 - `xbookmark auth show PROVIDER` resolves and prints a provider credential for diagnostics and scripts.
-- `xbookmark auth rm PROVIDER` removes the provider from `auth.toml` and deletes the keychain entry when that provider was routed to `keychain`.
+- `xbookmark auth rm PROVIDER` removes the provider from `auth.toml` and deletes the keychain entry when that provider was routed to `keychain`; libsecret and macOS Keychain deletes tolerate already-missing items so stale routing can still be cleared.
 - `xbookmark auth status` reports whether an access token is present.
 - `xbookmark backfill [--limit N]` runs a limited test backfill when `--limit` is present and a full backfill otherwise.
 - `xbookmark sync [--from-scheduler]` runs incremental sync; scheduler invocations can skip if the last completed sync is too recent.
@@ -48,7 +48,7 @@ Global options visible in `Xbookmark::CLI` are `--wiki`, `--vault` as a legacy a
 
 Configuration loaded by these commands comes from `XBOOKMARK_ENV_FILE`, `$PWD/.env`, and `~/.config/xbookmark/.env`, plus process environment values. The preferred bookmark wiki path key is `XBOOKMARK_WIKI_PATH`; `XBOOKMARK_VAULT`, `OBSIDIAN_VAULT_PATH`, and `--vault` are compatibility aliases.
 
-Provider credential resolution uses `Xbookmark::Keystore::Resolver`: CI or `XBOOKMARK_KEYS_FROM_ENV=1` forces environment lookup, `auth.toml` can route providers to 1Password or the platform keychain, and plain environment variables are the final non-CI fallback.
+Provider credential resolution uses `Xbookmark::Keystore::Resolver`: CI or `XBOOKMARK_KEYS_FROM_ENV=1` forces environment lookup, `auth.toml` can route providers to 1Password or the platform keychain, and plain environment variables are the final non-CI fallback. Linux keychain routing requires both `secret-tool` and a non-empty D-Bus session address before libsecret is used.
 
 ## Command Flow
 

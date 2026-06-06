@@ -3,7 +3,7 @@ title: Architecture
 type: architecture
 source: git ls-files; lib/xbookmark/**/*.rb; README.md; .env.example; .llm-wiki/*
 created: 2026-05-14
-updated: 2026-05-30
+updated: 2026-06-06
 tags: [architecture]
 ---
 
@@ -21,7 +21,7 @@ The application is a Ruby command-line application named `xbookmark`. Its runtim
 
 - Entry point: `bin/xbookmark` dispatches to `Xbookmark::CLI` in `lib/xbookmark/cli.rb`.
 - Configuration: `Xbookmark::Config` reads `.env` sources and XDG/macOS defaults, hydrates missing known keys from the best-effort keystore, and requires `X_CLIENT_ID` and `X_USER_ID`.
-- Credential storage: `Xbookmark::Keystore` chooses macOS Keychain, Linux libsecret, or an env-file fallback; `Xbookmark::Keystore::AuthConfig` reads/writes provider backend routing in `~/.config/xbookmark/auth.toml` without storing secret values, and `Xbookmark::Keystore::Resolver` applies the CI/env, auth-routing, keychain/1Password, and env-fallback priority chain.
+- Credential storage: `Xbookmark::Keystore` chooses macOS Keychain, Linux libsecret, or an env-file fallback. Linux libsecret is considered usable only when `secret-tool` is present and `DBUS_SESSION_BUS_ADDRESS` is non-empty; `Xbookmark::Keystore::Resolver` mirrors that gate before routed provider lookups so D-Bus-less hosts get the actionable keychain-unavailable hint. `Xbookmark::Keystore::AuthConfig` reads/writes provider backend routing in `~/.config/xbookmark/auth.toml` without storing secret values, and `Resolver` applies the CI/env, auth-routing, keychain/1Password, and env-fallback priority chain.
 - X API integration: `Xbookmark::X::Auth` handles OAuth 2.0 PKCE and token refresh; `Xbookmark::X::Client` reads X bookmarks and tweet details from X API v2.
 - State: `Xbookmark::State::Store` keeps local SQLite state under `<bookmark-wiki>/.xbookmark/state.db`.
 - Sync loop: `Xbookmark::Sync::Runner` drives backfill, sync, and resync modes; `Xbookmark::Sync::Pipeline` processes one bookmark at a time.

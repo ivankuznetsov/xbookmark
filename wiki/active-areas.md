@@ -3,7 +3,7 @@ title: Active Areas
 type: active-areas
 source: git log --name-only; git show HEAD; README.md; lib/xbookmark/config.rb; lib/xbookmark/cli.rb; lib/xbookmark/cli/auth.rb; lib/xbookmark/keystore/auth_config.rb; lib/xbookmark/keystore/resolver.rb
 created: 2026-05-14
-updated: 2026-05-30
+updated: 2026-06-06
 tags: [activity]
 ---
 
@@ -23,6 +23,7 @@ The active production-hardening behavior is:
 - `Xbookmark::Qmd::Registrar` tries current `qmd collection list`/`collection add` first and preserves legacy command fallbacks.
 - `Xbookmark::Enrich::Codex` unwraps current `codex exec --json` `item.completed` agent messages.
 - `Xbookmark::Keystore::AuthConfig` adds TOML-backed provider auth routing for `keychain` and `1password` backends without putting secret values in `~/.config/xbookmark/auth.toml`; public commands now cover provider login, 1Password binding, listing, diagnostic resolution, and removal.
+- Keystore hardening now aligns routed Linux provider keychain lookups with backend selection: `secret-tool` plus a non-empty D-Bus session are required before libsecret is used. Signal-killed keychain/libsecret reads raise hard errors, and already-missing libsecret deletes no longer block `auth rm` from clearing stale routing.
 - Specs cover the README setup contract, legacy registrar fallback, scheduler linger setup, and current Codex JSON event parsing.
 - `bundle exec rake coverage` runs Minitest under Ruby's built-in `Coverage` API and enforces 100% line coverage for `bin/` and `lib/`.
 - The earlier `XBOOKMARK_WIKI_PATH` runtime wiki terminology is already on `main`.

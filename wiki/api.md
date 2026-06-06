@@ -3,7 +3,7 @@ title: API Surface
 type: api
 source: lib/xbookmark/x/auth.rb; lib/xbookmark/x/client.rb; lib/xbookmark/qmd/registrar.rb; lib/xbookmark/qmd/searcher.rb; lib/xbookmark/cli/auth.rb; lib/xbookmark/keystore/auth_config.rb; lib/xbookmark/keystore/resolver.rb; lib/xbookmark/keystore/one_password.rb; README.md; .env.example
 created: 2026-05-14
-updated: 2026-05-30
+updated: 2026-06-06
 tags: [api, x-api, oauth, cli]
 ---
 
@@ -68,6 +68,7 @@ Bookmark requests use 50-item pages and follow `meta.next_token`. Production tes
 - 1Password entries must use an `op://` reference. The actual secret is read later by the `op` CLI backend.
 - Provider auth routing is public through `xbookmark auth login PROVIDER`, `xbookmark auth bind PROVIDER OP_REF`, `xbookmark auth list`, `xbookmark auth show PROVIDER`, and `xbookmark auth rm PROVIDER`.
 - `Xbookmark::Keystore::Resolver` resolves provider credentials in this order: CI/env-forced environment, `auth.toml` routing to 1Password or the platform keychain, normal environment fallback, then an actionable error.
+- On Linux, routed platform-keychain provider lookups require both `secret-tool` and a D-Bus session (`DBUS_SESSION_BUS_ADDRESS`); otherwise the resolver raises the same actionable keychain-unavailable message used for a missing `secret-tool` instead of allowing raw backend stderr to escape.
 - `auth show PROVIDER` prints the resolved credential for diagnostics and scripts, so it is intentionally more sensitive than `auth list`, which never prints secret values.
 
 ## Public Contract Notes

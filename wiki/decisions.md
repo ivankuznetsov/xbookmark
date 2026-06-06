@@ -3,7 +3,7 @@ title: Decisions
 type: decisions
 source: git log; git worktree list; .hive-state/config.yml; lib/xbookmark/**/*.rb; README.md; .env.example
 created: 2026-05-14
-updated: 2026-05-30
+updated: 2026-06-06
 tags: [decisions]
 ---
 
@@ -31,6 +31,7 @@ tags: [decisions]
 - Remove stale invalid top-level Codex `service_tier` values during setup/install so scheduled enrichment and wiki maintenance are not blocked by old `default`/`flex` config, while preserving intentional valid speed modes.
 - Keep provider auth routing metadata in `~/.config/xbookmark/auth.toml` using TOML and `0600` permissions; the file records backend choices and optional `op://` references, while secret values remain in the selected credential backend.
 - Expose provider credential management through `xbookmark auth login PROVIDER`, `auth bind`, `auth list`, `auth show`, and `auth rm`, with `auth show` reserved for diagnostics/scripts because it prints the resolved secret.
+- Treat platform credential backends conservatively: Linux libsecret requires both `secret-tool` and a D-Bus session before routed provider lookups, signal-killed keychain/libsecret reads are errors rather than missing credentials, and already-missing deletes should not prevent `auth rm` from removing stale routing.
 - Use local Whisper tooling for audio/video transcription.
 - Register and query a QMD collection named `bookmarks`; current QMD `collection list`/`collection add` commands are preferred, with legacy `list`/`register`/`index` fallbacks.
 - Use systemd user timers on Linux and launchd on macOS for daily sync, make scheduler installation part of the default setup flow, and enable Linux systemd linger when possible so daily timers can run after logout.

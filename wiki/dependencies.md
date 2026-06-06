@@ -3,7 +3,7 @@ title: Dependencies
 type: dependencies
 source: git ls-files; Gemfile; Gemfile.lock; xbookmark.gemspec; README.md; lib/xbookmark/keystore/*.rb
 created: 2026-05-14
-updated: 2026-05-30
+updated: 2026-06-06
 tags: [dependencies]
 ---
 
@@ -43,6 +43,8 @@ The runtime shells out to external tools:
 - Credential-store tools:
   - macOS uses the `security` CLI for login Keychain access.
   - Linux uses `secret-tool` when a D-Bus session is available, otherwise xbookmark falls back to a `0600` env file under `~/.config/xbookmark/.env`.
+  - Provider auth routing also treats Linux libsecret as unavailable when `DBUS_SESSION_BUS_ADDRESS` is empty, even if `secret-tool` is on `PATH`, so `auth show` and related routed lookups produce the same actionable keychain hint as backend selection.
+  - Keychain/libsecret reads treat signal-killed backend commands (`exitstatus.nil?`) as hard errors, not absent secrets. Libsecret deletes tolerate a non-zero clear with empty stderr as already absent so stale `auth.toml` routing can be removed; exact real-tool not-found exit codes remain tracked in [[gaps]].
   - The 1Password backend shells out to `op read --no-newline <op://...>`; `AuthConfig` records provider routing and optional `op://` refs in `~/.config/xbookmark/auth.toml` with mode `0600`, but not secret values. `xbookmark auth bind` also smoke-checks the reference when `op` is installed.
 - System scheduler tools: `systemctl --user` and `loginctl` on Linux, and `launchctl` on macOS.
 
