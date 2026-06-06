@@ -187,3 +187,13 @@ Append-only log of meaningful wiki updates.
 **Main wiki:** searched `/home/asterio/wikis/master/wiki` for xbookmark/auth-routing terms; no relevant page was found. `~/wikis/main/wiki`, `../wikis/master/wiki`, and `../wikis/main/wiki` did not exist.
 **QMD:** Ran read-only `qmd search "xbookmark auth.toml AuthConfig tomlrb"` and got no results. Did not run `qmd update` or `qmd embed`; the post-commit wrapper owns bounded qmd maintenance.
 **Source:** `AGENTS.md`, `.llm-wiki/config.json`, required wiki pages and recent log, HEAD wiki diff `7323a6d`, recent auth commits `57ced9b..40064cd`, `README.md`, `lib/xbookmark/cli.rb`, `lib/xbookmark/cli/auth.rb`, `lib/xbookmark/keystore/auth_config.rb`, `lib/xbookmark/keystore/resolver.rb`, `lib/xbookmark/keystore/provider.rb`, `xbookmark.gemspec`, and auth-related tests.
+
+## [2026-05-30T14:30:50Z] post-review wiki refresh
+
+**Action:** Rechecked the latest committed wiki-only diff `3fa1c95` against the provider auth source surface and narrowed stale maintenance provenance.
+**Pages updated:** wiki/active-areas.md, wiki/gaps.md, wiki/log.md
+**Coverage result:** No new page coverage was needed; existing auth-routing pages already matched `README.md`, `lib/xbookmark/cli/auth.rb`, `Xbookmark::Keystore::AuthConfig`, `Xbookmark::Keystore::Resolver`, and auth tests.
+**Uncertainty recorded:** The local worktree/index could not provide full `git status` or cached-diff evidence because it references missing blob `26d9b9b4b284d58add70f2ed2d581a1ab503fa67`; direct source reads and `git show` were used instead.
+**Main wiki:** searched `/home/asterio/wikis/master/wiki`; no xbookmark/auth-routing-specific page was found.
+**QMD:** Did not run `qmd update` or `qmd embed`; the post-commit wrapper owns bounded qmd maintenance.
+**Source:** `AGENTS.md`, `.llm-wiki/config.json`, `wiki/index.md`, `wiki/decisions.md`, `wiki/gaps.md`, recent `wiki/log.md`, latest committed diff `3fa1c95`, `README.md`, `lib/xbookmark/cli/auth.rb`, `lib/xbookmark/keystore/auth_config.rb`, `lib/xbookmark/keystore/resolver.rb`, `test/xbookmark/cli/auth_test.rb`, `test/integration/auth_e2e_test.rb`, `git log`, `git show`, `git ls-files -s`, and `git fsck`.

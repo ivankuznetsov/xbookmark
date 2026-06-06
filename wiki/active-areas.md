@@ -1,7 +1,7 @@
 ---
 title: Active Areas
 type: active-areas
-source: git log --name-only; git status; README.md; lib/xbookmark/config.rb; lib/xbookmark/cli.rb; lib/xbookmark/cli/auth.rb; lib/xbookmark/keystore/auth_config.rb; lib/xbookmark/keystore/resolver.rb
+source: git log --name-only; git show HEAD; README.md; lib/xbookmark/config.rb; lib/xbookmark/cli.rb; lib/xbookmark/cli/auth.rb; lib/xbookmark/keystore/auth_config.rb; lib/xbookmark/keystore/resolver.rb
 created: 2026-05-14
 updated: 2026-05-30
 tags: [activity]
