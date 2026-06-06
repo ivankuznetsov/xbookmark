@@ -1,17 +1,17 @@
 ---
 title: Data Model
 type: data-model
-source: lib/xbookmark/state/migrations.rb; lib/xbookmark/state/store.rb; lib/xbookmark/render/bookmark_renderer.rb
+source: lib/xbookmark/state/migrations.rb; lib/xbookmark/state/store.rb; lib/xbookmark/render/bookmark_renderer.rb; lib/xbookmark/keystore/auth_config.rb
 created: 2026-05-14
-updated: 2026-05-25
+updated: 2026-05-30
 tags: [data, sqlite, bookmark-wiki]
 ---
 
-**TLDR**: xbookmark stores sync metadata, bookmark status, and optional aux-page summary metadata in SQLite, while final user-facing data lives as markdown and media files in a standalone bookmark wiki.
+**TLDR**: xbookmark stores sync metadata, bookmark status, and optional aux-page summary metadata in SQLite, while final user-facing data lives as markdown/media files and local auth routing lives in a separate TOML config file.
 
 ## Scope
 
-The data model is tracked on `main`. Recent coverage-gate and Codex service-tier setup changes do not change the SQLite schema or bookmark wiki layout.
+The data model is tracked on `main`. Recent coverage-gate, Codex service-tier setup, and AuthConfig changes do not change the SQLite schema or bookmark wiki layout.
 
 ## SQLite State DB
 
@@ -58,6 +58,10 @@ The renderer writes final markdown under:
 ```
 
 Bookmark markdown frontmatter includes `xbookmark_schema`, tweet and author fields, timestamps, tags, topics, entities, media records, thread, links, summary, and `enrichment_status`.
+
+## Local Config Artifacts
+
+`Xbookmark::Keystore::AuthConfig` manages `~/.config/xbookmark/auth.toml`. It stores provider sections with a `backend` value (`keychain` or `1password`) and an optional `ref` for `op://` references. The file is written with mode `0600` and is updated through a temp-file rename under a sibling lock, but it does not contain secret values. Public updates currently come from `xbookmark auth login PROVIDER`, `xbookmark auth bind PROVIDER OP_REF`, and `xbookmark auth rm PROVIDER`.
 
 ## Transactional Behavior
 

@@ -1,13 +1,13 @@
 ---
 title: Active Areas
 type: active-areas
-source: git log --name-only; git status; README.md; lib/xbookmark/config.rb; lib/xbookmark/cli.rb
+source: git log --name-only; git show HEAD; README.md; lib/xbookmark/config.rb; lib/xbookmark/cli.rb; lib/xbookmark/cli/auth.rb; lib/xbookmark/keystore/auth_config.rb; lib/xbookmark/keystore/resolver.rb
 created: 2026-05-14
-updated: 2026-05-25
+updated: 2026-06-06
 tags: [activity]
 ---
 
-**TLDR**: Production backfill reliability work, 50-item bookmark pagination, Codex service-tier cleanup, and the 100% coverage gate are the current hardening focus.
+**TLDR**: Production backfill reliability work, keystore auth routing, 50-item bookmark pagination, Codex service-tier cleanup, and the 100% coverage gate are the current hardening focus.
 
 ## Current Hardening Surface
 
@@ -22,8 +22,11 @@ The active production-hardening behavior is:
 - Large backfills now skip separate aux-page LLM summaries by default; author/topic/entity/thread pages are still written for Obsidian graph/backlinks, and `XBOOKMARK_AUX_SUMMARIES=true` restores the extra summaries.
 - `Xbookmark::Qmd::Registrar` tries current `qmd collection list`/`collection add` first and preserves legacy command fallbacks.
 - `Xbookmark::Enrich::Codex` unwraps current `codex exec --json` `item.completed` agent messages.
+- `Xbookmark::Keystore::AuthConfig` adds TOML-backed provider auth routing for `keychain` and `1password` backends without putting secret values in `~/.config/xbookmark/auth.toml`; public commands now cover provider login, 1Password binding, listing, diagnostic resolution, and removal.
+- Provider auth docs now match resolver behavior: `CI=true` must be the exact string `true` unless `XBOOKMARK_KEYS_FROM_ENV=1` is set, and CI/env-forced resolution bypasses `auth.toml` entirely.
+- Keystore hardening now aligns routed Linux provider keychain lookups with backend selection: `secret-tool` plus a non-empty D-Bus session are required before libsecret is used. Signal-killed keychain/libsecret reads raise hard errors, and already-missing libsecret deletes no longer block `auth rm` from clearing stale routing.
 - Specs cover the README setup contract, legacy registrar fallback, scheduler linger setup, and current Codex JSON event parsing.
-- `bundle exec rake coverage` runs RSpec under Ruby's built-in `Coverage` API and enforces 100% line coverage for `bin/` and `lib/`.
+- `bundle exec rake coverage` runs Minitest under Ruby's built-in `Coverage` API and enforces 100% line coverage for `bin/` and `lib/`.
 - The earlier `XBOOKMARK_WIKI_PATH` runtime wiki terminology is already on `main`.
 - Production verification and reusable lessons are summarized in [[live-production-learnings]].
 
@@ -40,6 +43,11 @@ The README now describes only implemented setup commands:
 
 - `bin/xbookmark auth login`
 - `bin/xbookmark auth status`
+- `xbookmark auth login PROVIDER`
+- `xbookmark auth bind PROVIDER OP_REF`
+- `xbookmark auth list`
+- `xbookmark auth show PROVIDER`
+- `xbookmark auth rm PROVIDER`
 - `bin/xbookmark install`
 - `bin/xbookmark backfill [--limit N]`
 - `bin/xbookmark sync`

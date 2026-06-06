@@ -168,3 +168,52 @@ Append-only log of meaningful wiki updates.
 **Decision:** Contributor and CI test commands now use `bundle exec rake test`, while `bundle exec rake coverage` remains the enforced 100% line coverage gate for `bin/` and `lib/`.
 **Verification:** `bundle exec rake coverage` passed with 301 runs, 1053 assertions, and 100.00% coverage (2297/2297).
 **Source:** `Gemfile`, `Rakefile`, `.github/workflows/ci.yml`, `test/`, and `test/fixtures/x/`.
+
+## [2026-05-30T13:59:52Z] dependency coverage refresh
+
+**Action:** Refreshed dependency and related wiki coverage after commit `57ced9b` added AuthConfig TOML routing.
+**Pages updated:** wiki/dependencies.md, wiki/architecture.md, wiki/data-model.md, wiki/commands.md, wiki/api.md, wiki/active-areas.md, wiki/decisions.md, wiki/gaps.md, wiki/index.md, wiki/log.md
+**Dependency change:** `tomlrb (~> 2.0)` is now a runtime dependency, locked as `tomlrb 2.0.4`, for `~/.config/xbookmark/auth.toml` parsing.
+**Uncertainty recorded:** AuthConfig storage exists and is tested directly, but no public AuthConfig routing CLI or README contract was found in this refresh.
+**QMD:** `qmd search` was read-only and returned no results for the new auth-routing dependency terms; did not run `qmd update` or `qmd embed` because the post-commit wrapper owns bounded qmd maintenance.
+**Source:** `AGENTS.md`, `.llm-wiki/config.json`, wiki index/dependencies/gaps/recent log, committed diff `57ced9b`, `Gemfile`, `Gemfile.lock`, `xbookmark.gemspec`, `Rakefile`, `README.md`, `lib/xbookmark/keystore/*.rb`, `lib/xbookmark/x/auth.rb`, `lib/xbookmark/cli/auth.rb`, and `test/xbookmark/keystore/*_test.rb`.
+
+## [2026-05-30T14:10:56Z] auth routing wiki correction
+
+**Action:** Corrected the wiki refresh after the HEAD wiki commit missed later provider auth-routing CLI and README changes on the branch.
+**Pages updated:** wiki/api.md, wiki/commands.md, wiki/active-areas.md, wiki/architecture.md, wiki/data-model.md, wiki/dependencies.md, wiki/decisions.md, wiki/gaps.md, wiki/index.md, wiki/log.md
+**Correction:** Public provider credential commands now exist: `auth login PROVIDER`, `auth bind PROVIDER OP_REF`, `auth list`, `auth show PROVIDER`, and `auth rm PROVIDER`.
+**Uncertainty recorded:** Real host credential stores were not exercised in this refresh; tests cover the command and resolver plumbing with shims/mocks.
+**Main wiki:** searched `/home/asterio/wikis/master/wiki` for xbookmark/auth-routing terms; no relevant page was found. `~/wikis/main/wiki`, `../wikis/master/wiki`, and `../wikis/main/wiki` did not exist.
+**QMD:** Ran read-only `qmd search "xbookmark auth.toml AuthConfig tomlrb"` and got no results. Did not run `qmd update` or `qmd embed`; the post-commit wrapper owns bounded qmd maintenance.
+**Source:** `AGENTS.md`, `.llm-wiki/config.json`, required wiki pages and recent log, HEAD wiki diff `7323a6d`, recent auth commits `57ced9b..40064cd`, `README.md`, `lib/xbookmark/cli.rb`, `lib/xbookmark/cli/auth.rb`, `lib/xbookmark/keystore/auth_config.rb`, `lib/xbookmark/keystore/resolver.rb`, `lib/xbookmark/keystore/provider.rb`, `xbookmark.gemspec`, and auth-related tests.
+
+## [2026-05-30T14:30:50Z] post-review wiki refresh
+
+**Action:** Rechecked the latest committed wiki-only diff `3fa1c95` against the provider auth source surface and narrowed stale maintenance provenance.
+**Pages updated:** wiki/active-areas.md, wiki/gaps.md, wiki/log.md
+**Coverage result:** No new page coverage was needed; existing auth-routing pages already matched `README.md`, `lib/xbookmark/cli/auth.rb`, `Xbookmark::Keystore::AuthConfig`, `Xbookmark::Keystore::Resolver`, and auth tests.
+**Uncertainty recorded:** The local worktree/index could not provide full `git status` or cached-diff evidence because it references missing blob `26d9b9b4b284d58add70f2ed2d581a1ab503fa67`; direct source reads and `git show` were used instead.
+**Main wiki:** searched `/home/asterio/wikis/master/wiki`; no xbookmark/auth-routing-specific page was found.
+**QMD:** Did not run `qmd update` or `qmd embed`; the post-commit wrapper owns bounded qmd maintenance.
+**Source:** `AGENTS.md`, `.llm-wiki/config.json`, `wiki/index.md`, `wiki/decisions.md`, `wiki/gaps.md`, recent `wiki/log.md`, latest committed diff `3fa1c95`, `README.md`, `lib/xbookmark/cli/auth.rb`, `lib/xbookmark/keystore/auth_config.rb`, `lib/xbookmark/keystore/resolver.rb`, `test/xbookmark/cli/auth_test.rb`, `test/integration/auth_e2e_test.rb`, `git log`, `git show`, `git ls-files -s`, and `git fsck`.
+
+## [2026-06-06T03:25:36Z] keystore backend hardening refresh
+
+**Action:** Refreshed wiki coverage after commit `3c01175` hardened provider keychain routing, libsecret/keychain not-found handling, and backend failure surfacing.
+**Pages updated:** wiki/architecture.md, wiki/api.md, wiki/commands.md, wiki/dependencies.md, wiki/active-areas.md, wiki/decisions.md, wiki/gaps.md, wiki/index.md, wiki/log.md
+**Coverage result:** No new page coverage was needed. Existing auth-routing and dependency pages now record that routed Linux platform-keychain lookups require both `secret-tool` and a non-empty `DBUS_SESSION_BUS_ADDRESS`, signal-killed keychain/libsecret reads raise hard errors, and libsecret deletes tolerate already-missing items so stale `auth.toml` routing can be cleared.
+**Uncertainty recorded:** Real `secret-tool` and macOS `security` not-found exit codes remain unverified; the current heuristics are code- and test-backed but not live-backend verified.
+**Main wiki:** searched `/home/asterio/wikis/master/wiki`; no xbookmark/auth-routing/libsecret-specific page was found.
+**QMD:** Ran read-only `qmd search "xbookmark keystore libsecret keychain resolver DBUS not-found exitstatus"` and got no results. Did not run `qmd update` or `qmd embed`; the post-commit wrapper owns bounded qmd maintenance.
+**Source:** `AGENTS.md`, `.llm-wiki/config.json`, `wiki/index.md`, `wiki/decisions.md`, `wiki/gaps.md`, recent `wiki/log.md`, committed diff `3c01175`, `lib/xbookmark/keystore/keychain.rb`, `lib/xbookmark/keystore/libsecret.rb`, `lib/xbookmark/keystore/resolver.rb`, `test/xbookmark/keystore/resolver_test.rb`, `test/xbookmark/keystore_test.rb`, `git show`, and direct source reads.
+
+## [2026-06-06T03:27:48Z] auth resolver docs refresh
+
+**Action:** Refreshed command and API surface coverage after commit `50a4d4f` aligned provider auth README/wiki docs with resolver behavior and moved provider-name validation to shared `Xbookmark::Keystore::Provider::NAME_PATTERN`.
+**Pages updated:** wiki/architecture.md, wiki/api.md, wiki/commands.md, wiki/active-areas.md, wiki/decisions.md, wiki/log.md
+**Coverage result:** No new page coverage was needed. Existing auth-routing pages now record that `CI=true` must be the exact string `true` unless `XBOOKMARK_KEYS_FROM_ENV=1` is set, CI/env-forced provider resolution bypasses `auth.toml` entirely, and `AuthConfig` validates hand-edited TOML provider sections through the same provider-name pattern used by CLI parsing.
+**Uncertainty recorded:** No new uncertainty was introduced; the live backend verification and real credential-tool exit-code gaps remain in [[gaps]].
+**Main wiki:** searched `/home/asterio/wikis/master/wiki`; no xbookmark/auth-routing-specific page was found.
+**QMD:** Ran read-only `qmd search "xbookmark provider auth resolver system backend API commands README"`; it returned an unrelated Hive wiki hit and no xbookmark page. Did not run `qmd update` or `qmd embed`; the post-commit wrapper owns bounded qmd maintenance.
+**Source:** `AGENTS.md`, `.llm-wiki/config.json`, `wiki/index.md`, `wiki/architecture.md`, `wiki/decisions.md`, `wiki/gaps.md`, recent `wiki/log.md`, committed diff `50a4d4f`, `README.md`, `lib/xbookmark/keystore/provider.rb`, `lib/xbookmark/keystore/auth_config.rb`, `lib/xbookmark/keystore/resolver.rb`, `test/integration/auth_e2e_test.rb`, `git show`, and direct source reads.
