@@ -23,6 +23,7 @@ The active production-hardening behavior is:
 - `Xbookmark::Qmd::Registrar` tries current `qmd collection list`/`collection add` first and preserves legacy command fallbacks.
 - `Xbookmark::Enrich::Codex` unwraps current `codex exec --json` `item.completed` agent messages.
 - `Xbookmark::Keystore::AuthConfig` adds TOML-backed provider auth routing for `keychain` and `1password` backends without putting secret values in `~/.config/xbookmark/auth.toml`; public commands now cover provider login, 1Password binding, listing, diagnostic resolution, and removal.
+- Provider auth docs now match resolver behavior: `CI=true` must be the exact string `true` unless `XBOOKMARK_KEYS_FROM_ENV=1` is set, and CI/env-forced resolution bypasses `auth.toml` entirely.
 - Keystore hardening now aligns routed Linux provider keychain lookups with backend selection: `secret-tool` plus a non-empty D-Bus session are required before libsecret is used. Signal-killed keychain/libsecret reads raise hard errors, and already-missing libsecret deletes no longer block `auth rm` from clearing stale routing.
 - Specs cover the README setup contract, legacy registrar fallback, scheduler linger setup, and current Codex JSON event parsing.
 - `bundle exec rake coverage` runs Minitest under Ruby's built-in `Coverage` API and enforces 100% line coverage for `bin/` and `lib/`.

@@ -48,7 +48,7 @@ Global options visible in `Xbookmark::CLI` are `--wiki`, `--vault` as a legacy a
 
 Configuration loaded by these commands comes from `XBOOKMARK_ENV_FILE`, `$PWD/.env`, and `~/.config/xbookmark/.env`, plus process environment values. The preferred bookmark wiki path key is `XBOOKMARK_WIKI_PATH`; `XBOOKMARK_VAULT`, `OBSIDIAN_VAULT_PATH`, and `--vault` are compatibility aliases.
 
-Provider credential resolution uses `Xbookmark::Keystore::Resolver`: CI or `XBOOKMARK_KEYS_FROM_ENV=1` forces environment lookup, `auth.toml` can route providers to 1Password or the platform keychain, and plain environment variables are the final non-CI fallback. Linux keychain routing requires both `secret-tool` and a non-empty D-Bus session address before libsecret is used.
+Provider credential resolution uses `Xbookmark::Keystore::Resolver`: exact `CI=true` or `XBOOKMARK_KEYS_FROM_ENV=1` forces environment lookup and skips `auth.toml`; outside that mode, `auth.toml` can route providers to 1Password or the platform keychain, and plain environment variables are the final fallback. Linux keychain routing requires both `secret-tool` and a non-empty D-Bus session address before libsecret is used.
 
 ## Command Flow
 

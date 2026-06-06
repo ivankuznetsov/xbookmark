@@ -65,9 +65,10 @@ Bookmark requests use 50-item pages and follow `meta.next_token`. Production tes
 
 - `Xbookmark::Keystore::AuthConfig.default_path` is `Xbookmark::Paths.default_config_dir/auth.toml`, normally `~/.config/xbookmark/auth.toml`.
 - The TOML file records provider backend routing, not secret values. Supported backend strings in the class are `keychain` and `1password`.
+- Provider names are normalized through `Xbookmark::Keystore::Provider.parse`; `AuthConfig` also drops hand-edited TOML sections whose names do not match the shared `Provider::NAME_PATTERN` (`/\A[a-z0-9_-]+\z/`) so invalid quoted/dotted section names are not reserialized into unparseable bare section headers.
 - 1Password entries must use an `op://` reference. The actual secret is read later by the `op` CLI backend.
 - Provider auth routing is public through `xbookmark auth login PROVIDER`, `xbookmark auth bind PROVIDER OP_REF`, `xbookmark auth list`, `xbookmark auth show PROVIDER`, and `xbookmark auth rm PROVIDER`.
-- `Xbookmark::Keystore::Resolver` resolves provider credentials in this order: CI/env-forced environment, `auth.toml` routing to 1Password or the platform keychain, normal environment fallback, then an actionable error.
+- `Xbookmark::Keystore::Resolver` resolves provider credentials in this order: exact `CI=true` or `XBOOKMARK_KEYS_FROM_ENV=1` env-forced lookup, `auth.toml` routing to 1Password or the platform keychain, normal environment fallback, then an actionable error. The CI/env-forced branch is mutually exclusive: it skips `auth.toml` entirely and fails if the canonical or legacy env key is absent.
 - On Linux, routed platform-keychain provider lookups require both `secret-tool` and a D-Bus session (`DBUS_SESSION_BUS_ADDRESS`); otherwise the resolver raises the same actionable keychain-unavailable message used for a missing `secret-tool` instead of allowing raw backend stderr to escape.
 - `auth show PROVIDER` prints the resolved credential for diagnostics and scripts, so it is intentionally more sensitive than `auth list`, which never prints secret values.
 

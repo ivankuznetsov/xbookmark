@@ -207,3 +207,13 @@ Append-only log of meaningful wiki updates.
 **Main wiki:** searched `/home/asterio/wikis/master/wiki`; no xbookmark/auth-routing/libsecret-specific page was found.
 **QMD:** Ran read-only `qmd search "xbookmark keystore libsecret keychain resolver DBUS not-found exitstatus"` and got no results. Did not run `qmd update` or `qmd embed`; the post-commit wrapper owns bounded qmd maintenance.
 **Source:** `AGENTS.md`, `.llm-wiki/config.json`, `wiki/index.md`, `wiki/decisions.md`, `wiki/gaps.md`, recent `wiki/log.md`, committed diff `3c01175`, `lib/xbookmark/keystore/keychain.rb`, `lib/xbookmark/keystore/libsecret.rb`, `lib/xbookmark/keystore/resolver.rb`, `test/xbookmark/keystore/resolver_test.rb`, `test/xbookmark/keystore_test.rb`, `git show`, and direct source reads.
+
+## [2026-06-06T03:27:48Z] auth resolver docs refresh
+
+**Action:** Refreshed command and API surface coverage after commit `50a4d4f` aligned provider auth README/wiki docs with resolver behavior and moved provider-name validation to shared `Xbookmark::Keystore::Provider::NAME_PATTERN`.
+**Pages updated:** wiki/architecture.md, wiki/api.md, wiki/commands.md, wiki/active-areas.md, wiki/decisions.md, wiki/log.md
+**Coverage result:** No new page coverage was needed. Existing auth-routing pages now record that `CI=true` must be the exact string `true` unless `XBOOKMARK_KEYS_FROM_ENV=1` is set, CI/env-forced provider resolution bypasses `auth.toml` entirely, and `AuthConfig` validates hand-edited TOML provider sections through the same provider-name pattern used by CLI parsing.
+**Uncertainty recorded:** No new uncertainty was introduced; the live backend verification and real credential-tool exit-code gaps remain in [[gaps]].
+**Main wiki:** searched `/home/asterio/wikis/master/wiki`; no xbookmark/auth-routing-specific page was found.
+**QMD:** Ran read-only `qmd search "xbookmark provider auth resolver system backend API commands README"`; it returned an unrelated Hive wiki hit and no xbookmark page. Did not run `qmd update` or `qmd embed`; the post-commit wrapper owns bounded qmd maintenance.
+**Source:** `AGENTS.md`, `.llm-wiki/config.json`, `wiki/index.md`, `wiki/architecture.md`, `wiki/decisions.md`, `wiki/gaps.md`, recent `wiki/log.md`, committed diff `50a4d4f`, `README.md`, `lib/xbookmark/keystore/provider.rb`, `lib/xbookmark/keystore/auth_config.rb`, `lib/xbookmark/keystore/resolver.rb`, `test/integration/auth_e2e_test.rb`, `git show`, and direct source reads.
