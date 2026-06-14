@@ -196,3 +196,10 @@ Append-only log of meaningful wiki updates.
 **Pages updated:** wiki/log.md
 **Decision:** Use `--entry-point=xbookmark` for release builds and keep the Tebako config aligned with that executable name.
 **Source:** GitHub Actions run 27514713761, `.github/workflows/release.yml`, `packaging/tebako/xbookmark.yml`, and `test/release_workflow_test.rb`.
+
+## [2026-06-14T23:21:00Z] Homebrew smoke tap fix
+
+**Action:** Updated the release workflow after Homebrew rejected installing the rendered formula from a direct local file path during smoke testing.
+**Pages updated:** wiki/log.md
+**Decision:** Create a temporary local tap for the Homebrew smoke test, copy the rendered formula into that tap, and install `local/xbookmark-test/xbookmark`.
+**Source:** GitHub Actions run 27514897686, `.github/workflows/release.yml`, and `test/release_workflow_test.rb`.

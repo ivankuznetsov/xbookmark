@@ -186,7 +186,10 @@ jobs:
               -e "s/__SHA256__/${SHA}/g" \
               packaging/homebrew/xbookmark.rb.erb > xbookmark.rb
       - name: Install local formula
-        run: brew install ./xbookmark.rb
+        run: |
+          brew tap-new local/xbookmark-test
+          cp xbookmark.rb "$(brew --repo local/xbookmark-test)/Formula/xbookmark.rb"
+          brew install local/xbookmark-test/xbookmark
       - name: Smoke
         run: |
           xbookmark version
