@@ -224,3 +224,10 @@ Append-only log of meaningful wiki updates.
 **Pages updated:** README.md, wiki/commands.md, wiki/active-areas.md, wiki/api.md, wiki/log.md
 **Decision:** Keep invalid/missing refresh tokens as exit 1 with an `auth login` hint, but report transport/429/5xx refresh failures as retryable exit 2; never persist a refresh response until it contains a non-empty access token and no OAuth error body.
 **Source:** `lib/xbookmark/x/auth.rb`, `lib/xbookmark/cli/auth.rb`, `test/xbookmark/x/auth_test.rb`, `test/xbookmark/cli_test.rb`, and PR #53 code review findings.
+
+## [2026-06-15T00:58:00Z] release metadata 0.2.2
+
+**Action:** Prepared patch release metadata for xbookmark 0.2.2 after the X auth diagnostics and token refresh hardening merged.
+**Pages updated:** CHANGELOG.md, lib/xbookmark/version.rb, wiki/log.md
+**Decision:** Use a patch release because the installable change improves daemon/auth recovery diagnostics and token safety over 0.2.1 without changing the bookmark data model.
+**Source:** `lib/xbookmark/version.rb`, `CHANGELOG.md`, and PR #53.
