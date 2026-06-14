@@ -3,7 +3,7 @@ title: Commands
 type: commands
 source: bin/xbookmark; lib/xbookmark/cli.rb; lib/xbookmark/cli/*.rb; lib/xbookmark/config.rb; lib/xbookmark/qmd/registrar.rb; README.md; .env.example
 created: 2026-05-14
-updated: 2026-05-25
+updated: 2026-06-14
 tags: [commands, cli]
 ---
 
@@ -31,7 +31,7 @@ Packaged binary installs also support running `xbookmark` with no arguments in a
 - `xbookmark auth login` runs OAuth 2.0 PKCE against X and writes tokens to the configured env file.
 - `xbookmark auth status` reports whether an access token is present.
 - `xbookmark backfill [--limit N]` runs a limited test backfill when `--limit` is present and a full backfill otherwise.
-- `xbookmark sync [--from-scheduler]` runs incremental sync; scheduler invocations can skip if the last completed sync is too recent.
+- `xbookmark sync [--from-scheduler]` runs incremental sync; scheduler invocations can skip if the last completed sync is too recent. Scheduled source-only outages exit successfully, log/report `source blocked`, keep local cleanup/QMD maintenance/cached retry work running, and do not stamp `last_sync_finished_at`; manual sync still exits non-zero on source errors.
 - `xbookmark resync TWEET_ID` re-fetches and reprocesses one tweet.
 - `xbookmark find QUERY [--limit N]` searches the QMD `bookmarks` collection and prints numbered text results. `Qmd::Searcher` invokes `qmd query --collection bookmarks --types lex,vec --limit N --json QUERY` and caps parsed results to `N` even if the installed QMD returns extra hits.
 - `xbookmark doctor` checks platform, scheduler backend, bookmark wiki path, state DB path, `codex`, whisper, `qmd`, and X auth token presence.
@@ -46,6 +46,7 @@ Configuration loaded by these commands comes from `XBOOKMARK_ENV_FILE`, `$PWD/.e
 ## Command Flow
 
 - `backfill`, `sync`, and `resync` all load config, open the SQLite state store, create an X API client, and delegate to `Xbookmark::Sync::Runner`.
+- `backfill` and `sync` first process cached pending/retry rows from SQLite. Rows with cached `payload_json` can be enriched without X; uncached legacy retry rows and new bookmark discovery still need X.
 - `sync` starts from the newest bookmark page and stops after a page with no new bookmarks; X `next_token` values are not treated as durable cursors between runs.
 - `find` delegates to `Xbookmark::Qmd::Searcher`.
 - `install` delegates to `Xbookmark::Scheduler::Factory` and, when installing for real, `Xbookmark::CodexConfig` and `Xbookmark::Qmd::Registrar`; `--dry-run` and `--uninstall` do not register QMD or change Codex config.

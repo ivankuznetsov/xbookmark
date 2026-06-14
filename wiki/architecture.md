@@ -3,7 +3,7 @@ title: Architecture
 type: architecture
 source: git ls-files; lib/xbookmark/**/*.rb; README.md; .env.example; .llm-wiki/*
 created: 2026-05-14
-updated: 2026-05-25
+updated: 2026-06-14
 tags: [architecture]
 ---
 
@@ -22,8 +22,8 @@ The application is a Ruby command-line application named `xbookmark`. Its runtim
 - Entry point: `bin/xbookmark` dispatches to `Xbookmark::CLI` in `lib/xbookmark/cli.rb`.
 - Configuration: `Xbookmark::Config` reads `.env` sources and XDG/macOS defaults, with required `X_CLIENT_ID` and `X_USER_ID`.
 - X API integration: `Xbookmark::X::Auth` handles OAuth 2.0 PKCE and token refresh; `Xbookmark::X::Client` reads X bookmarks and tweet details from X API v2.
-- State: `Xbookmark::State::Store` keeps local SQLite state under `<bookmark-wiki>/.xbookmark/state.db`.
-- Sync loop: `Xbookmark::Sync::Runner` drives backfill, sync, and resync modes; `Xbookmark::Sync::Pipeline` processes one bookmark at a time.
+- State: `Xbookmark::State::Store` keeps local SQLite state under `<bookmark-wiki>/.xbookmark/state.db`, including cached per-bookmark X payloads for retryable local work.
+- Sync loop: `Xbookmark::Sync::Runner` drives backfill, sync, and resync modes; it processes cached pending/retry rows before fetching new X pages, and `Xbookmark::Sync::Pipeline` processes one bookmark at a time.
 - Media and transcription: `Xbookmark::Media::Downloader` downloads full-size X media without a default byte cap, and `Xbookmark::Transcribe::Whisper` extracts video audio through `ffmpeg` before shelling out to a local whisper backend with duration-aware timeouts.
 - Enrichment: `Xbookmark::Enrich::Orchestrator` calls `Xbookmark::Enrich::Codex`, fetches allowed external links, runs image OCR/captioning, and returns structured enrichment data.
 - Rendering: `Xbookmark::Render::BookmarkRenderer` writes per-bookmark markdown; `Xbookmark::Render::AuxPage` maintains author, topic, entity, and thread pages. Aux landing pages are created during normal sync, but their separate LLM summaries are opt-in through `XBOOKMARK_AUX_SUMMARIES` so large backfills stay focused on bookmark notes.
@@ -37,7 +37,7 @@ Related details: [[commands]], [[data-model]], [[dependencies]].
 ## Runtime Flow
 
 ```text
-X API bookmarks
+X API bookmarks or cached source payload
   -> local media download
   -> optional whisper transcription
   -> codex enrichment
@@ -45,7 +45,7 @@ X API bookmarks
   -> QMD indexing for search
 ```
 
-Per-bookmark work uses a scratch directory and atomic writes before updating state, so a failed bookmark should be retried rather than leaving partial final output.
+Per-bookmark work uses a scratch directory and atomic writes before updating state, so a failed bookmark should be retried rather than leaving partial final output. Scheduled runs tolerate source-only X auth, rate-limit, and transport failures: they report `source blocked`, keep maintenance and cached local work running, and avoid stamping `last_sync_finished_at` until a source-clean run completes.
 
 ## Cross-Project Wiki Context
 

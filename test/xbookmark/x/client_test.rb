@@ -89,6 +89,14 @@ describe Xbookmark::X::Client do
     assert_equal "1", client.conversation("abc", max_results: 10)["data"].first["id"]
   end
 
+  it "classifies unavailable individual tweets separately from global source outages" do
+    stub_request(:get, %r{api.twitter.com/2/tweets/deleted})
+      .to_return(status: 404, body: "not found")
+
+    error = assert_raises(Xbookmark::SourceUnavailable) { described_class.new(config: config_with).get_tweet("deleted") }
+    assert_match(/X source unavailable \(404\): not found/, error.message)
+  end
+
   it "refreshes once after a 401 response and retries with the new token" do
     config = config_with(access_token: "OLD", refresh_token: "REFRESH")
     fake_auth = mock("auth")
@@ -128,5 +136,21 @@ describe Xbookmark::X::Client do
 
     error = assert_raises(Xbookmark::TransientError) { described_class.new(config: config_with).get_tweet("123") }
     assert_match(/X API error 503: down/, error.message)
+  end
+
+  it "keeps bookmarks endpoint permission failures as global source errors" do
+    stub_request(:get, %r{api.twitter.com/2/users/42/bookmarks})
+      .to_return(status: 403, body: "forbidden")
+
+    error = assert_raises(Xbookmark::TransientError) { described_class.new(config: config_with).bookmarks(user_id: "42").to_a }
+    assert_match(/X API error 403: forbidden/, error.message)
+  end
+
+  it "wraps X transport failures as transient source errors" do
+    stub_request(:get, %r{api.twitter.com/2/users/42/bookmarks})
+      .to_raise(Faraday::ConnectionFailed.new("network down"))
+
+    error = assert_raises(Xbookmark::TransientError) { described_class.new(config: config_with).bookmarks(user_id: "42").to_a }
+    assert_match(/X API transport failed: network down/, error.message)
   end
 end

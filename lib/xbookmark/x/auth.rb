@@ -62,13 +62,7 @@ module Xbookmark
           client_id: @config.x_client_id
         }
 
-        res = token_conn.post(TOKEN_URL) do |req|
-          req.headers["Content-Type"] = "application/x-www-form-urlencoded"
-          if @config.x_client_secret && !@config.x_client_secret.to_s.empty?
-            req.headers["Authorization"] = basic_auth(@config.x_client_id, @config.x_client_secret)
-          end
-          req.body = URI.encode_www_form(body)
-        end
+        res = refresh_token_response(body)
 
         unless res.success?
           raise AuthError, "Token refresh failed (#{res.status}): #{res.body}"
@@ -225,6 +219,18 @@ module Xbookmark
                     retry_statuses: [429, 500, 502, 503, 504]
           f.adapter Faraday.default_adapter
         end
+      end
+
+      def refresh_token_response(body)
+        token_conn.post(TOKEN_URL) do |req|
+          req.headers["Content-Type"] = "application/x-www-form-urlencoded"
+          if @config.x_client_secret && !@config.x_client_secret.to_s.empty?
+            req.headers["Authorization"] = basic_auth(@config.x_client_id, @config.x_client_secret)
+          end
+          req.body = URI.encode_www_form(body)
+        end
+      rescue Faraday::Error => e
+        raise AuthError, "Token refresh transport failed: #{e.message}"
       end
 
       def resolve_keystore(keystore)

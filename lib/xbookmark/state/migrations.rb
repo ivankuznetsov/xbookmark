@@ -2,11 +2,9 @@
 
 module Xbookmark
   module State
-    # Schema bootstrap for the SQLite state DB. NOT a migration framework
-    # in the Rails/Sequel sense — `apply!` only runs the single
-    # CREATE-IF-NOT-EXISTS schema below and stamps a version. When the
-    # schema needs to evolve, this module needs real per-version
-    # migration steps; today it intentionally does not.
+    # Schema bootstrap for the SQLite state DB. `apply!` creates the
+    # current schema when needed, then runs explicit per-version migration
+    # steps for existing databases.
     module Migrations
       CURRENT_VERSION = 2
 
@@ -46,7 +44,7 @@ module Xbookmark
       def apply!(db)
         db.execute_batch(SCHEMA)
         current = current_version(db)
-        migrate_to_v2(db) if current < 2
+        migrate_to_v2(db) if current < 2 || !column_exists?(db, "bookmarks", "payload_json")
         return if current >= CURRENT_VERSION
         db.execute("INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)", ["schema_version", CURRENT_VERSION.to_s])
       end

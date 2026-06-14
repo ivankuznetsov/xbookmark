@@ -168,3 +168,10 @@ Append-only log of meaningful wiki updates.
 **Decision:** Contributor and CI test commands now use `bundle exec rake test`, while `bundle exec rake coverage` remains the enforced 100% line coverage gate for `bin/` and `lib/`.
 **Verification:** `bundle exec rake coverage` passed with 301 runs, 1053 assertions, and 100.00% coverage (2297/2297).
 **Source:** `Gemfile`, `Rakefile`, `.github/workflows/ci.yml`, `test/`, and `test/fixtures/x/`.
+
+## [2026-06-14T22:37:30Z] source-blocked scheduler hardening
+
+**Action:** Added scheduler-degraded sync semantics and SQLite source-payload caching so source-only X auth/rate/transport outages do not block local cleanup, QMD maintenance, or cached retry/enrichment work.
+**Pages updated:** README.md, wiki/architecture.md, wiki/commands.md, wiki/data-model.md, wiki/decisions.md, wiki/log.md
+**Decision:** Scheduled source-only failures report `source blocked`, exit successfully when no local bookmark work failed, and do not stamp `last_sync_finished_at`; manual sync still exits non-zero on source errors. Schema version 2 adds `bookmarks.payload_json` and repairs stamped databases missing the column.
+**Source:** PR #47, `lib/xbookmark/sync/runner.rb`, `lib/xbookmark/state/migrations.rb`, `lib/xbookmark/state/store.rb`, `lib/xbookmark/x/client.rb`, `lib/xbookmark/x/auth.rb`, `lib/xbookmark/qmd/registrar.rb`, and related tests.

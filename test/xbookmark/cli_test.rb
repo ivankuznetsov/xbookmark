@@ -212,6 +212,18 @@ describe Xbookmark::CLI do
     assert_equal 1, error.status
   end
 
+  it "still fails scheduled sync when local pipeline work fails" do
+    Xbookmark::Config.stubs(:load).returns(test_config)
+    Xbookmark::Sync::Runner.stubs(:new).returns(
+      stub(run: FakeReport.new(failed: 1, permanent_errors: 0, source_errors: 1, message: "failed and source blocked"))
+    )
+
+    error = assert_raises(SystemExit) do
+      capture_stdout { Xbookmark::CLI::Sync.new([], { "from-scheduler": true }).sync_run }
+    end
+    assert_equal 1, error.status
+  end
+
   it "prints find results with scores and snippets and reports empty matches" do
     Xbookmark::Config.stubs(:load).returns(test_config)
     searcher = mock("searcher")

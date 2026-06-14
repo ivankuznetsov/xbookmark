@@ -8,10 +8,12 @@ module Xbookmark
   module Qmd
     class Registrar
       COLLECTION_NAME = "bookmarks"
+      DEFAULT_TIMEOUT = 300
 
-      def initialize(config:, runner: nil)
+      def initialize(config:, runner: nil, timeout: DEFAULT_TIMEOUT)
         @config = config
         @runner = runner
+        @timeout = timeout
       end
 
       def ensure_registered!
@@ -65,7 +67,29 @@ module Xbookmark
           out, err, status = @runner.call(argv)
           [out, err, status]
         else
-          Open3.capture3(*argv)
+          capture_with_timeout(argv)
+        end
+      end
+
+      def capture_with_timeout(argv)
+        Open3.popen3(*argv) do |stdin, stdout, stderr, wait_thr|
+          stdin.close
+          out_reader = Thread.new { stdout.read rescue "" }
+          err_reader = Thread.new { stderr.read rescue "" }
+
+          if wait_thr.join(@timeout).nil?
+            pid = wait_thr.pid
+            Process.kill("TERM", pid) rescue nil
+            50.times do
+              break unless wait_thr.alive?
+              sleep 0.1
+            end
+            Process.kill("KILL", pid) rescue nil if wait_thr.alive?
+            wait_thr.join
+            return ["", "qmd command timed out after #{@timeout}s: #{argv.join(' ')}", 1]
+          end
+
+          [out_reader.value, err_reader.value, wait_thr.value]
         end
       end
 

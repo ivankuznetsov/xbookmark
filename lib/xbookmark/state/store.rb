@@ -125,24 +125,18 @@ module Xbookmark
         end
       end
 
-      # Bookmarks that need retry, ordered by attempts ASC, bookmarked_at DESC.
-      def bookmarks_to_retry(limit: 100)
-        @db.execute(<<~SQL, [STATUS_NEEDS_RETRY, limit]).map { |r| symbolize_keys(r) }
-          SELECT * FROM bookmarks
-           WHERE status = ?
-           ORDER BY attempts ASC, bookmarked_at DESC
-           LIMIT ?
-        SQL
-      end
-
       # Work that can be attempted before asking X for new bookmark pages.
       # `pending` covers rows discovered before an interrupted process, while
       # `needs_retry` covers rows that failed transiently in the pipeline.
+      # Cached rows come first so source-blocked scheduler runs still process
+      # all locally enrichable work before any uncached row asks X for data.
       def bookmarks_to_process(limit: 100)
         @db.execute(<<~SQL, [STATUS_PENDING, STATUS_NEEDS_RETRY, limit]).map { |r| symbolize_keys(r) }
           SELECT * FROM bookmarks
            WHERE status IN (?, ?)
-           ORDER BY attempts ASC, bookmarked_at DESC
+           ORDER BY CASE WHEN payload_json IS NULL OR payload_json = '' THEN 1 ELSE 0 END,
+                    attempts ASC,
+                    bookmarked_at DESC
            LIMIT ?
         SQL
       end

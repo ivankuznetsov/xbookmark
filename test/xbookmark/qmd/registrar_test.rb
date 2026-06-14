@@ -116,6 +116,15 @@ describe Xbookmark::Qmd::Registrar do
     assert_predicate status, :success?
   end
 
+  it "times out direct qmd subprocesses instead of hanging scheduler maintenance" do
+    registrar = described_class.new(config: config, timeout: 0.01)
+    out, err, status = registrar.send(:capture, RbConfig.ruby, "-e", "sleep 5")
+
+    assert_equal "", out
+    assert_match(/qmd command timed out after 0.01s/, err)
+    refute registrar.send(:status_success?, status)
+  end
+
   DummyStatus = Struct.new(:exit_status) do
     def success?
       exit_status.zero?
