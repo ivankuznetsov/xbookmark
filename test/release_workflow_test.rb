@@ -19,6 +19,11 @@ describe "release workflow" do
     refute_includes workflow, "xbookmark doctor || true"
   end
 
+  it "installs Tebako from the gem on macOS because Homebrew has no formula" do
+    refute_includes workflow, "brew install tebako"
+    assert_includes workflow, "gem install tebako --no-document"
+  end
+
   it "publishes the AUR install hook with the PKGBUILD" do
     assert_includes workflow, "cp packaging/aur/xbookmark.install /home/build/xbookmark.install"
     assert_includes workflow, "assets: packaging/aur/xbookmark.install"
