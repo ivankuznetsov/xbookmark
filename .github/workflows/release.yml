@@ -32,7 +32,7 @@ jobs:
       - name: Build single-file binary
         run: |
           tebako press --root="$PWD" \
-                      --entry-point=bin/xbookmark \
+                      --entry-point=xbookmark \
                       --output=xbookmark-x86_64-linux \
                       --Ruby=3.3.5
 
@@ -73,7 +73,7 @@ jobs:
       - name: Build single-file binary
         run: |
           tebako press --root="$PWD" \
-                      --entry-point=bin/xbookmark \
+                      --entry-point=xbookmark \
                       --output=xbookmark-arm64-darwin \
                       --Ruby=3.3.5
 

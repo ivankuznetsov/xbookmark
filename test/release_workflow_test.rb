@@ -24,6 +24,11 @@ describe "release workflow" do
     assert_includes workflow, "gem install tebako --no-document"
   end
 
+  it "uses the gem executable name as the Tebako entry point" do
+    refute_includes workflow, "--entry-point=bin/xbookmark"
+    assert_equal 2, workflow.scan("--entry-point=xbookmark").size
+  end
+
   it "publishes the AUR install hook with the PKGBUILD" do
     assert_includes workflow, "cp packaging/aur/xbookmark.install /home/build/xbookmark.install"
     assert_includes workflow, "assets: packaging/aur/xbookmark.install"
