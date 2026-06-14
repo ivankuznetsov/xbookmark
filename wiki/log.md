@@ -175,3 +175,10 @@ Append-only log of meaningful wiki updates.
 **Pages updated:** README.md, wiki/architecture.md, wiki/commands.md, wiki/data-model.md, wiki/decisions.md, wiki/log.md
 **Decision:** Scheduled source-only failures report `source blocked`, exit successfully when no local bookmark work failed, and do not stamp `last_sync_finished_at`; manual sync still exits non-zero on source errors. Schema version 2 adds `bookmarks.payload_json` and repairs stamped databases missing the column.
 **Source:** PR #47, `lib/xbookmark/sync/runner.rb`, `lib/xbookmark/state/migrations.rb`, `lib/xbookmark/state/store.rb`, `lib/xbookmark/x/client.rb`, `lib/xbookmark/x/auth.rb`, `lib/xbookmark/qmd/registrar.rb`, and related tests.
+
+## [2026-06-14T22:48:25Z] release metadata 0.2.1
+
+**Action:** Prepared patch release metadata for xbookmark 0.2.1 after the source-blocked scheduler hardening merged.
+**Pages updated:** wiki/log.md
+**Decision:** Use a patch release because the installable change is a daemon reliability/auth-degraded behavior fix over 0.2.0, not a new feature-line release.
+**Source:** `lib/xbookmark/version.rb`, `CHANGELOG.md`, `README.md`, and PR #47.
