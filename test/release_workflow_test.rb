@@ -29,6 +29,12 @@ describe "release workflow" do
     assert_equal 2, workflow.scan("--entry-point=xbookmark").size
   end
 
+  it "smoke-tests Homebrew through a local tap" do
+    assert_includes workflow, "brew tap-new local/xbookmark-test"
+    assert_includes workflow, "brew install local/xbookmark-test/xbookmark"
+    refute_includes workflow, "brew install ./xbookmark.rb"
+  end
+
   it "publishes the AUR install hook with the PKGBUILD" do
     assert_includes workflow, "cp packaging/aur/xbookmark.install /home/build/xbookmark.install"
     assert_includes workflow, "assets: packaging/aur/xbookmark.install"
