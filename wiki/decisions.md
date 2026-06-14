@@ -3,7 +3,7 @@ title: Decisions
 type: decisions
 source: git log; git worktree list; .hive-state/config.yml; lib/xbookmark/**/*.rb; README.md; .env.example
 created: 2026-05-14
-updated: 2026-05-25
+updated: 2026-06-14
 tags: [decisions]
 ---
 
@@ -25,6 +25,7 @@ tags: [decisions]
 - Create a standalone bookmark wiki at `XBOOKMARK_WIKI_PATH`, separate from the project LLM wiki in `wiki/`.
 - Default new installs to `xbookmark-wiki`; migration from the earlier local `xbookmark-vault` name is not needed because the product has not been released.
 - Store local sync state in SQLite at `<bookmark-wiki>/.xbookmark/state.db`.
+- Store minimized per-bookmark X payloads in SQLite for newly discovered bookmarks and resyncs. This lets pending and retryable rows continue enrichment later without depending on X availability, while new bookmark discovery still requires X.
 - Treat each bookmark as a transactional unit: scratch media/transcription/enrichment first, final markdown/media writes after success, then state update.
 - Use Codex headless CLI for LLM enrichment instead of a direct provider SDK.
 - Pass Codex prompts over stdin instead of argv so large bookmark/media/transcript prompts do not exceed OS argument-size limits.
@@ -32,6 +33,7 @@ tags: [decisions]
 - Use local Whisper tooling for audio/video transcription.
 - Register and query a QMD collection named `bookmarks`; current QMD `collection list`/`collection add` commands are preferred, with legacy `list`/`register`/`index` fallbacks.
 - Use systemd user timers on Linux and launchd on macOS for daily sync, make scheduler installation part of the default setup flow, and enable Linux systemd linger when possible so daily timers can run after logout.
+- Scheduled sync should tolerate X source-only failures. It should continue local cleanup, QMD maintenance, and cached retry/enrichment work, report `source blocked`, exit successfully when no local bookmark work failed, and avoid stamping `last_sync_finished_at` so the next timer can fetch new bookmarks after reauth.
 - Fail closed for external link fetch safety by rejecting private, loopback, link-local, reserved, multicast, and metadata-address ranges.
 
 ## README Setup Decisions

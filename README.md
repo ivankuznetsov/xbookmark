@@ -393,7 +393,7 @@ The artifact written depends on your OS:
 | macOS | `~/Library/LaunchAgents/io.xbookmark.sync.plist` | `~/Library/Logs/xbookmark/sync.log` |
 | Linux | `~/.config/systemd/user/xbookmark-sync.{service,timer}` | `~/.local/state/xbookmark/sync.log` |
 
-If the X token refresh fails during a scheduled run, the job exits non-zero and logs the failure to the OS log destination above. Re-run `bin/xbookmark auth login` to re-issue the refresh token.
+If X is unreachable or the saved OAuth refresh token is rejected during a scheduled run, the job still exits successfully when no local bookmark processing failed. It logs `source blocked`, continues local cleanup, QMD maintenance, and cached retry/enrichment work, and does not stamp the run as completed so the next timer can fetch new bookmarks after auth is repaired. A manual `bin/xbookmark sync` still exits non-zero on source errors. Re-run `bin/xbookmark auth login` to re-issue a rejected refresh token.
 
 `bin/xbookmark install --uninstall` removes whichever artifact was created on this machine. Log files are preserved.
 

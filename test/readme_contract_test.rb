@@ -44,4 +44,12 @@ describe "README setup contract" do
     refute_includes readme, 'service_tier = "flex"'
     refute_includes readme, 'service_tier = "fast"'
   end
+
+  it "documents scheduled source outages as degraded successful runs" do
+    assert_includes readme, "logs `source blocked`"
+    assert_includes readme, "cached retry/enrichment work"
+    assert_includes readme, "does not stamp the run as completed"
+    assert_includes readme, "manual `bin/xbookmark sync` still exits non-zero"
+    refute_includes readme, "job exits non-zero and logs the failure"
+  end
 end

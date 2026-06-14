@@ -11,10 +11,11 @@ describe Xbookmark::Sync::Report do
     report.skipped = 1
     report.failed = 3
     report.permanent_errors = 4
+    report.source_errors = 6
     report.elapsed = 1.24
     report.api_pages = 5
 
-    assert_equal "synced 2, skipped 1, failed 3, retrying next run, permanent errors 4, elapsed 1.2s, api pages 5",
+    assert_equal "synced 2, skipped 1, failed 3, retrying next run, permanent errors 4, source blocked 6, elapsed 1.2s, api pages 5",
                  report.to_s
   end
 end

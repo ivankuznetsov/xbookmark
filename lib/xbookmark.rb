@@ -15,6 +15,7 @@ module Xbookmark
 
   class TransientError < Error; end
   class PermanentError < Error; end
+  class SourceUnavailable < Error; end
   class MediaError < TransientError; end
   class WhisperUnavailable < TransientError; end
   class CodexError < TransientError; end

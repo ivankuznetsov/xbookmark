@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "fileutils"
+require "json"
 require "time"
 require_relative "report"
 require_relative "pipeline"
@@ -37,9 +38,9 @@ module Xbookmark
         cleanup_stale_scratch
 
         case mode
-        when :backfill_limited then backfill(report, limit: limit || 100)
-        when :backfill_full    then backfill(report, limit: nil)
-        when :sync             then incremental_sync(report)
+        when :backfill_limited then backfill(report, limit: limit || 100, from_scheduler: from_scheduler)
+        when :backfill_full    then backfill(report, limit: nil, from_scheduler: from_scheduler)
+        when :sync             then incremental_sync(report, from_scheduler: from_scheduler)
         when :resync           then resync_one(report, tweet_id: tweet_id)
         else
           raise ArgumentError, "unknown mode: #{mode}"
@@ -50,15 +51,19 @@ module Xbookmark
         # the throttle window and cause the next scheduled invocation to
         # skip even though no actual sync happened.
         @store.mark_sync_finished! if real_run?(report)
-        reindex_qmd if report.synced.positive?
+        run_maintenance(force: from_scheduler || report.synced.positive?)
         report
       end
 
       def real_run?(report)
-        report.synced.positive? || report.permanent_errors.zero?
+        report.source_errors.zero? && (report.synced.positive? || report.permanent_errors.zero?)
       end
 
       private
+
+      def run_maintenance(force: false)
+        reindex_qmd if force
+      end
 
       def reindex_qmd
         registrar = @registrar || Xbookmark::Qmd::Registrar.new(config: @config)
@@ -95,13 +100,15 @@ module Xbookmark
         end
       end
 
-      def backfill(report, limit:)
+      def backfill(report, limit:, from_scheduler:)
         if limit && @store.mode == Xbookmark::State::Store::MODE_FRESH
           @store.mode = Xbookmark::State::Store::MODE_FRESH # noop, but keep flow visible
         end
-        retry_first(report)
+        attempted = retry_first(report, tolerate_source_errors: from_scheduler)
         # New pages from API
-        process_new_pages(report, limit: limit)
+        process_new_pages(report, limit: limit, tolerate_source_errors: from_scheduler, attempted_ids: attempted)
+        return if report.source_errors.positive?
+
         if limit
           @store.mode = Xbookmark::State::Store::MODE_TEST_BACKFILLED
         else
@@ -110,7 +117,7 @@ module Xbookmark
         end
       end
 
-      def incremental_sync(report)
+      def incremental_sync(report, from_scheduler:)
         if @store.mode == Xbookmark::State::Store::MODE_FRESH
           puts "[xbookmark] bookmark wiki is empty. Run `xbookmark backfill --limit 100` first to seed it."
           report.permanent_errors += 1
@@ -121,8 +128,9 @@ module Xbookmark
           report.permanent_errors += 1
           return
         end
-        retry_first(report)
-        process_new_pages(report, limit: nil, only_new: true)
+        attempted = retry_first(report, tolerate_source_errors: from_scheduler)
+        process_new_pages(report, limit: nil, only_new: true, tolerate_source_errors: from_scheduler,
+                          attempted_ids: attempted)
         @store.mode = Xbookmark::State::Store::MODE_INCREMENTAL
       end
 
@@ -131,25 +139,44 @@ module Xbookmark
         page = @x_client.get_tweet(tweet_id)
         bookmarks = Xbookmark::X::Expansions.new({ "data" => [page["data"]], "includes" => page["includes"] || {}, "meta" => {} }).bookmarks
         bm = bookmarks.first
-        @store.upsert_pending(tweet_id: bm.tweet_id, author_handle: bm.author_handle, bookmarked_at: bm.bookmarked_at)
+        @store.upsert_pending(tweet_id: bm.tweet_id, author_handle: bm.author_handle, bookmarked_at: bm.bookmarked_at,
+                              payload: payload_for_bookmark(page, bm))
         @store.reset_to_pending!(bm.tweet_id)
         run_one(bm, report)
       end
 
-      def retry_first(report)
-        @store.bookmarks_to_retry(limit: 200).each do |row|
-          # Reconstruct a Bookmark by re-fetching from X — keeps it simple.
-          page = @x_client.get_tweet(row[:tweet_id])
-          next unless page && page["data"]
-          bm = Xbookmark::X::Expansions.new({ "data" => [page["data"]], "includes" => page["includes"] || {}, "meta" => {} }).bookmarks.first
-          run_one(bm, report)
+      def retry_first(report, tolerate_source_errors:)
+        rows = @store.bookmarks_to_process(limit: 200)
+        attempted = {}
+        uncached = []
+        rows.each do |row|
+          bm = cached_bookmark(row)
+          if bm
+            attempted[bm.tweet_id.to_s] = true
+            run_one(bm, report)
+          else
+            uncached << row
+          end
         end
-      rescue Xbookmark::AuthError => e
-        warn "[xbookmark] auth error during retry: #{e.message}"
-        report.permanent_errors += 1
+
+        uncached.each do |row|
+          bm = fetch_bookmark(row[:tweet_id])
+          next unless bm
+
+          attempted[bm.tweet_id.to_s] = true
+          run_one(bm, report)
+        rescue Xbookmark::SourceUnavailable => e
+          attempted[row[:tweet_id].to_s] = true
+          @store.record_failure(tweet_id: row[:tweet_id], error: e.message, permanent: true)
+          report.permanent_errors += 1
+        end
+        attempted
+      rescue Xbookmark::AuthError, Xbookmark::RateLimited, Xbookmark::TransientError => e
+        source_blocked(report, e, context: "retry", tolerate: tolerate_source_errors)
+        attempted || {}
       end
 
-      def process_new_pages(report, limit:, only_new: false)
+      def process_new_pages(report, limit:, only_new: false, tolerate_source_errors:, attempted_ids: {})
         collected = 0
         @x_client.bookmarks(user_id: @config.x_user_id,
                             max_results: Xbookmark::X::Client::BOOKMARK_PAGE_SIZE) do |payload|
@@ -159,11 +186,14 @@ module Xbookmark
 
           page_bookmarks.each do |bm|
             break if limit && collected >= limit
-            @store.upsert_pending(tweet_id: bm.tweet_id, author_handle: bm.author_handle, bookmarked_at: bm.bookmarked_at)
+            @store.upsert_pending(tweet_id: bm.tweet_id, author_handle: bm.author_handle, bookmarked_at: bm.bookmarked_at,
+                                  payload: payload_for_bookmark(payload, bm))
             if @store.already_done?(bm.tweet_id)
               report.skipped += 1
               next
             end
+            next if attempted_ids[bm.tweet_id.to_s]
+
             run_one(bm, report)
             collected += 1
             page_new += 1
@@ -174,6 +204,8 @@ module Xbookmark
           break if limit && collected >= limit
           break unless next_token
         end
+      rescue Xbookmark::AuthError, Xbookmark::RateLimited, Xbookmark::TransientError => e
+        source_blocked(report, e, context: "new bookmark fetch", tolerate: tolerate_source_errors)
       end
 
       def run_one(bookmark, report)
@@ -189,6 +221,63 @@ module Xbookmark
           @store.record_failure(tweet_id: bookmark.tweet_id, error: outcome.error&.message || "permanent", permanent: true)
           report.permanent_errors += 1
         end
+      end
+
+      def cached_bookmark(row)
+        payload = cached_payload(row[:payload_json])
+        return nil unless payload
+
+        Xbookmark::X::Expansions.new(payload).bookmarks.first
+      end
+
+      def fetch_bookmark(tweet_id)
+        page = @x_client.get_tweet(tweet_id)
+        raise Xbookmark::SourceUnavailable, "tweet #{tweet_id} was unavailable from X" unless page && page["data"]
+
+        payload = { "data" => [page["data"]], "includes" => page["includes"] || {}, "meta" => {} }
+        bookmark = Xbookmark::X::Expansions.new(payload).bookmarks.first
+        @store.store_payload!(tweet_id: tweet_id, payload: payload)
+        bookmark
+      end
+
+      def payload_for_bookmark(payload, bookmark)
+        includes = payload["includes"] || {}
+        referenced_ids = Array(bookmark.raw["referenced_tweets"]).filter_map { |ref| ref["id"] }
+        media_keys = Array(bookmark.raw.dig("attachments", "media_keys"))
+        {
+          "data" => [bookmark.raw],
+          "includes" => {
+            "users" => filter_includes(includes["users"], "id", [bookmark.author_id]),
+            "media" => filter_includes(includes["media"], "media_key", media_keys),
+            "tweets" => filter_includes(includes["tweets"], "id", referenced_ids)
+          },
+          "meta" => {}
+        }
+      end
+
+      def filter_includes(records, key, allowed)
+        allowed = allowed.compact.map(&:to_s)
+        return [] if allowed.empty?
+
+        Array(records).select { |record| allowed.include?(record[key].to_s) }
+      end
+
+      def cached_payload(raw)
+        return nil if raw.to_s.empty?
+
+        payload = JSON.parse(raw)
+        return nil unless payload.is_a?(Hash)
+        return nil unless payload["data"].is_a?(Array) && payload["data"].all? { |tweet| tweet.is_a?(Hash) }
+        return nil unless payload["includes"].nil? || payload["includes"].is_a?(Hash)
+
+        payload
+      rescue JSON::ParserError
+        nil
+      end
+
+      def source_blocked(report, error, context:, tolerate:)
+        warn "[xbookmark] source blocked during #{context}: #{error.message}"
+        report.source_errors += 1
       end
     end
   end

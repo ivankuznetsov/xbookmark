@@ -54,7 +54,7 @@ module Xbookmark
           "user.fields" => USER_FIELDS,
           "media.fields" => MEDIA_FIELDS
         }
-        get_json("/2/tweets/#{id}", params)
+        get_json("/2/tweets/#{id}", params, source_unavailable: true)
       end
 
       def conversation(id, max_results: 50)
@@ -71,7 +71,7 @@ module Xbookmark
 
       private
 
-      def get_json(path, params)
+      def get_json(path, params, source_unavailable: false)
         ensure_token!
         res = conn.get(path, params) do |req|
           req.headers["Authorization"] = "Bearer #{@config.x_access_token}"
@@ -91,9 +91,15 @@ module Xbookmark
         when 429
           retry_after = res.headers["x-rate-limit-reset"] || res.headers["retry-after"]
           raise RateLimited.new("X API rate-limited", reset_at: retry_after)
+        when 403, 404
+          raise SourceUnavailable, "X source unavailable (#{res.status}): #{res.body}" if source_unavailable
+
+          raise TransientError, "X API error #{res.status}: #{res.body}"
         else
           raise TransientError, "X API error #{res.status}: #{res.body}"
         end
+      rescue Faraday::Error => e
+        raise TransientError, "X API transport failed: #{e.message}"
       end
 
       def conn

@@ -259,6 +259,20 @@ describe Xbookmark::X::Auth do
     end
   end
 
+  it "wraps refresh transport failures as AuthError" do
+    Dir.mktmpdir do |dir|
+      env_path = File.join(dir, ".env")
+      File.write(env_path, "X_REFRESH_TOKEN=OLD\n")
+      config = fake_config(env_path: env_path, refresh_token: "OLD")
+      stub_request(:post, "https://api.twitter.com/2/oauth2/token")
+        .to_raise(Faraday::TimeoutError.new("execution expired"))
+
+      auth = described_class.new(config, opener: false, env_path: env_path)
+      error = assert_raises(Xbookmark::AuthError) { auth.refresh! }
+      assert_match(/Token refresh transport failed: execution expired/, error.message)
+    end
+  end
+
   it "receives a matching OAuth callback code from the local server" do
     config = fake_config(env_path: "/tmp/.env")
     config.x_redirect_uri = "http://127.0.0.1:7799/callback"
