@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-22.04
     container: ghcr.io/tamatebako/tebako-ubuntu-20.04:latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Configure git safe.directory
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -53,7 +53,7 @@ jobs:
     name: Build arm64-darwin (Tebako)
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install Tebako
         run: |
@@ -95,7 +95,7 @@ jobs:
     needs: build-linux
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/download-artifact@v4
         with:
           name: xbookmark-x86_64-linux
@@ -122,7 +122,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/download-artifact@v4
         with:
           path: dist
@@ -151,7 +151,7 @@ jobs:
     needs: draft-release
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Install via install.sh
         env:
           XBOOKMARK_TAG: ${{ github.ref_name }}
@@ -169,7 +169,7 @@ jobs:
     needs: draft-release
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/download-artifact@v4
         with:
           name: xbookmark-arm64-darwin
@@ -202,7 +202,7 @@ jobs:
     runs-on: ubuntu-latest
     container: archlinux:latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/download-artifact@v4
         with:
           name: xbookmark-x86_64-linux
@@ -280,11 +280,11 @@ jobs:
           else
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           fi
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         if: steps.publish_config.outputs.enabled == 'true'
         with:
           path: src
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         if: steps.publish_config.outputs.enabled == 'true'
         with:
           repository: ivankuznetsov/homebrew-tap
@@ -337,7 +337,7 @@ jobs:
           else
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           fi
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         if: steps.publish_config.outputs.enabled == 'true'
       - uses: actions/download-artifact@v4
         if: steps.publish_config.outputs.enabled == 'true'
