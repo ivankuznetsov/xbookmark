@@ -26,7 +26,7 @@ During `auth login`, `Xbookmark::X::Auth` starts a temporary WEBrick loopback se
 - Scopes: `tweet.read`, `users.read`, `bookmark.read`, and `offline.access`.
 - PKCE method: S256.
 - The callback URI comes from `X_REDIRECT_URI`; `.env.example` uses `http://127.0.0.1:8765/callback`. If the env key is omitted, config falls back to the internal local port default.
-- Refresh is implemented in `Xbookmark::X::Auth#refresh!` for the API client, but no `xbookmark auth refresh` CLI command exists yet.
+- Refresh is implemented in `Xbookmark::X::Auth#refresh!` for the API client and exposed as `xbookmark auth refresh` so users can validate/rotate the saved refresh token without waiting for a sync run.
 - Tokens are persisted by updating the configured env file with `0600` permissions.
 
 ## X API Client Surface

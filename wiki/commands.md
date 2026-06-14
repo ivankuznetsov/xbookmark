@@ -29,7 +29,8 @@ Packaged binary installs also support running `xbookmark` with no arguments in a
 - `bin/xbookmark` requires `lib/xbookmark/cli` and starts `Xbookmark::CLI`.
 - `xbookmark version` prints `Xbookmark::VERSION`.
 - `xbookmark auth login` runs OAuth 2.0 PKCE against X and writes tokens to the configured env file.
-- `xbookmark auth status` reports whether an access token is present.
+- `xbookmark auth status` reports whether an access token is present and still current; expired access tokens exit non-zero and point users at `auth refresh` or `auth login`.
+- `xbookmark auth refresh` uses the saved refresh token to rotate OAuth tokens immediately, reports the token destination on success, and exits non-zero with a direct `auth login` hint when X rejects the refresh token.
 - `xbookmark backfill [--limit N]` runs a limited test backfill when `--limit` is present and a full backfill otherwise.
 - `xbookmark sync [--from-scheduler]` runs incremental sync; scheduler invocations can skip if the last completed sync is too recent. Scheduled source-only outages exit successfully, log/report `source blocked`, keep local cleanup/QMD maintenance/cached retry work running, and do not stamp `last_sync_finished_at`; manual sync still exits non-zero on source errors.
 - `xbookmark resync TWEET_ID` re-fetches and reprocesses one tweet.
@@ -46,6 +47,7 @@ Configuration loaded by these commands comes from `XBOOKMARK_ENV_FILE`, `$PWD/.e
 ## Command Flow
 
 - `backfill`, `sync`, and `resync` all load config, open the SQLite state store, create an X API client, and delegate to `Xbookmark::Sync::Runner`.
+- `auth refresh` loads config, invokes `Xbookmark::X::Auth#refresh!`, and writes rotated tokens to the same destination as `auth login`.
 - `backfill` and `sync` first process cached pending/retry rows from SQLite. Rows with cached `payload_json` can be enriched without X; uncached legacy retry rows and new bookmark discovery still need X.
 - `sync` starts from the newest bookmark page and stops after a page with no new bookmarks; X `next_token` values are not treated as durable cursors between runs.
 - `find` delegates to `Xbookmark::Qmd::Searcher`.

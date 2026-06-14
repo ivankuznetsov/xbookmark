@@ -15,7 +15,6 @@ describe "README setup contract" do
   it "does not document deferred commands or config flags as available" do
     deferred_surface = [
       "bin/xbookmark enrich",
-      "auth refresh",
       "auth logout",
       "XBOOKMARK_CONFIG",
       "--config PATH",
@@ -28,6 +27,8 @@ describe "README setup contract" do
     deferred_surface.each do |snippet|
       refute_includes readme, snippet
     end
+
+    assert_includes readme, "bin/xbookmark auth refresh"
   end
 
   it "describes the runtime bookmark wiki separately from the project wiki" do
