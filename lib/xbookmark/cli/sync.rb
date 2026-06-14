@@ -67,9 +67,11 @@ module Xbookmark
       private
 
       def exit_with(report)
-        return if report.failed.zero? && report.permanent_errors.zero?
+        return if report.failed.zero? && report.permanent_errors.zero? && report.source_errors.zero?
+        return if options[:"from-scheduler"] && report.failed.zero? && report.permanent_errors.zero?
+
         # Permanent errors → user error (1); transient retry → transient (2).
-        exit(report.permanent_errors.positive? ? 1 : 2)
+        exit(report.permanent_errors.positive? || report.source_errors.positive? ? 1 : 2)
       end
     end
   end

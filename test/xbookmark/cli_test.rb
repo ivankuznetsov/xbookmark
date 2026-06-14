@@ -13,7 +13,11 @@ require "xbookmark/x/auth"
 require "xbookmark/x/client"
 
 describe Xbookmark::CLI do
-  FakeReport = Struct.new(:failed, :permanent_errors, :message, keyword_init: true) do
+  FakeReport = Struct.new(:failed, :permanent_errors, :source_errors, :message, keyword_init: true) do
+    def source_errors
+      self[:source_errors] || 0
+    end
+
     def to_s
       message
     end
@@ -192,6 +196,20 @@ describe Xbookmark::CLI do
       capture_stdout { Xbookmark::CLI::Sync.new([], {}).sync_run }
     end
     assert_equal 2, error.status
+  end
+
+  it "keeps scheduled source outages from failing the service but fails manual sync" do
+    Xbookmark::Config.stubs(:load).returns(test_config)
+    Xbookmark::Sync::Runner.stubs(:new).returns(
+      stub(run: FakeReport.new(failed: 0, permanent_errors: 0, source_errors: 1, message: "source blocked"))
+    )
+
+    assert_includes capture_stdout { Xbookmark::CLI::Sync.new([], { "from-scheduler": true }).sync_run }, "source blocked"
+
+    error = assert_raises(SystemExit) do
+      capture_stdout { Xbookmark::CLI::Sync.new([], {}).sync_run }
+    end
+    assert_equal 1, error.status
   end
 
   it "prints find results with scores and snippets and reports empty matches" do

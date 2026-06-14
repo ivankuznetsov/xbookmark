@@ -3,6 +3,7 @@
 require "sqlite3"
 require "fileutils"
 require "time"
+require "json"
 require_relative "migrations"
 
 module Xbookmark
@@ -87,11 +88,13 @@ module Xbookmark
         row && symbolize_keys(row)
       end
 
-      def upsert_pending(tweet_id:, author_handle:, bookmarked_at:)
-        @db.execute(<<~SQL, [tweet_id.to_s, author_handle.to_s, iso(bookmarked_at), STATUS_PENDING])
-          INSERT OR IGNORE INTO bookmarks(tweet_id, author_handle, bookmarked_at, status)
-          VALUES (?, ?, ?, ?)
+      def upsert_pending(tweet_id:, author_handle:, bookmarked_at:, payload: nil)
+        payload_json = payload ? JSON.generate(payload) : nil
+        @db.execute(<<~SQL, [tweet_id.to_s, author_handle.to_s, iso(bookmarked_at), STATUS_PENDING, payload_json])
+          INSERT OR IGNORE INTO bookmarks(tweet_id, author_handle, bookmarked_at, status, payload_json)
+          VALUES (?, ?, ?, ?, ?)
         SQL
+        store_payload!(tweet_id: tweet_id, payload: payload) if payload
       end
 
       def record_success(tweet_id:, markdown_path:, digest:, time: Time.now.utc)
@@ -130,6 +133,33 @@ module Xbookmark
            ORDER BY attempts ASC, bookmarked_at DESC
            LIMIT ?
         SQL
+      end
+
+      # Work that can be attempted before asking X for new bookmark pages.
+      # `pending` covers rows discovered before an interrupted process, while
+      # `needs_retry` covers rows that failed transiently in the pipeline.
+      def bookmarks_to_process(limit: 100)
+        @db.execute(<<~SQL, [STATUS_PENDING, STATUS_NEEDS_RETRY, limit]).map { |r| symbolize_keys(r) }
+          SELECT * FROM bookmarks
+           WHERE status IN (?, ?)
+           ORDER BY attempts ASC, bookmarked_at DESC
+           LIMIT ?
+        SQL
+      end
+
+      def payload_for(tweet_id)
+        raw = @db.get_first_value("SELECT payload_json FROM bookmarks WHERE tweet_id = ?", [tweet_id.to_s])
+        return nil if raw.to_s.empty?
+
+        JSON.parse(raw)
+      rescue JSON::ParserError
+        nil
+      end
+
+      def store_payload!(tweet_id:, payload:)
+        return if payload.nil?
+
+        @db.execute("UPDATE bookmarks SET payload_json = ? WHERE tweet_id = ?", [JSON.generate(payload), tweet_id.to_s])
       end
 
       def already_done?(tweet_id)

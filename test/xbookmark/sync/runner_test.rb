@@ -25,6 +25,26 @@ class FakeXClient
   end
 end
 
+class SourceBlockedClient
+  def bookmarks(user_id:, pagination_token: nil, max_results: Xbookmark::X::Client::BOOKMARK_PAGE_SIZE)
+    raise Xbookmark::AuthError, "expired"
+  end
+
+  def get_tweet(id)
+    raise Xbookmark::AuthError, "expired #{id}"
+  end
+end
+
+class MissingTweetClient
+  def bookmarks(user_id:, pagination_token: nil, max_results: Xbookmark::X::Client::BOOKMARK_PAGE_SIZE)
+    return enum_for(:bookmarks, user_id: user_id, pagination_token: pagination_token, max_results: max_results) unless block_given?
+  end
+
+  def get_tweet(_id)
+    nil
+  end
+end
+
 class FakePipeline
   attr_reader :calls
 
@@ -95,6 +115,7 @@ describe Xbookmark::Sync::Runner do
     report = runner.run(mode: :backfill_limited, limit: 100)
     assert_equal 100, report.synced
     assert_equal 50, fake_client.calls.first[:max_results]
+    assert_equal "t0", store.payload_for("t0")["data"].first["id"]
     assert_equal Xbookmark::State::Store::MODE_TEST_BACKFILLED, store.mode
     assert_equal 1, registrar.index_calls
   end
@@ -123,6 +144,56 @@ describe Xbookmark::Sync::Runner do
     r2 = runner.run(mode: :backfill_limited, limit: 1)
     assert_equal 1, r2.synced
     assert_equal "done", store.find_bookmark("1")[:status]
+  end
+
+  it "retries cached pending and failed bookmarks without calling X" do
+    store.mode = Xbookmark::State::Store::MODE_FULLY_BACKFILLED
+    payload = fixture_json("x", "bookmarks_page.json")
+    first = Xbookmark::X::Expansions.new(payload).bookmarks.first
+    store.upsert_pending(tweet_id: first.tweet_id, author_handle: first.author_handle, bookmarked_at: first.bookmarked_at,
+                         payload: { "data" => [first.raw], "includes" => payload["includes"], "meta" => {} })
+    store.record_failure(tweet_id: first.tweet_id, error: "codex down")
+    pipeline = FakePipeline.new(->(_) { Xbookmark::Sync::Pipeline::Outcome.new(status: :done, markdown_path: "/x", digest: "d") })
+
+    runner = described_class.new(config: config, store: store, x_client: SourceBlockedClient.new,
+                                 pipeline: pipeline, registrar: registrar)
+    report = runner.run(mode: :sync, from_scheduler: true)
+
+    assert_equal 1, report.synced
+    assert_equal 1, report.source_errors
+    assert_equal [first.tweet_id], pipeline.calls
+    assert_equal "done", store.find_bookmark(first.tweet_id)[:status]
+  end
+
+  it "fetches and caches source payloads for retry rows that predate payload storage" do
+    store.upsert_pending(tweet_id: "1", author_handle: "alice", bookmarked_at: "2026-01-01T00:00:00Z")
+    store.record_failure(tweet_id: "1", error: "old transient")
+    single = {
+      "data" => { "id" => "1", "author_id" => "u1", "text" => "x", "created_at" => "2026-01-01T00:00:00Z", "conversation_id" => "1" },
+      "includes" => { "users" => [{ "id" => "u1", "username" => "alice" }] }
+    }
+    pipeline = FakePipeline.new(->(_) { Xbookmark::Sync::Pipeline::Outcome.new(status: :done, markdown_path: "/x", digest: "d") })
+    runner = described_class.new(config: config, store: store, x_client: FakeXClient.new(single_tweet: single),
+                                 pipeline: pipeline, registrar: registrar)
+
+    report = runner.run(mode: :backfill_limited, limit: 1)
+
+    assert_equal 1, report.synced
+    assert_equal "1", store.payload_for("1")["data"].first["id"]
+    assert_equal ["1"], pipeline.calls
+  end
+
+  it "skips retry rows whose source tweet is unavailable without crashing" do
+    store.upsert_pending(tweet_id: "missing", author_handle: "alice", bookmarked_at: "2026-01-01T00:00:00Z")
+    store.record_failure(tweet_id: "missing", error: "old transient")
+    pipeline = FakePipeline.new(->(_) { flunk "missing source should not be processed" })
+    runner = described_class.new(config: config, store: store, x_client: MissingTweetClient.new,
+                                 pipeline: pipeline, registrar: registrar)
+
+    report = runner.run(mode: :backfill_limited, limit: 1)
+
+    assert_equal 0, report.synced
+    assert_empty pipeline.calls
   end
 
   it "skip-if-recent: --from-scheduler exits 0 when the previous finish was < threshold" do
@@ -171,6 +242,33 @@ describe Xbookmark::Sync::Runner do
     assert_equal 1, report.skipped
     assert_equal 0, report.synced
     assert_empty pipeline.calls
+  end
+
+  it "scheduled sync treats blocked X as a source outage and still runs maintenance" do
+    store.mode = Xbookmark::State::Store::MODE_FULLY_BACKFILLED
+    runner = described_class.new(config: config, store: store, x_client: SourceBlockedClient.new,
+                                 pipeline: FakePipeline.new(->(_) { }), registrar: registrar)
+
+    err = capture_stderr { @report = runner.run(mode: :sync, from_scheduler: true) }
+
+    assert_match(/source blocked during new bookmark fetch: expired/, err)
+    assert_equal 1, @report.source_errors
+    assert_equal 0, @report.permanent_errors
+    assert_equal 1, registrar.index_calls
+    assert_nil store.last_sync_finished_at
+  end
+
+  it "manual sync reports blocked X as a command failure without stamping completion" do
+    store.mode = Xbookmark::State::Store::MODE_FULLY_BACKFILLED
+    runner = described_class.new(config: config, store: store, x_client: SourceBlockedClient.new,
+                                 pipeline: FakePipeline.new(->(_) { }), registrar: registrar)
+
+    capture_stderr { @report = runner.run(mode: :sync, from_scheduler: false) }
+
+    assert_equal 1, @report.source_errors
+    assert_equal 1, @report.permanent_errors
+    assert_equal 0, registrar.index_calls
+    assert_nil store.last_sync_finished_at
   end
 
   it "full backfill marks the store fully backfilled and stamps completion time" do
@@ -272,7 +370,7 @@ describe Xbookmark::Sync::Runner do
     assert_equal 1, @report.synced
   end
 
-  it "reports auth errors while retrying failed bookmarks" do
+  it "reports source errors while retrying failed bookmarks without cached payloads" do
     store.upsert_pending(tweet_id: "1", author_handle: "alice", bookmarked_at: "2026-01-01T00:00:00Z")
     store.record_failure(tweet_id: "1", error: "temporary")
     client = FakeXClient.new(pages: [])
@@ -281,7 +379,8 @@ describe Xbookmark::Sync::Runner do
                                  pipeline: FakePipeline.new(->(_) { }), registrar: registrar)
 
     err = capture_stderr { @report = runner.run(mode: :backfill_limited, limit: 1) }
-    assert_match(/auth error during retry: expired/, err)
+    assert_match(/source blocked during retry: expired/, err)
+    assert_equal 1, @report.source_errors
     assert_equal 1, @report.permanent_errors
   end
 end

@@ -11,6 +11,45 @@ describe Xbookmark::State::Store do
     assert_equal Xbookmark::State::Store::MODE_FRESH, store.mode
   end
 
+  it "migrates existing v1 databases to cache source payloads" do
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, "state.db")
+      db = SQLite3::Database.new(path)
+      db.execute_batch(<<~SQL)
+        CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
+        INSERT INTO meta(key, value) VALUES ('schema_version', '1');
+        CREATE TABLE bookmarks (
+          tweet_id TEXT PRIMARY KEY,
+          author_handle TEXT NOT NULL,
+          bookmarked_at TEXT NOT NULL,
+          ingested_at TEXT,
+          status TEXT NOT NULL,
+          attempts INTEGER NOT NULL DEFAULT 0,
+          last_error TEXT,
+          markdown_path TEXT,
+          enrichment_digest TEXT
+        );
+        CREATE TABLE pages (
+          kind TEXT NOT NULL,
+          slug TEXT NOT NULL,
+          path TEXT NOT NULL,
+          last_summarized_at TEXT,
+          summary_input_digest TEXT,
+          PRIMARY KEY (kind, slug)
+        );
+      SQL
+      db.close
+
+      migrated = described_class.new(path)
+      migrated.upsert_pending(tweet_id: "1", author_handle: "alice", bookmarked_at: "2026-01-01T00:00:00Z",
+                              payload: { "data" => [{ "id" => "1" }] })
+
+      assert_equal "2", migrated.get_meta("schema_version")
+      assert_equal [{ "id" => "1" }], migrated.payload_for("1")["data"]
+      migrated.close
+    end
+  end
+
   it "returns nil for an unknown bookmark" do
     assert_nil store.find_bookmark("nope")
   end
@@ -30,6 +69,26 @@ describe Xbookmark::State::Store do
     assert_nil row[:last_error]
     assert_equal 0, row[:attempts]
     assert_equal "/v/1.md", row[:markdown_path]
+  end
+
+  it "stores payloads without resetting an existing bookmark status" do
+    payload = { "data" => [{ "id" => "1", "text" => "hello" }], "includes" => {}, "meta" => {} }
+    store.upsert_pending(tweet_id: "1", author_handle: "alice", bookmarked_at: "2026-01-01T00:00:00Z")
+    store.record_success(tweet_id: "1", markdown_path: "/v/1.md", digest: "abc")
+    store.upsert_pending(tweet_id: "1", author_handle: "alice", bookmarked_at: "2026-01-01T00:00:00Z",
+                         payload: payload)
+
+    row = store.find_bookmark("1")
+    assert_equal "done", row[:status]
+    assert_equal payload, store.payload_for("1")
+  end
+
+  it "treats corrupt cached payload JSON as absent" do
+    store.upsert_pending(tweet_id: "1", author_handle: "alice", bookmarked_at: "2026-01-01T00:00:00Z",
+                         payload: { "data" => [] })
+    store.instance_variable_get(:@db).execute("UPDATE bookmarks SET payload_json = ? WHERE tweet_id = ?", ["{bad", "1"])
+
+    assert_nil store.payload_for("1")
   end
 
   it "resets attempts on success so a later failure starts from zero again" do
@@ -66,6 +125,16 @@ describe Xbookmark::State::Store do
     # 1 has 2 attempts and would be permanent already, so check fresh failures first
     # tweet_id 2 and 3 each have 1 attempt; 3 is more recent
     assert_equal %w[3 2], ids.first(2)
+  end
+
+  it "bookmarks_to_process includes pending and retryable rows" do
+    store.upsert_pending(tweet_id: "pending", author_handle: "a", bookmarked_at: "2026-01-03T00:00:00Z")
+    store.upsert_pending(tweet_id: "retry", author_handle: "b", bookmarked_at: "2026-01-02T00:00:00Z")
+    store.upsert_pending(tweet_id: "done", author_handle: "c", bookmarked_at: "2026-01-01T00:00:00Z")
+    store.record_failure(tweet_id: "retry", error: "x")
+    store.record_success(tweet_id: "done", markdown_path: "/v/done.md", digest: "abc")
+
+    assert_equal %w[pending retry], store.bookmarks_to_process(limit: 10).map { |row| row[:tweet_id] }
   end
 
   it "tracks the X pagination cursor" do
