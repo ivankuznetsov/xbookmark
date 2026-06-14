@@ -8,7 +8,7 @@ Tag pushes (`vX.Y.Z`) drive the entire pipeline.
 | Job            | Runner                                    | Output                                              |
 |----------------|-------------------------------------------|-----------------------------------------------------|
 | `build-linux`  | `ghcr.io/tamatebako/tebako-ubuntu-20.04`  | `xbookmark-x86_64-linux` + `.sha256`                |
-| `build-macos`  | `macos-14` + Homebrew `tebako` formula    | `xbookmark-arm64-darwin` + `.sha256`                |
+| `build-macos`  | `macos-14` + Homebrew prereqs + `tebako` gem | `xbookmark-arm64-darwin` + `.sha256`             |
 | `build-deb`    | `ubuntu-latest` + FPM                     | `xbookmark_<ver>_amd64.deb`                         |
 | `draft-release`| `ubuntu-latest`                            | Public prerelease with `SHA256SUMS`                |
 

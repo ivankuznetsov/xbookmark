@@ -182,3 +182,10 @@ Append-only log of meaningful wiki updates.
 **Pages updated:** wiki/log.md
 **Decision:** Use a patch release because the installable change is a daemon reliability/auth-degraded behavior fix over 0.2.0, not a new feature-line release.
 **Source:** `lib/xbookmark/version.rb`, `CHANGELOG.md`, `README.md`, and PR #47.
+
+## [2026-06-14T22:58:00Z] macOS release packaging fix
+
+**Action:** Updated the release workflow after tag `v0.2.1` showed that `brew install tebako` no longer resolves on GitHub macOS runners.
+**Pages updated:** wiki/log.md
+**Decision:** Install Homebrew prerequisites explicitly on macOS and install Tebako through `gem install tebako --no-document`, matching current Tebako installation guidance.
+**Source:** GitHub Actions run 27514621594, `.github/workflows/release.yml`, `test/release_workflow_test.rb`, and `packaging/RELEASE.md`.
