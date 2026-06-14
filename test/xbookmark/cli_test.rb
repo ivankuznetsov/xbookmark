@@ -161,11 +161,133 @@ describe Xbookmark::CLI do
   end
 
   it "prints auth status without exiting when a token is present" do
-    Xbookmark::Config.stubs(:load).returns(test_config(x_access_token: "token", x_token_expires_at: 42))
+    Xbookmark::Config.stubs(:load).returns(test_config(x_access_token: "token", x_token_expires_at: 2_000_000_000))
+    Time.stubs(:now).returns(Time.at(1_000_000_000))
 
     out = capture_stdout { Xbookmark::CLI::Auth.start(%w[status]) }
 
-    assert_includes out, "Logged in. Token expires at: 42"
+    assert_includes out, "Logged in. Token expires at: 2000000000 (2033-05-18T03:33:20Z)"
+  end
+
+  it "exits when auth status sees an expired access token" do
+    Xbookmark::Config.stubs(:load).returns(test_config(x_access_token: "token", x_refresh_token: "refresh",
+                                                       x_token_expires_at: 999))
+    Time.stubs(:now).returns(Time.at(1_000))
+
+    old_stdout = $stdout
+    $stdout = StringIO.new
+    error = assert_raises(SystemExit) { Xbookmark::CLI::Auth.start(%w[status]) }
+
+    assert_equal 1, error.status
+    assert_includes $stdout.string, "Access token expired at: 999 (1970-01-01T00:16:39Z)"
+    assert_includes $stdout.string, "Refresh token present. Run: xbookmark auth refresh"
+  ensure
+    $stdout = old_stdout
+  end
+
+  it "treats auth tokens expiring exactly now as expired" do
+    Xbookmark::Config.stubs(:load).returns(test_config(x_access_token: "token", x_refresh_token: "refresh",
+                                                       x_token_expires_at: 1_000))
+    Time.stubs(:now).returns(Time.at(1_000))
+
+    old_stdout = $stdout
+    $stdout = StringIO.new
+    error = assert_raises(SystemExit) { Xbookmark::CLI::Auth.start(%w[status]) }
+
+    assert_equal 1, error.status
+    assert_includes $stdout.string, "Access token expired at: 1000 (1970-01-01T00:16:40Z)"
+    assert_includes $stdout.string, "Refresh token present. Run: xbookmark auth refresh"
+  ensure
+    $stdout = old_stdout
+  end
+
+  it "points expired auth status at login when no refresh token exists" do
+    Xbookmark::Config.stubs(:load).returns(test_config(x_access_token: "token", x_refresh_token: nil,
+                                                       x_token_expires_at: 999))
+    Time.stubs(:now).returns(Time.at(1_000))
+
+    old_stdout = $stdout
+    $stdout = StringIO.new
+    error = assert_raises(SystemExit) { Xbookmark::CLI::Auth.start(%w[status]) }
+
+    assert_equal 1, error.status
+    assert_includes $stdout.string, "No refresh token. Run: xbookmark auth login"
+  ensure
+    $stdout = old_stdout
+  end
+
+  it "refreshes auth tokens on demand" do
+    config = test_config
+    result = Xbookmark::X::Auth::AuthResult.new(env_file: "/tmp/.env", access_token: "a", refresh_token: "r",
+                                                expires_at: 2_000_000_000)
+    auth = stub(refresh!: result)
+    Xbookmark::Config.expects(:load).with(wiki_override: "/auth/wiki", vault_override: nil, verbose: true).returns(config)
+    Xbookmark::X::Auth.expects(:new).with(config).returns(auth)
+
+    err = capture_stderr { Xbookmark::CLI::Auth.start(%w[refresh --wiki /auth/wiki --verbose]) }
+
+    assert_includes err, "Refreshed. Tokens written to /tmp/.env"
+    assert_includes err, "Token expires at: 2000000000 (2033-05-18T03:33:20Z)"
+  end
+
+  it "reports refresh failures without a stack trace" do
+    config = test_config
+    auth = stub
+    auth.stubs(:refresh!).raises(Xbookmark::AuthError, "Token refresh failed")
+    Xbookmark::Config.stubs(:load).returns(config)
+    Xbookmark::X::Auth.expects(:new).with(config).returns(auth)
+
+    old_stderr = $stderr
+    $stderr = StringIO.new
+    error = assert_raises(SystemExit) { Xbookmark::CLI::Auth.start(%w[refresh]) }
+
+    assert_equal 1, error.status
+    assert_includes $stderr.string, "[xbookmark] Token refresh failed"
+    assert_includes $stderr.string, "Run: xbookmark auth login"
+  ensure
+    $stderr = old_stderr
+  end
+
+  it "reports transient refresh failures as retryable" do
+    config = test_config
+    auth = stub
+    auth.stubs(:refresh!).raises(Xbookmark::TransientAuthError, "Token refresh transport failed: timeout")
+    Xbookmark::Config.stubs(:load).returns(config)
+    Xbookmark::X::Auth.expects(:new).with(config).returns(auth)
+
+    old_stderr = $stderr
+    $stderr = StringIO.new
+    error = assert_raises(SystemExit) { Xbookmark::CLI::Auth.start(%w[refresh]) }
+
+    assert_equal 2, error.status
+    assert_includes $stderr.string, "[xbookmark] Token refresh transport failed: timeout"
+    assert_includes $stderr.string, "X token refresh is temporarily unavailable. Retry later."
+    refute_includes $stderr.string, "Run: xbookmark auth login"
+  ensure
+    $stderr = old_stderr
+  end
+
+  it "redacts token-like values from refresh failures" do
+    config = test_config
+    auth = stub
+    auth.stubs(:refresh!).raises(
+      Xbookmark::AuthError,
+      'Token refresh failed (400): {"access_token":"ACCESSSECRET12345678901234567890",' \
+      '"refresh_token":"REFRESHSECRET12345678901234567890"}'
+    )
+    Xbookmark::Config.stubs(:load).returns(config)
+    Xbookmark::X::Auth.expects(:new).with(config).returns(auth)
+
+    old_stderr = $stderr
+    $stderr = StringIO.new
+    error = assert_raises(SystemExit) { Xbookmark::CLI::Auth.start(%w[refresh]) }
+
+    assert_equal 1, error.status
+    assert_includes $stderr.string, "[REDACTED]"
+    refute_includes $stderr.string, "ACCESSSECRET"
+    refute_includes $stderr.string, "REFRESHSECRET"
+  ensure
+    $stderr = old_stderr
   end
 
   it "runs backfill, sync, and resync with real stores and runner wiring" do

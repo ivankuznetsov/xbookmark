@@ -209,6 +209,14 @@ describe Xbookmark::X::Auth do
     end
   end
 
+  it "uses bounded token endpoint timeouts" do
+    auth = described_class.new(fake_config(env_path: "/tmp/.env", refresh_token: "OLD"), opener: false, env_path: "/tmp/.env")
+    conn = auth.send(:token_conn)
+
+    assert_equal 5, conn.options.open_timeout
+    assert_equal 30, conn.options.timeout
+  end
+
   it "raises before refresh when no refresh token is configured" do
     auth = described_class.new(fake_config(env_path: "/tmp/.env", refresh_token: nil), opener: false, env_path: "/tmp/.env")
 
@@ -259,6 +267,187 @@ describe Xbookmark::X::Auth do
     end
   end
 
+  it "raises TransientAuthError when refresh token endpoint is temporarily unavailable" do
+    Dir.mktmpdir do |dir|
+      env_path = File.join(dir, ".env")
+      File.write(env_path, "X_REFRESH_TOKEN=OLD\n")
+      config = fake_config(env_path: env_path, refresh_token: "OLD")
+      stub_request(:post, "https://api.twitter.com/2/oauth2/token")
+        .to_return(status: 503, body: '{"error":"temporarily_unavailable"}')
+
+      auth = described_class.new(config, opener: false, env_path: env_path)
+      error = assert_raises(Xbookmark::TransientAuthError) { auth.refresh! }
+
+      assert_match(/Token refresh failed \(503\): temporarily_unavailable/, error.message)
+    end
+  end
+
+  it "sanitizes token endpoint error bodies during refresh" do
+    Dir.mktmpdir do |dir|
+      env_path = File.join(dir, ".env")
+      File.write(env_path, "X_REFRESH_TOKEN=OLD\n")
+      config = fake_config(env_path: env_path, refresh_token: "OLD")
+      body = {
+        error: "invalid_request",
+        error_description: "bad refresh_token=REFRESHSECRET12345678901234567890"
+      }.to_json
+      stub_request(:post, "https://api.twitter.com/2/oauth2/token")
+        .to_return(status: 400, body: body)
+
+      auth = described_class.new(config, opener: false, env_path: env_path)
+      error = assert_raises(Xbookmark::AuthError) { auth.refresh! }
+
+      assert_match(/Token refresh failed \(400\): invalid_request: bad refresh_token=\[REDACTED\]/, error.message)
+      refute_includes error.message, "REFRESHSECRET"
+      refute_includes error.message, body
+    end
+  end
+
+  it "rejects malformed refresh success bodies before writing tokens" do
+    Dir.mktmpdir do |dir|
+      env_path = File.join(dir, ".env")
+      File.write(env_path, "X_REFRESH_TOKEN=OLD\nX_ACCESS_TOKEN=KEEP\n")
+      config = fake_config(env_path: env_path, refresh_token: "OLD")
+      stub_request(:post, "https://api.twitter.com/2/oauth2/token")
+        .to_return(status: 200, body: "not-json")
+
+      auth = described_class.new(config, opener: false, env_path: env_path)
+      error = assert_raises(Xbookmark::AuthError) { auth.refresh! }
+
+      assert_match(/Token refresh returned invalid JSON/, error.message)
+      assert_includes File.read(env_path), "X_ACCESS_TOKEN=KEEP"
+    end
+  end
+
+  it "rejects non-object refresh success bodies before writing tokens" do
+    Dir.mktmpdir do |dir|
+      env_path = File.join(dir, ".env")
+      File.write(env_path, "X_REFRESH_TOKEN=OLD\nX_ACCESS_TOKEN=KEEP\n")
+      config = fake_config(env_path: env_path, refresh_token: "OLD")
+      stub_request(:post, "https://api.twitter.com/2/oauth2/token")
+        .to_return(status: 200, body: [].to_json)
+
+      auth = described_class.new(config, opener: false, env_path: env_path)
+      error = assert_raises(Xbookmark::AuthError) { auth.refresh! }
+
+      assert_match(/Token refresh returned an invalid token response/, error.message)
+      assert_includes File.read(env_path), "X_ACCESS_TOKEN=KEEP"
+    end
+  end
+
+  it "omits raw non-json refresh error bodies" do
+    Dir.mktmpdir do |dir|
+      env_path = File.join(dir, ".env")
+      File.write(env_path, "X_REFRESH_TOKEN=OLD\n")
+      config = fake_config(env_path: env_path, refresh_token: "OLD")
+      stub_request(:post, "https://api.twitter.com/2/oauth2/token")
+        .to_return(status: 400, body: "plain token=REFRESHSECRET12345678901234567890")
+
+      auth = described_class.new(config, opener: false, env_path: env_path)
+      error = assert_raises(Xbookmark::AuthError) { auth.refresh! }
+
+      assert_equal "Token refresh failed (400)", error.message
+      refute_includes error.message, "REFRESHSECRET"
+    end
+  end
+
+  it "rejects OAuth error refresh success bodies before writing tokens" do
+    Dir.mktmpdir do |dir|
+      env_path = File.join(dir, ".env")
+      File.write(env_path, "X_REFRESH_TOKEN=OLD\nX_ACCESS_TOKEN=KEEP\n")
+      config = fake_config(env_path: env_path, refresh_token: "OLD")
+      stub_request(:post, "https://api.twitter.com/2/oauth2/token")
+        .to_return(status: 200, body: { error: "invalid_grant", error_description: "bad token" }.to_json)
+
+      auth = described_class.new(config, opener: false, env_path: env_path)
+      error = assert_raises(Xbookmark::AuthError) { auth.refresh! }
+
+      assert_match(/Token refresh returned error: invalid_grant: bad token/, error.message)
+      assert_includes File.read(env_path), "X_ACCESS_TOKEN=KEEP"
+    end
+  end
+
+  it "rejects OAuth error refresh success bodies even when an access token is present" do
+    Dir.mktmpdir do |dir|
+      env_path = File.join(dir, ".env")
+      File.write(env_path, "X_REFRESH_TOKEN=OLD\nX_ACCESS_TOKEN=KEEP\n")
+      config = fake_config(env_path: env_path, refresh_token: "OLD")
+      stub_request(:post, "https://api.twitter.com/2/oauth2/token")
+        .to_return(status: 200,
+                   body: { access_token: "NEW", error: "invalid_grant", expires_in: 3600 }.to_json)
+
+      auth = described_class.new(config, opener: false, env_path: env_path)
+      error = assert_raises(Xbookmark::AuthError) { auth.refresh! }
+
+      assert_match(/Token refresh returned error: invalid_grant/, error.message)
+      assert_includes File.read(env_path), "X_ACCESS_TOKEN=KEEP"
+    end
+  end
+
+  it "rejects refresh responses without access tokens before writing tokens" do
+    Dir.mktmpdir do |dir|
+      env_path = File.join(dir, ".env")
+      File.write(env_path, "X_REFRESH_TOKEN=OLD\nX_ACCESS_TOKEN=KEEP\n")
+      config = fake_config(env_path: env_path, refresh_token: "OLD")
+      stub_request(:post, "https://api.twitter.com/2/oauth2/token")
+        .to_return(status: 200, body: { refresh_token: "ROTATED", expires_in: 3600 }.to_json)
+
+      auth = described_class.new(config, opener: false, env_path: env_path)
+      error = assert_raises(Xbookmark::AuthError) { auth.refresh! }
+
+      assert_match(/Token refresh returned no access token/, error.message)
+      assert_includes File.read(env_path), "X_ACCESS_TOKEN=KEEP"
+    end
+  end
+
+  it "rejects refresh responses without expires_in before writing tokens" do
+    Dir.mktmpdir do |dir|
+      env_path = File.join(dir, ".env")
+      File.write(env_path, "X_REFRESH_TOKEN=OLD\nX_ACCESS_TOKEN=KEEP\n")
+      config = fake_config(env_path: env_path, refresh_token: "OLD")
+      stub_request(:post, "https://api.twitter.com/2/oauth2/token")
+        .to_return(status: 200, body: { access_token: "NEW", refresh_token: "ROTATED" }.to_json)
+
+      auth = described_class.new(config, opener: false, env_path: env_path)
+      error = assert_raises(Xbookmark::AuthError) { auth.refresh! }
+
+      assert_match(/Token refresh returned invalid expires_in/, error.message)
+      assert_includes File.read(env_path), "X_ACCESS_TOKEN=KEEP"
+    end
+  end
+
+  it "rejects refresh responses with zero expires_in before writing tokens" do
+    Dir.mktmpdir do |dir|
+      env_path = File.join(dir, ".env")
+      File.write(env_path, "X_REFRESH_TOKEN=OLD\nX_ACCESS_TOKEN=KEEP\n")
+      config = fake_config(env_path: env_path, refresh_token: "OLD")
+      stub_request(:post, "https://api.twitter.com/2/oauth2/token")
+        .to_return(status: 200, body: { access_token: "NEW", refresh_token: "ROTATED", expires_in: 0 }.to_json)
+
+      auth = described_class.new(config, opener: false, env_path: env_path)
+      error = assert_raises(Xbookmark::AuthError) { auth.refresh! }
+
+      assert_match(/Token refresh returned invalid expires_in/, error.message)
+      assert_includes File.read(env_path), "X_ACCESS_TOKEN=KEEP"
+    end
+  end
+
+  it "rejects refresh responses with non-numeric expires_in before writing tokens" do
+    Dir.mktmpdir do |dir|
+      env_path = File.join(dir, ".env")
+      File.write(env_path, "X_REFRESH_TOKEN=OLD\nX_ACCESS_TOKEN=KEEP\n")
+      config = fake_config(env_path: env_path, refresh_token: "OLD")
+      stub_request(:post, "https://api.twitter.com/2/oauth2/token")
+        .to_return(status: 200, body: { access_token: "NEW", refresh_token: "ROTATED", expires_in: "later" }.to_json)
+
+      auth = described_class.new(config, opener: false, env_path: env_path)
+      error = assert_raises(Xbookmark::AuthError) { auth.refresh! }
+
+      assert_match(/Token refresh returned invalid expires_in/, error.message)
+      assert_includes File.read(env_path), "X_ACCESS_TOKEN=KEEP"
+    end
+  end
+
   it "wraps refresh transport failures as AuthError" do
     Dir.mktmpdir do |dir|
       env_path = File.join(dir, ".env")
@@ -268,7 +457,7 @@ describe Xbookmark::X::Auth do
         .to_raise(Faraday::TimeoutError.new("execution expired"))
 
       auth = described_class.new(config, opener: false, env_path: env_path)
-      error = assert_raises(Xbookmark::AuthError) { auth.refresh! }
+      error = assert_raises(Xbookmark::TransientAuthError) { auth.refresh! }
       assert_match(/Token refresh transport failed: execution expired/, error.message)
     end
   end

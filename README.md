@@ -218,17 +218,20 @@ Manage X API credentials.
 
 ```bash
 bin/xbookmark auth login   # browser PKCE flow, stores tokens locally
-bin/xbookmark auth status  # show whether a token is present and when it expires
+bin/xbookmark auth status  # show whether the access token is present and still current
+bin/xbookmark auth refresh # test and rotate the saved refresh token now
 ```
 
 Example output:
 
 ```
-Logged in. Token expires at: 1789012345
+Logged in. Token expires at: 1789012345 (2026-09-10T03:52:25Z)
 ```
 
 `auth login` binds the host and port from `X_REDIRECT_URI`. Register that exact
 callback URL in the X developer portal before signing in.
+If `auth status` reports an expired access token, run `auth refresh`. If X rejects
+the saved refresh token, re-run `auth login` to issue a new token pair.
 
 ### backfill
 

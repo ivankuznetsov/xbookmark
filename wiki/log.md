@@ -210,3 +210,17 @@ Append-only log of meaningful wiki updates.
 **Pages updated:** wiki/log.md
 **Decision:** Keep GitHub release assets and install-channel smoke tests as the hard release gate; skip optional external package publishers with a notice when their deployment secrets are absent.
 **Source:** GitHub Actions run 27515320403, `.github/workflows/release.yml`, `packaging/RELEASE.md`, and `test/release_workflow_test.rb`.
+
+## [2026-06-15T00:05:00Z] auth refresh diagnostics
+
+**Action:** Added explicit expired-token handling to `auth status` and exposed `auth refresh` so users can validate and rotate saved X OAuth refresh tokens without waiting for a sync run.
+**Pages updated:** README.md, wiki/commands.md, wiki/active-areas.md, wiki/api.md, wiki/gaps.md, wiki/log.md
+**Decision:** Treat an expired access token as a non-zero `auth status` result with the next actionable command, while `auth refresh` reports X refresh-token rejection directly and points users at `auth login`.
+**Source:** `lib/xbookmark/cli/auth.rb`, `test/xbookmark/cli_test.rb`, `README.md`, and production token-expiry investigation.
+
+## [2026-06-15T00:23:00Z] auth refresh review hardening
+
+**Action:** Hardened `auth refresh` after code review by redacting token-like values, bounding token endpoint timeouts, distinguishing transient refresh outages from permanent reauthorization failures, and validating successful token responses before writing them.
+**Pages updated:** README.md, wiki/commands.md, wiki/active-areas.md, wiki/api.md, wiki/log.md
+**Decision:** Keep invalid/missing refresh tokens as exit 1 with an `auth login` hint, but report transport/429/5xx refresh failures as retryable exit 2; never persist a refresh response until it contains a non-empty access token and no OAuth error body.
+**Source:** `lib/xbookmark/x/auth.rb`, `lib/xbookmark/cli/auth.rb`, `test/xbookmark/x/auth_test.rb`, `test/xbookmark/cli_test.rb`, and PR #53 code review findings.

@@ -5,6 +5,7 @@ require "test_helper"
 describe "README setup contract" do
   let(:readme) { File.read(File.expand_path("../README.md", __dir__)) }
   let(:env_example) { File.read(File.expand_path("../.env.example", __dir__)) }
+  let(:commands_wiki) { File.read(File.expand_path("../wiki/commands.md", __dir__)) }
 
   it "points new setups at the implemented scheduler command" do
     assert_includes readme, "bin/xbookmark install"
@@ -15,7 +16,6 @@ describe "README setup contract" do
   it "does not document deferred commands or config flags as available" do
     deferred_surface = [
       "bin/xbookmark enrich",
-      "auth refresh",
       "auth logout",
       "XBOOKMARK_CONFIG",
       "--config PATH",
@@ -28,6 +28,20 @@ describe "README setup contract" do
     deferred_surface.each do |snippet|
       refute_includes readme, snippet
     end
+
+    assert_includes readme, "bin/xbookmark auth refresh"
+  end
+
+  it "keeps the wiki command contract aligned with implemented auth commands" do
+    assert_includes commands_wiki, "auth login/status/refresh"
+    assert_includes commands_wiki, "`auth refresh` loads config"
+
+    deferred_section = commands_wiki.split("## Deferred Public Surface", 2).last
+    refute_includes deferred_section, "- `auth refresh`"
+  end
+
+  it "formats auth timestamp examples like the CLI" do
+    assert_includes readme, "1789012345 (2026-09-10T03:52:25Z)"
   end
 
   it "describes the runtime bookmark wiki separately from the project wiki" do

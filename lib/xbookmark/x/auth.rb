@@ -65,10 +65,11 @@ module Xbookmark
         res = refresh_token_response(body)
 
         unless res.success?
-          raise AuthError, "Token refresh failed (#{res.status}): #{res.body}"
+          error_class = transient_token_response?(res) ? TransientAuthError : AuthError
+          raise error_class, token_response_error("Token refresh failed", res)
         end
 
-        token = JSON.parse(res.body)
+        token = parse_success_token!(res.body, operation: "Token refresh")
         write_tokens!(token, preserve_refresh: token["refresh_token"].nil?)
         AuthResult.new(
           env_file: token_destination,
@@ -205,8 +206,80 @@ module Xbookmark
 
       private
 
+      SECRET_LIKE_VALUE = /[A-Za-z0-9_\-.~+\/=]{32,}/
+      SECRET_FIELD = /
+        \b(access_token|refresh_token|client_secret|authorization|token)
+        (["']?\s*[:=]\s*["']?)
+        [^"',}\s]+
+      /ix
+
       def basic_auth(user, pass)
         "Basic " + Base64.strict_encode64("#{user}:#{pass}")
+      end
+
+      def token_response_error(prefix, response)
+        detail = token_error_detail(response.body)
+        message = "#{prefix} (#{response.status})"
+        detail ? "#{message}: #{detail}" : message
+      end
+
+      def transient_token_response?(response)
+        response.status.to_i == 429 || response.status.to_i >= 500
+      end
+
+      def parse_success_token!(body, operation:)
+        parsed = JSON.parse(body)
+        unless parsed.is_a?(Hash)
+          raise AuthError, "#{operation} returned an invalid token response."
+        end
+
+        if parsed["error"]
+          detail = [parsed["error"], parsed["error_description"]]
+                   .compact
+                   .map { |value| redact_secret_like_values(value) }
+                   .reject(&:empty?)
+                   .uniq
+                   .join(": ")
+          raise AuthError, "#{operation} returned error#{detail.empty? ? "" : ": #{detail}"}"
+        end
+
+        if parsed["access_token"].to_s.empty?
+          raise AuthError, "#{operation} returned no access token."
+        end
+        unless positive_integer?(parsed["expires_in"])
+          raise AuthError, "#{operation} returned invalid expires_in."
+        end
+
+        parsed
+      rescue JSON::ParserError
+        raise AuthError, "#{operation} returned invalid JSON."
+      end
+
+      def positive_integer?(value)
+        Integer(value, exception: false).to_i.positive?
+      end
+
+      def token_error_detail(body)
+        parsed = JSON.parse(body)
+        return unless parsed.is_a?(Hash)
+
+        [parsed["error"], parsed["error_description"]]
+          .compact
+          .map { |value| redact_secret_like_values(value) }
+          .reject(&:empty?)
+          .uniq
+          .join(": ")
+          .yield_self { |detail| detail.empty? ? nil : detail }
+      rescue JSON::ParserError, TypeError
+        nil
+      end
+
+      def redact_secret_like_values(value)
+        value.to_s
+             .gsub(/[[:cntrl:]]+/, " ")
+             .gsub(SECRET_FIELD, "\\1\\2[REDACTED]")
+             .gsub(SECRET_LIKE_VALUE, "[REDACTED]")
+             .strip[0, 240]
       end
 
       def token_expires_at(token)
@@ -217,6 +290,8 @@ module Xbookmark
         @token_conn ||= Faraday.new do |f|
           f.request :retry, max: 1, interval: 0.5,
                     retry_statuses: [429, 500, 502, 503, 504]
+          f.options.open_timeout = 5
+          f.options.timeout = 30
           f.adapter Faraday.default_adapter
         end
       end
@@ -230,7 +305,7 @@ module Xbookmark
           req.body = URI.encode_www_form(body)
         end
       rescue Faraday::Error => e
-        raise AuthError, "Token refresh transport failed: #{e.message}"
+        raise TransientAuthError, "Token refresh transport failed: #{e.message}"
       end
 
       def resolve_keystore(keystore)

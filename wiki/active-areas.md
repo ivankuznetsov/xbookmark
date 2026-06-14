@@ -3,7 +3,7 @@ title: Active Areas
 type: active-areas
 source: git log --name-only; git status; README.md; lib/xbookmark/config.rb; lib/xbookmark/cli.rb
 created: 2026-05-14
-updated: 2026-05-25
+updated: 2026-06-15
 tags: [activity]
 ---
 
@@ -40,6 +40,7 @@ The README now describes only implemented setup commands:
 
 - `bin/xbookmark auth login`
 - `bin/xbookmark auth status`
+- `bin/xbookmark auth refresh`
 - `bin/xbookmark install`
 - `bin/xbookmark backfill [--limit N]`
 - `bin/xbookmark sync`
@@ -48,6 +49,6 @@ The README now describes only implemented setup commands:
 - `bin/xbookmark setup`
 - `bin/xbookmark uninstall --purge [--yes] [--dry-run]`
 
-Deferred command shapes such as `schedule`, `auth refresh/logout`, `enrich`, `--config`, `backfill --since`, and `find --json` should stay out of setup docs until implemented.
+Deferred command shapes such as `schedule`, `auth logout`, `enrich`, `--config`, `backfill --since`, and `find --json` should stay out of setup docs until implemented.
 
 Related: [[architecture]], [[commands]], [[api]], [[dependencies]], [[gaps]].
