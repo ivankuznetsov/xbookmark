@@ -8,7 +8,7 @@ It is built for people who keep notes in Obsidian or any markdown-first system a
 
 <p align="center">
   <a href="https://github.com/ivankuznetsov/xbookmark/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/ivankuznetsov/xbookmark/ci.yml?branch=main&label=ci" alt="Build status"></a>
-  <a href="#roadmap"><img src="https://img.shields.io/badge/gem-unreleased-lightgrey" alt="Gem version"></a>
+  <a href="https://github.com/ivankuznetsov/xbookmark/releases/latest"><img src="https://img.shields.io/github/v/release/ivankuznetsov/xbookmark?label=release" alt="Release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License"></a>
   <img src="https://img.shields.io/badge/ruby-%E2%89%A5%203.1-red" alt="Ruby version">
 </p>
