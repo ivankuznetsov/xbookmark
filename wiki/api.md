@@ -3,7 +3,7 @@ title: API Surface
 type: api
 source: lib/xbookmark/x/auth.rb; lib/xbookmark/x/client.rb; lib/xbookmark/qmd/registrar.rb; lib/xbookmark/qmd/searcher.rb; README.md; .env.example
 created: 2026-05-14
-updated: 2026-05-25
+updated: 2026-06-15
 tags: [api, x-api, oauth, cli]
 ---
 

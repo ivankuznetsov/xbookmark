@@ -225,7 +225,7 @@ bin/xbookmark auth refresh # test and rotate the saved refresh token now
 Example output:
 
 ```
-Logged in. Token expires at: 1789012345 (2026-09-10T02:45:45Z)
+Logged in. Token expires at: 1789012345 (2026-09-10T03:52:25Z)
 ```
 
 `auth login` binds the host and port from `X_REDIRECT_URI`. Register that exact

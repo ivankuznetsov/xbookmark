@@ -3,7 +3,7 @@ title: Active Areas
 type: active-areas
 source: git log --name-only; git status; README.md; lib/xbookmark/config.rb; lib/xbookmark/cli.rb
 created: 2026-05-14
-updated: 2026-05-25
+updated: 2026-06-15
 tags: [activity]
 ---
 

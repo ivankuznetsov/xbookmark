@@ -4,6 +4,7 @@ module Xbookmark
   class Error < StandardError; end
   class ConfigError < Error; end
   class AuthError < Error; end
+  class TransientAuthError < AuthError; end
   class RateLimited < Error
     attr_reader :reset_at
 

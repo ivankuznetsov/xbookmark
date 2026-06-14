@@ -3,11 +3,11 @@ title: Commands
 type: commands
 source: bin/xbookmark; lib/xbookmark/cli.rb; lib/xbookmark/cli/*.rb; lib/xbookmark/config.rb; lib/xbookmark/qmd/registrar.rb; README.md; .env.example
 created: 2026-05-14
-updated: 2026-06-14
+updated: 2026-06-15
 tags: [commands, cli]
 ---
 
-**TLDR**: The README and implementation are aligned around the currently implemented Thor CLI: auth login/status, backfill, sync, resync, find, doctor, install, setup, and uninstall.
+**TLDR**: The README and implementation are aligned around the currently implemented Thor CLI: auth login/status/refresh, backfill, sync, resync, find, doctor, install, setup, and uninstall.
 
 ## Fresh Setup Contract
 
@@ -60,7 +60,6 @@ Configuration loaded by these commands comes from `XBOOKMARK_ENV_FILE`, `$PWD/.e
 
 Do not document these commands as available until implementation lands:
 
-- `auth refresh`
 - `auth logout`
 - `enrich`
 - `schedule install/status/uninstall`

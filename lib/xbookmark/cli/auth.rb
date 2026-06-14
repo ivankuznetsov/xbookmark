@@ -50,13 +50,30 @@ module Xbookmark
         result = Xbookmark::X::Auth.new(config).refresh!
         warn "Refreshed. Tokens written to #{result.env_file}."
         warn "Token expires at: #{format_timestamp(result.expires_at.to_i)}"
+      rescue Xbookmark::TransientAuthError => e
+        warn "[xbookmark] #{redact_secret_like_values(e.message)}"
+        warn "X token refresh is temporarily unavailable. Retry later."
+        exit 2
       rescue Xbookmark::AuthError => e
-        warn "[xbookmark] #{e.message}"
+        warn "[xbookmark] #{redact_secret_like_values(e.message)}"
         warn "Run: xbookmark auth login"
         exit 1
       end
 
       private
+
+      SECRET_LIKE_VALUE = /[A-Za-z0-9_\-.~+\/=]{32,}/
+      SECRET_FIELD = /
+        \b(access_token|refresh_token|client_secret|authorization|token)
+        (["']?\s*[:=]\s*["']?)
+        [^"',}\s]+
+      /ix
+
+      def redact_secret_like_values(message)
+        message.to_s
+               .gsub(SECRET_FIELD, "\\1\\2[REDACTED]")
+               .gsub(SECRET_LIKE_VALUE, "[REDACTED]")
+      end
 
       def format_timestamp(value)
         "#{value} (#{Time.at(value.to_i).utc.iso8601})"
