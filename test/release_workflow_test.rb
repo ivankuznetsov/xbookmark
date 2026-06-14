@@ -40,6 +40,12 @@ describe "release workflow" do
     assert_includes workflow, "assets: packaging/aur/xbookmark.install"
   end
 
+  it "skips optional package publishers when their deploy secrets are absent" do
+    assert_includes workflow, "Skipping Homebrew tap publish; HOMEBREW_TAP_DEPLOY_KEY is not configured."
+    assert_includes workflow, "Skipping AUR publish; AUR_SSH_PRIVATE_KEY is not configured."
+    assert_includes workflow, "if: steps.publish_config.outputs.enabled == 'true'"
+  end
+
   it "gates promote-latest behind every smoke job and gates tap/aur publishes on promote-latest" do
     jobs = parsed.fetch("jobs")
     assert_equal %w[smoke-aur smoke-brew smoke-curl smoke-deb],

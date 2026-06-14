@@ -37,6 +37,11 @@ smoke gate exits successfully.
 | `update-tap`     | `promote-latest` succeeded  | renders + pushes `Formula/xbookmark.rb` to the tap  |
 | `update-aur`     | `promote-latest` succeeded  | renders + publishes the PKGBUILD via SSH to AUR    |
 
+`update-tap` and `update-aur` are optional publisher jobs. They skip with
+a notice when `HOMEBREW_TAP_DEPLOY_KEY` or `AUR_SSH_PRIVATE_KEY` is not
+configured, so the GitHub release can still go green after the release
+assets and install-channel smoke tests pass.
+
 ## Bootstrapping the tap repo
 
 Before the first tag push:

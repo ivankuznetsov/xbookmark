@@ -203,3 +203,10 @@ Append-only log of meaningful wiki updates.
 **Pages updated:** wiki/log.md
 **Decision:** Create a temporary local tap for the Homebrew smoke test, copy the rendered formula into that tap, and install `local/xbookmark-test/xbookmark`.
 **Source:** GitHub Actions run 27514897686, `.github/workflows/release.yml`, and `test/release_workflow_test.rb`.
+
+## [2026-06-14T23:33:30Z] optional release publisher guards
+
+**Action:** Added configuration guards after the `v0.2.1` release was promoted successfully but the optional Homebrew tap and AUR publisher jobs failed because their deploy secrets/repositories were not configured.
+**Pages updated:** wiki/log.md
+**Decision:** Keep GitHub release assets and install-channel smoke tests as the hard release gate; skip optional external package publishers with a notice when their deployment secrets are absent.
+**Source:** GitHub Actions run 27515320403, `.github/workflows/release.yml`, `packaging/RELEASE.md`, and `test/release_workflow_test.rb`.
