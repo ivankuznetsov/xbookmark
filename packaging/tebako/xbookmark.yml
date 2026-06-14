@@ -7,7 +7,7 @@
 # Tebako pins one Ruby version per build — we target 3.3 so the
 # resulting binary always has the same MRI the README documents.
 ---
-entry_point: bin/xbookmark
+entry_point: xbookmark
 ruby_version: 3.3.5
 fs_root: .
 output: build/xbookmark

@@ -189,3 +189,10 @@ Append-only log of meaningful wiki updates.
 **Pages updated:** wiki/log.md
 **Decision:** Install Homebrew prerequisites explicitly on macOS and install Tebako through `gem install tebako --no-document`, matching current Tebako installation guidance.
 **Source:** GitHub Actions run 27514621594, `.github/workflows/release.yml`, `test/release_workflow_test.rb`, and `packaging/RELEASE.md`.
+
+## [2026-06-14T23:03:30Z] Tebako entry-point release fix
+
+**Action:** Fixed the release workflow after Tebako packaged the gem executable under `bin/xbookmark` and the previous `--entry-point=bin/xbookmark` setting resolved to `bin/bin/xbookmark`.
+**Pages updated:** wiki/log.md
+**Decision:** Use `--entry-point=xbookmark` for release builds and keep the Tebako config aligned with that executable name.
+**Source:** GitHub Actions run 27514713761, `.github/workflows/release.yml`, `packaging/tebako/xbookmark.yml`, and `test/release_workflow_test.rb`.
