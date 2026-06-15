@@ -308,3 +308,10 @@ Append-only log of meaningful wiki updates.
 **Pages updated:** wiki/architecture.md, wiki/log.md
 **Decision:** Scheduled taxonomy curation is both batch-bounded and LLM-time-bounded; if Codex is too slow, the curator falls back to deterministic local rules so the daemon exits cleanly.
 **Source:** Forced `XBOOKMARK_MIN_RUN_INTERVAL_HOURS=0 bin/xbookmark sync --from-scheduler` run, `lib/xbookmark/sync/runner.rb`, `lib/xbookmark/taxonomy/curator.rb`, and `test/xbookmark/sync/runner_test.rb`.
+
+## [2026-06-15T19:35:00Z] explicit topic post lists
+
+**Action:** Fixed Obsidian browsing gap where opening a concept/topic page required using the Backlinks panel to find matching bookmark posts.
+**Pages updated:** README.md, wiki/architecture.md, wiki/data-model.md, wiki/log.md
+**Decision:** Generated concept pages and legacy topic/entity pages include explicit `## Posts` lists built from local bookmark frontmatter. Concept pages inherit posts from narrower child concepts through `broader`, so broad concepts are useful browsing entry points.
+**Source:** Local vault inspection of legacy `topics/` and `entities/` pages, `lib/xbookmark/render/concept_page.rb`, `lib/xbookmark/render/aux_page.rb`, `lib/xbookmark/taxonomy/rebuilder.rb`, and related tests.

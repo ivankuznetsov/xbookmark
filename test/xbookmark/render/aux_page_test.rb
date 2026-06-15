@@ -62,6 +62,28 @@ describe Xbookmark::Render::TopicPage do
       assert_includes File.read(path), "(no summary yet)"
     end
   end
+
+  it "renders explicit post links when references are provided" do
+    Dir.mktmpdir do |vault|
+      references = {
+        "ozempic" => [
+          {
+            target: "bookmarks/2026/01/01/alice-ozempic-1",
+            label: "Ozempic trial result",
+            author: "@alice",
+            bookmarked_at: "2026-01-01T00:00:00Z"
+          }
+        ]
+      }
+      page = described_class.new(vault_path: vault, store: store, references: references)
+      path = page.ensure!(slug: "ozempic", label: "Ozempic", inputs: [])
+
+      content = File.read(path)
+      assert_includes content, "## Posts"
+      assert_includes content, "[[bookmarks/2026/01/01/alice-ozempic-1|Ozempic trial result]]"
+      assert_includes content, "@alice, 2026-01-01"
+    end
+  end
 end
 
 describe Xbookmark::Render::AuthorPage do

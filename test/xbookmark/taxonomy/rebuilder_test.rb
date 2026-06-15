@@ -261,6 +261,14 @@ describe "taxonomy audit and rebuild" do
       store.upsert_concept(slug: "apple", label: "Apple", kind: "entity", evidence_count: 1, confidence: 0.1)
       store.upsert_concept(slug: "venezuela-politics", label: "Venezuela Politics", kind: "topic",
                            evidence_count: 1, confidence: 0.1)
+      write_note(File.join(vault, "bookmarks", "2026", "01", "01", "post.md"),
+                 { "tweet_id" => "1", "author" => "alice", "bookmarked_at" => "2026-01-01T00:00:00Z",
+                   "summary" => "Apple and Venezuela politics note", "concepts" => ["apple"],
+                   "topics" => ["venezuela-politics"] },
+                 "body")
+      write_note(File.join(vault, "topics", "venezuela-politics.md"),
+                 { "kind" => "topic", "slug" => "venezuela-politics", "label" => "Venezuela politics" },
+                 "# Venezuela politics\n\n## Summary\n\nExisting summary\n\n## References\n\nold")
 
       report = Xbookmark::Taxonomy::Rebuilder.new(
         config: config_for(vault), store: store, clock: -> { Time.utc(2026, 1, 2, 3, 4, 5) }
@@ -272,11 +280,49 @@ describe "taxonomy audit and rebuild" do
       assert File.exist?(File.join(vault, "concepts", "topics.md"))
       assert File.exist?(File.join(vault, "concepts", "index.md"))
       assert_includes File.read(File.join(vault, "concepts", "apple.md")), "- [[concepts/entities|Entities]]"
+      assert_includes File.read(File.join(vault, "concepts", "apple.md")), "## Posts"
+      assert_includes File.read(File.join(vault, "concepts", "apple.md")), "[[bookmarks/2026/01/01/post|Apple and Venezuela politics note]]"
       assert_includes File.read(File.join(vault, "concepts", "venezuela-politics.md")), "- [[concepts/topics|Topics]]"
+      assert_includes File.read(File.join(vault, "topics", "venezuela-politics.md")), "## Posts"
+      assert_includes File.read(File.join(vault, "topics", "venezuela-politics.md")),
+                      "[[bookmarks/2026/01/01/post|Apple and Venezuela politics note]]"
       manifest = JSON.parse(File.read(report.manifest_path))
       materialize = manifest["operations"].find { |op| op["type"] == "concept_materialize" }
       assert_equal 4, materialize["count"]
       assert_equal "concepts/index.md", materialize["index_path"]
+      assert manifest["operations"].any? { |op| op["type"] == "legacy_aux_posts_materialize" }
+    end
+  end
+
+  it "rebuilds clean paths when existing concept pages are missing post lists" do
+    Dir.mktmpdir do |vault|
+      store = Xbookmark::State::Store.new(":memory:")
+      store.upsert_concept(slug: "apple", label: "Apple", kind: "entity", evidence_count: 1, confidence: 0.1)
+      write_note(File.join(vault, "bookmarks", "2026", "01", "01", "post.md"),
+                 { "tweet_id" => "1", "summary" => "Apple post", "concepts" => ["apple"] },
+                 "body")
+      write_note(File.join(vault, "concepts", "apple.md"),
+                 { "kind" => "concept", "slug" => "apple", "label" => "Apple" },
+                 "# Apple\n\n## References\n\nold")
+
+      rebuilder = Xbookmark::Taxonomy::Rebuilder.new(
+        config: config_for(vault), store: store, clock: -> { Time.utc(2026, 1, 2, 3, 4, 5) }
+      )
+      report = rebuilder.call(apply: true)
+
+      assert_equal "applied", report.state
+      assert_includes File.read(File.join(vault, "concepts", "apple.md")), "## Posts"
+      paths = rebuilder.send(:post_list_paths_for, "apple")
+      assert_includes paths, File.join(vault, "concepts", "apple.md")
+    end
+  end
+
+  it "ignores empty post-reference groups when deciding whether to rebuild" do
+    Dir.mktmpdir do |vault|
+      rebuilder = Xbookmark::Taxonomy::Rebuilder.new(config: config_for(vault), store: Xbookmark::State::Store.new(":memory:"))
+      rebuilder.stubs(:post_references_by_slug).returns("empty" => [])
+
+      refute rebuilder.send(:missing_post_lists?)
     end
   end
 

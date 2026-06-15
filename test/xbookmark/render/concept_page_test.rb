@@ -16,6 +16,33 @@ describe Xbookmark::Render::ConceptPage do
     assert_includes md, "[[concepts/oil|Oil]]"
   end
 
+  it "renders direct and inherited post references from bookmark notes" do
+    Dir.mktmpdir do |vault|
+      FileUtils.mkdir_p(File.join(vault, "bookmarks", "2026", "01", "01"))
+      File.write(File.join(vault, "bookmarks", "2026", "01", "01", "post.md"), <<~MD)
+        ---
+        tweet_id: "1"
+        author: alice
+        bookmarked_at: "2026-01-01T00:00:00Z"
+        summary: "Venezuela oil policy update"
+        concepts:
+        - venezuela-oil
+        ---
+
+        # fallback title
+      MD
+      parent = Xbookmark::Taxonomy::Concept.new(slug: "venezuela", label: "Venezuela")
+      child = Xbookmark::Taxonomy::Concept.new(slug: "venezuela-oil", label: "Venezuela oil", broader: ["venezuela"])
+      references = described_class.references_by_concept(vault_path: vault, concepts: [parent, child])
+
+      md = described_class.new(vault_path: vault, references: references).render(parent)
+
+      assert_includes md, "## Posts"
+      assert_includes md, "[[bookmarks/2026/01/01/post|Venezuela oil policy update]]"
+      assert_includes md, "@alice, 2026-01-01"
+    end
+  end
+
   it "keeps hostile labels and aliases from corrupting headings while staying valid YAML" do
     concept = Xbookmark::Taxonomy::Concept.new(slug: "foo", label: "Foo]]bar",
                                                aliases: ["multi\nline", "---"], broader: ["a]]b"])
