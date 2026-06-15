@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.4 - 2026-06-15
+
+- Keep image-backed bookmark enrichment moving by falling back to text-only Codex when image handling returns a transient or schema-invalid response.
+- Report retry rows that exhaust their budget as permanent errors while still stamping successful source-clean sync runs.
+
 ## 0.2.3 - 2026-06-15
 
 - Report OAuth login callback timeouts and auth failures without a Ruby stack trace.

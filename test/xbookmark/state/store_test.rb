@@ -152,7 +152,9 @@ describe Xbookmark::State::Store do
 
   it "promotes to permanent_error after 3 failed attempts" do
     store.upsert_pending(tweet_id: "1", author_handle: "alice", bookmarked_at: "2026-01-01T00:00:00Z")
-    3.times { store.record_failure(tweet_id: "1", error: "boom") }
+    statuses = 3.times.map { store.record_failure(tweet_id: "1", error: "boom") }
+
+    assert_equal %w[needs_retry needs_retry permanent_error], statuses
     assert_equal "permanent_error", store.find_bookmark("1")[:status]
   end
 

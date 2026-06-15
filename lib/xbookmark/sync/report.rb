@@ -3,7 +3,8 @@
 module Xbookmark
   module Sync
     class Report
-      attr_accessor :synced, :skipped, :failed, :permanent_errors, :source_errors, :pages, :elapsed, :api_pages
+      attr_accessor :synced, :skipped, :failed, :permanent_errors, :source_errors, :pages, :elapsed, :api_pages,
+                    :bookmark_attempts
 
       def initialize
         @synced = 0
@@ -13,6 +14,7 @@ module Xbookmark
         @source_errors = 0
         @pages = 0
         @api_pages = 0
+        @bookmark_attempts = 0
         @elapsed = 0.0
       end
 

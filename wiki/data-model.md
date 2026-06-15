@@ -3,7 +3,7 @@ title: Data Model
 type: data-model
 source: lib/xbookmark/state/migrations.rb; lib/xbookmark/state/store.rb; lib/xbookmark/render/bookmark_renderer.rb
 created: 2026-05-14
-updated: 2026-06-14
+updated: 2026-06-15
 tags: [data, sqlite, bookmark-wiki]
 ---
 
@@ -40,7 +40,7 @@ Sync mode constants:
 - `fully_backfilled`
 - `incremental`
 
-Failures increment `attempts`; after three attempts or a permanent error flag, the bookmark becomes `permanent_error`. Successful processing resets attempts and clears `last_error`. Global source outages such as X auth, rate-limit, and transport failures are reported separately as `source blocked`; they do not count as per-bookmark permanent errors.
+Failures increment `attempts`; after three attempts or a permanent error flag, the bookmark becomes `permanent_error`. `Store.record_failure` returns the final stored status so the sync report can distinguish rows that remain retryable from rows promoted to permanent during the current run. Successful processing resets attempts and clears `last_error`. Global source outages such as X auth, rate-limit, and transport failures are reported separately as `source blocked`; they do not count as per-bookmark permanent errors.
 
 ## Bookmark Wiki Layout
 
