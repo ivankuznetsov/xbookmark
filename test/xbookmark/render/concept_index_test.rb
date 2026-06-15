@@ -23,4 +23,16 @@ describe Xbookmark::Render::ConceptIndex do
       assert_includes body, "- blocked_conflicts: 2"
     end
   end
+
+  it "caps the root-concept list and notes how many were omitted" do
+    Dir.mktmpdir do |vault|
+      limit = Xbookmark::Render::ConceptIndex::ROOT_DISPLAY_LIMIT
+      concepts = Array.new(limit + 5) { |i| Xbookmark::Taxonomy::Concept.new(slug: format("c%04d", i)) }
+
+      body = File.read(described_class.new(vault_path: vault).write(concepts))
+
+      assert_includes body, "_…and 5 more root concepts_"
+      assert_equal limit, body.scan(/^- \[\[concepts\//).size
+    end
+  end
 end

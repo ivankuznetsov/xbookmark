@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "date"
 require "yaml"
 require_relative "path_safety"
 require_relative "report"
@@ -91,7 +92,7 @@ module Xbookmark
         raw = File.read(path)
         return {} unless raw.start_with?("---\n")
 
-        front = YAML.safe_load(raw.split("---\n", 3)[1], aliases: false)
+        front = YAML.safe_load(raw.split("---\n", 3)[1], permitted_classes: [Date, Time], aliases: false)
         front.is_a?(Hash) ? front : {}
       rescue Psych::Exception
         {}

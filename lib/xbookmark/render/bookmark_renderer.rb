@@ -2,6 +2,7 @@
 
 require "yaml"
 require "json"
+require "date"
 require "fileutils"
 require "digest"
 require "pathname"
@@ -13,7 +14,7 @@ require_relative "../taxonomy/concept"
 
 module Xbookmark
   module Render
-    SCHEMA_VERSION = 1
+    SCHEMA_VERSION = 2
 
     class BookmarkRenderer
       def initialize(vault_path:, path_builder: nil)
@@ -66,12 +67,13 @@ module Xbookmark
           "author" => bookmark.author_handle.to_s,
           "author_id" => bookmark.author_id.to_s,
           "author_name" => bookmark.author_name.to_s,
-          "created_at" => bookmark.created_at.to_s,
-          "bookmarked_at" => bookmark.bookmarked_at.to_s,
+          # Typed dates so Obsidian Properties / Bases / Dataview can sort and
+          # filter on them; falls back to the raw string if unparseable.
+          "created_at" => date_value(bookmark.created_at),
+          "bookmarked_at" => date_value(bookmark.bookmarked_at),
           "tags" => MarkdownSafety.tags(enrichment.tags || []),
           "concepts" => concepts.map(&:slug),
           "concept_labels" => concepts.map(&:label),
-          "facets" => MarkdownSafety.tags(concepts.flat_map(&:facets)),
           "media" => media_records.map { |m| { "path" => relativize(m[:path]), "kind" => m[:kind], "alt" => m[:alt_text] } },
           "media_files" => media_records.map { |m| "[[#{relativize(m[:path])}]]" },
           "conversation_id" => bookmark.conversation_id.to_s,
@@ -198,6 +200,14 @@ module Xbookmark
         return title if title && !title.to_s.strip.empty?
 
         [bookmark.author_handle && "@#{bookmark.author_handle}", enrichment.summary || bookmark.text || bookmark.tweet_id].compact.join(": ")
+      end
+
+      # Parse an ISO timestamp into a Date so YAML emits a typed date Property;
+      # keep the original string if it can't be parsed.
+      def date_value(value)
+        Date.parse(value.to_s)
+      rescue ArgumentError, TypeError
+        value.to_s
       end
 
       def relativize(path)
