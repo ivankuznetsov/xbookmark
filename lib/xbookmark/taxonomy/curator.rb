@@ -41,11 +41,12 @@ module Xbookmark
         }
       }.freeze
 
-      def initialize(codex: nil, registry: Registry.new, normalizer: nil, store: nil)
+      def initialize(codex: nil, registry: Registry.new, normalizer: nil, store: nil, timeout: nil)
         @codex = codex
         @registry = registry
         @normalizer = normalizer || Normalizer.new(registry: registry)
         @store = store
+        @timeout = timeout
       end
 
       def curate(candidates)
@@ -80,7 +81,9 @@ module Xbookmark
       def llm_decisions(candidates)
         return nil unless @codex
 
-        response = @codex.run(prompt: prompt_for(candidates), json_schema: DECISION_SCHEMA)
+        kwargs = { prompt: prompt_for(candidates), json_schema: DECISION_SCHEMA }
+        kwargs[:timeout] = @timeout if @timeout
+        response = @codex.run(**kwargs)
         decisions = Array(response["decisions"]).filter_map { |decision| decision_from_llm(decision) }
         decisions.empty? ? nil : decisions
       rescue StandardError => e

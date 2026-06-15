@@ -20,6 +20,7 @@ module Xbookmark
   module Sync
     class Runner
       TAXONOMY_CURATION_BATCH_SIZE = 50
+      TAXONOMY_CURATION_TIMEOUT_SECONDS = 60
 
       def initialize(config:, store:, x_client:, orchestrator: nil, renderer: nil, pipeline: nil, registrar: nil)
         @config = config
@@ -125,7 +126,12 @@ module Xbookmark
 
         registry = Xbookmark::Taxonomy::Registry.from_vault(@config.vault_path, store: @store)
         codex = Xbookmark::Enrich::Codex.new(bin: @config.codex_bin)
-        Xbookmark::Taxonomy::Curator.new(codex: codex, registry: registry, store: @store).curate(candidates)
+        Xbookmark::Taxonomy::Curator.new(
+          codex: codex,
+          registry: registry,
+          store: @store,
+          timeout: TAXONOMY_CURATION_TIMEOUT_SECONDS
+        ).curate(candidates)
         true
       rescue StandardError => e
         @store.set_meta("last_taxonomy_error", "#{e.class}: #{e.message}")
