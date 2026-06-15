@@ -160,6 +160,10 @@ describe Xbookmark::CLI do
 
       clean = capture_stdout { Xbookmark::CLI::Taxonomy.start(%w[audit]) }
       assert_includes clean, "taxonomy: clean"
+      refute File.exist?(config.state_db_path)
+      clean_rebuild = capture_stdout { Xbookmark::CLI::Taxonomy.start(%w[rebuild]) }
+      assert_includes clean_rebuild, "taxonomy: clean"
+      refute File.exist?(config.state_db_path)
 
       FileUtils.mkdir_p(File.join(vault, "bookmarks"))
       File.write(File.join(vault, "bookmarks", "123.md"), "body")
@@ -167,11 +171,29 @@ describe Xbookmark::CLI do
         capture_stdout { Xbookmark::CLI::Taxonomy.start(%w[audit]) }
       end
       assert_equal 1, audit_exit.status
+      refute File.exist?(config.state_db_path)
 
       rebuild_exit = assert_raises(SystemExit) do
         capture_stdout { Xbookmark::CLI::Taxonomy.start(%w[rebuild]) }
       end
       assert_equal 1, rebuild_exit.status
+      refute File.exist?(config.state_db_path)
+    end
+  end
+
+  it "runs taxonomy apply rebuild through the state store" do
+    Dir.mktmpdir do |vault|
+      config = test_config(
+        vault_path: vault,
+        state_db_path: File.join(vault, ".xbookmark", "state.db"),
+        taxonomy_maintenance: false
+      )
+      Xbookmark::Config.stubs(:load).returns(config)
+
+      out = capture_stdout { Xbookmark::CLI::Taxonomy.start(%w[rebuild --apply]) }
+
+      assert_includes out, "taxonomy: clean"
+      assert File.exist?(config.state_db_path)
     end
   end
 

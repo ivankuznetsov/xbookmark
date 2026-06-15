@@ -36,6 +36,7 @@ describe "taxonomy audit and rebuild" do
       write_note(File.join(vault, "concepts", "a.md"), "aliases" => ["dup"])
       write_note(File.join(vault, "concepts", "b.md"), "aliases" => ["dup"], "broader" => ["a"])
       File.write(File.join(vault, "concepts", "bad.md"), "---\n: bad: yaml\n---\n")
+      File.write(File.join(vault, "concepts", "array.md"), "---\n- not\n- a\n- hash\n---\n")
 
       report = Xbookmark::Taxonomy::Auditor.new(vault_path: vault).call
 
@@ -69,6 +70,10 @@ describe "taxonomy audit and rebuild" do
         after: { numeric_bookmark_nodes: 0, singleton_thread_pages: 0, orphan_concepts: 0, concept_pages: 1, source_notes: 1 }
       )
       refute Xbookmark::Taxonomy::GraphHealthReport.new(before: { numeric_bookmark_nodes: 1, concept_pages: 0 }).ready?
+      refute Xbookmark::Taxonomy::GraphHealthReport.new(
+        before: {},
+        after: { numeric_bookmark_nodes: 0, singleton_thread_pages: 0, concept_pages: 0, source_notes: 1 }
+      ).ready?
       assert ready.ready?
       path = ready.write(File.join(vault, ".xbookmark", "graph.json"))
       assert_equal true, JSON.parse(File.read(path))["ready"]

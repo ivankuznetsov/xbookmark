@@ -55,7 +55,8 @@ module Xbookmark
 
       def source_note_dominance
         concepts = after.fetch(:concept_pages, 0).to_f
-        return 0.0 if concepts.zero?
+        return 0.0 if concepts.zero? && after.fetch(:source_notes, 0).zero?
+        return Float::INFINITY if concepts.zero?
 
         after.fetch(:source_notes, 0).to_f / concepts
       end

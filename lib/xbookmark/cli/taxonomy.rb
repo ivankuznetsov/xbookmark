@@ -15,7 +15,8 @@ module Xbookmark
 
       desc "audit", "Audit graph taxonomy health without modifying the wiki"
       def audit
-        config, _store = load_runtime
+        config = load_config
+        require_relative "../taxonomy/auditor"
         report = Xbookmark::Taxonomy::Auditor.new(vault_path: config.vault_path).call
         puts report
         exit(report.exit_code) unless report.exit_code.zero?
@@ -24,7 +25,16 @@ module Xbookmark
       desc "rebuild", "Repair taxonomy paths and generated graph pages"
       option :apply, type: :boolean, default: false, desc: "Apply changes; dry-run by default"
       def rebuild
-        config, store = load_runtime
+        config = load_config
+        unless options[:apply]
+          require_relative "../taxonomy/auditor"
+          report = Xbookmark::Taxonomy::Auditor.new(vault_path: config.vault_path).call
+          puts report
+          exit(report.exit_code) unless report.exit_code.zero?
+          return
+        end
+
+        store = load_store(config)
         registrar = Xbookmark::Qmd::Registrar.new(config: config)
         report = Xbookmark::Taxonomy::Rebuilder.new(config: config, store: store, registrar: registrar).call(apply: options[:apply])
         puts report
@@ -33,15 +43,18 @@ module Xbookmark
 
       private
 
-      def load_runtime
+      def load_config
         require_relative "../config"
+
+        Xbookmark::Config.load(wiki_override: options[:wiki], vault_override: options[:vault], verbose: options[:verbose])
+      end
+
+      def load_store(config)
         require_relative "../qmd/registrar"
         require_relative "../state/store"
-        require_relative "../taxonomy/auditor"
         require_relative "../taxonomy/rebuilder"
 
-        config = Xbookmark::Config.load(wiki_override: options[:wiki], vault_override: options[:vault], verbose: options[:verbose])
-        [config, Xbookmark::State::Store.new(config.state_db_path)]
+        Xbookmark::State::Store.new(config.state_db_path)
       end
     end
   end

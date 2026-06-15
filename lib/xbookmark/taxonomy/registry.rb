@@ -26,12 +26,11 @@ module Xbookmark
       end
 
       def self.concept_from_page(path)
-        raw = File.read(path)
-        front = raw.start_with?("---\n") ? YAML.safe_load(raw.split("---\n", 3)[1], permitted_classes: [Time], aliases: false) || {} : {}
+        front = frontmatter(path)
         Concept.new(
           slug: front["slug"] || File.basename(path, ".md"),
           label: front["label"],
-          kind: front["kind"],
+          kind: kind_from_frontmatter(front),
           aliases: front["aliases"],
           broader: front["broader"],
           facets: front["tags"] || front["facets"],
@@ -39,6 +38,20 @@ module Xbookmark
           confidence: front["confidence"],
           outcome: front["curator_outcome"] || front["outcome"]
         )
+      end
+
+      def self.frontmatter(path)
+        raw = File.read(path)
+        return {} unless raw.start_with?("---\n")
+
+        front = YAML.safe_load(raw.split("---\n", 3)[1], permitted_classes: [Time], aliases: false)
+        front.is_a?(Hash) ? front : {}
+      rescue Psych::Exception, SystemCallError
+        {}
+      end
+
+      def self.kind_from_frontmatter(front)
+        front["concept_kind"] || (front["kind"] == "concept" ? nil : front["kind"])
       end
 
       def self.concept_from_row(row)

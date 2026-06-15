@@ -72,8 +72,11 @@ module Xbookmark
 
       def frontmatter(path)
         raw = File.read(path)
-        raw.start_with?("---\n") ? YAML.safe_load(raw.split("---\n", 3)[1], aliases: false) || {} : {}
-      rescue Psych::SyntaxError
+        return {} unless raw.start_with?("---\n")
+
+        front = YAML.safe_load(raw.split("---\n", 3)[1], aliases: false)
+        front.is_a?(Hash) ? front : {}
+      rescue Psych::Exception
         {}
       end
     end
