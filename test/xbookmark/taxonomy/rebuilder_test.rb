@@ -66,6 +66,31 @@ describe "taxonomy audit and rebuild" do
     end
   end
 
+  it "migrates existing notes to the schema-2 frontmatter shape in place, preserving the body" do
+    Dir.mktmpdir do |vault|
+      store = Xbookmark::State::Store.new(":memory:")
+      path = File.join(vault, "bookmarks", "2026", "05", "22", "alice-old-1.md")
+      write_note(path,
+                 { "xbookmark_schema" => 1, "tweet_id" => "1", "author" => "alice",
+                   "created_at" => "2026-05-22T13:30:18.000Z", "bookmarked_at" => "not a date",
+                   "facets" => ["concept/x"], "summary" => "First clause here. Second clause." },
+                 "tweet body preserved")
+
+      report = Xbookmark::Taxonomy::Rebuilder.new(
+        config: config_for(vault), store: store, clock: -> { Time.utc(2026, 6, 1) }
+      ).call(apply: true)
+
+      assert_equal "applied", report.state
+      front = YAML.safe_load(File.read(path).split("---\n", 3)[1], permitted_classes: [Date, Time])
+      assert_equal 2, front["xbookmark_schema"]
+      assert_equal "First clause here", front["title"]
+      assert_equal Date.new(2026, 5, 22), front["created_at"]   # typed date
+      assert_equal "not a date", front["bookmarked_at"]          # unparseable kept verbatim
+      refute front.key?("facets")                                # dead key dropped
+      assert_includes File.read(path), "tweet body preserved"    # body untouched
+    end
+  end
+
   it "prunes old snapshots beyond the retention limit after a successful apply" do
     Dir.mktmpdir do |vault|
       store = Xbookmark::State::Store.new(":memory:")

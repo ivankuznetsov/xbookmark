@@ -10,6 +10,7 @@ require "yaml"
 require_relative "../render/aux_page"
 require_relative "../render/concept_index"
 require_relative "../render/concept_page"
+require_relative "../render/markdown_safety"
 require_relative "../render/path_builder"
 require_relative "../sync/thread_index"
 require_relative "auditor"
@@ -61,7 +62,15 @@ module Xbookmark
 
       def needs_rebuild?(counts)
         actionable?(counts) || missing_concept_pages? || placeholder_thread_pages? ||
-          missing_post_lists? || legacy_taxonomy_surface? || stale_concept_pages?
+          missing_post_lists? || legacy_taxonomy_surface? || stale_concept_pages? ||
+          outdated_schema_notes?
+      end
+
+      def outdated_schema_notes?
+        Dir.glob(File.join(@config.vault_path, "bookmarks", "**", "*.md")).any? do |path|
+          front, = parse_note(path)
+          front && front["xbookmark_schema"].to_i < Xbookmark::Render::SCHEMA_VERSION
+        end
       end
 
       def actionable?(counts)
@@ -126,6 +135,7 @@ module Xbookmark
         thread_moves.concat(rename_placeholder_threads(manifest))
         rewrite_thread_links(manifest, singleton_thread_ids, thread_moves)
         rewrite_legacy_taxonomy_links(manifest)
+        migrate_bookmark_schema!(manifest)
         clear_reference_caches!
         prune_numeric_threads(manifest, singleton_thread_ids)
 
@@ -537,6 +547,47 @@ module Xbookmark
       def clear_reference_caches!
         @post_references_by_slug = nil
         @concept_pages_from_store = nil
+      end
+
+      # One-time offline migration of existing notes to the schema-2 Properties
+      # shape: bump the version, type the dates, backfill a title from the
+      # summary, and drop the dead facets key. The body is preserved verbatim
+      # (no re-render, no LLM); gated on schema version so re-runs are no-ops.
+      def migrate_bookmark_schema!(manifest)
+        count = 0
+        Dir.glob(File.join(@config.vault_path, "bookmarks", "**", "*.md")).sort.each do |path|
+          front, body = parse_note(path)
+          next unless front
+          next if front["xbookmark_schema"].to_i >= Xbookmark::Render::SCHEMA_VERSION
+
+          migrated = migrate_front(front)
+          File.write(path, "---\n#{migrated.to_yaml(line_width: -1).sub(/^---\n?/, "")}---\n\n#{body.to_s.sub(/\A\n+/, "")}")
+          count += 1
+        end
+        manifest.add(:schema_migrate, "count" => count) if count.positive?
+      end
+
+      def migrate_front(front)
+        migrated = front.dup
+        migrated["xbookmark_schema"] = Xbookmark::Render::SCHEMA_VERSION
+        migrated["title"] = schema_title(front) if migrated["title"].to_s.strip.empty?
+        migrated["created_at"] = schema_date(migrated["created_at"]) if migrated.key?("created_at")
+        migrated["bookmarked_at"] = schema_date(migrated["bookmarked_at"]) if migrated.key?("bookmarked_at")
+        migrated.delete("facets")
+        migrated
+      end
+
+      def schema_title(front)
+        source = front["summary"].to_s
+        source = front["title"].to_s if source.strip.empty?
+        clause = source.split(/[.!?\n]/).first.to_s.strip
+        Xbookmark::Render::MarkdownSafety.wikilink_label(clause)
+      end
+
+      def schema_date(value)
+        Date.parse(value.to_s)
+      rescue ArgumentError, TypeError
+        value
       end
 
       def snapshot!(stamp)
