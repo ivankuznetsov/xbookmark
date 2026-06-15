@@ -280,3 +280,10 @@ Append-only log of meaningful wiki updates.
 **Pages updated:** README.md, wiki/architecture.md, wiki/commands.md, wiki/data-model.md, wiki/decisions.md, wiki/log.md
 **Decision:** Snapshots are manual recovery/audit evidence rather than automatic rollback; local cleanup, curator fallback, QMD maintenance, and cached enrichment should keep running when live X or Codex is unavailable.
 **Source:** PR #57 code review findings, `lib/xbookmark/taxonomy/rebuilder.rb`, `lib/xbookmark/taxonomy/curator.rb`, `lib/xbookmark/sync/pipeline.rb`, `lib/xbookmark/sync/runner.rb`, `lib/xbookmark/config.rb`, `lib/xbookmark/state/store.rb`, and related tests.
+
+## [2026-06-15T17:46:38Z] concept page materialization verification
+
+**Action:** Fixed post-merge local verification gap where taxonomy rebuild cleaned numeric source/thread nodes but left persisted concepts only in SQLite and rendered no `concepts/*.md` pages.
+**Pages updated:** README.md, wiki/architecture.md, wiki/commands.md, wiki/data-model.md, wiki/log.md
+**Decision:** `taxonomy rebuild --apply` now materializes concept pages and `concepts/index.md` from local concept state even when no path/thread repair is pending; legacy topic/entity imports receive broad `topics`/`entities` parents so the graph has hierarchy.
+**Source:** Local run against `/home/asterio/xbookmark-wiki` after PR #57 merge, `lib/xbookmark/taxonomy/rebuilder.rb`, and `test/xbookmark/taxonomy/rebuilder_test.rb`.

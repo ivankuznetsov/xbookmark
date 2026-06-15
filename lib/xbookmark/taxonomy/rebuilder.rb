@@ -6,12 +6,16 @@ require "ostruct"
 require "set"
 require "time"
 require "yaml"
+require_relative "../render/concept_index"
+require_relative "../render/concept_page"
 require_relative "../render/path_builder"
 require_relative "auditor"
+require_relative "concept"
 require_relative "graph_health_report"
 require_relative "lock"
 require_relative "manifest"
 require_relative "path_safety"
+require_relative "registry"
 require_relative "report"
 
 module Xbookmark
@@ -33,7 +37,7 @@ module Xbookmark
       def call(apply: false, locked: false)
         before = Auditor.new(vault_path: @config.vault_path).metrics
         return dry_run(before) unless apply
-        return Report.new(state: "clean", counts: before) unless actionable?(before)
+        return Report.new(state: "clean", counts: before) unless actionable?(before) || missing_concept_pages?
 
         locked ? apply_changes(before) : with_lock { apply_changes(before) }
       rescue StandardError => e
@@ -49,6 +53,15 @@ module Xbookmark
 
       def actionable?(counts)
         counts.values_at(*Auditor::ACTIONABLE_KEYS).any?(&:positive?)
+      end
+
+      def missing_concept_pages?
+        concepts = Array(@store.concepts)
+        return false if concepts.empty?
+
+        concepts.any? do |row|
+          !File.exist?(File.join(@config.vault_path, "concepts", "#{row[:slug]}.md"))
+        end
       end
 
       def apply_changes(before)
@@ -69,6 +82,7 @@ module Xbookmark
         prune_numeric_threads(manifest, singleton_thread_ids)
 
         commit_state!(path_updates, singleton_thread_ids, thread_moves)
+        materialize_concepts(manifest)
 
         after = Auditor.new(vault_path: @config.vault_path).metrics
         graph_path = File.join(@config.vault_path, ".xbookmark", "taxonomy-#{stamp}.graph-health.json")
@@ -246,6 +260,47 @@ module Xbookmark
       # Apply the deferred SQLite mutations once every file op has succeeded.
       def commit_state!(path_updates, pruned_ids, thread_moves)
         @store.commit_taxonomy_rebuild!(path_updates: path_updates, pruned_ids: pruned_ids, thread_moves: thread_moves)
+      end
+
+      def materialize_concepts(manifest)
+        concepts = concept_pages_from_store
+        return if concepts.empty?
+
+        page = Xbookmark::Render::ConceptPage.new(vault_path: @config.vault_path, store: @store)
+        concepts.each { |concept| page.ensure!(concept) }
+        conflicts = concepts.count { |concept| !concept.canonical? }
+        index_path = Xbookmark::Render::ConceptIndex.new(vault_path: @config.vault_path).write(concepts, conflicts: conflicts)
+        manifest.add(:concept_materialize, "count" => concepts.size, "index_path" => relativize(index_path))
+      end
+
+      def concept_pages_from_store
+        concepts = Array(@store.concepts).map { |row| materialized_concept(Registry.concept_from_row(row)) }
+        roots = concepts.filter_map { |concept| legacy_root_concept(concept.broader.first) if legacy_root?(concept) }
+        (roots + concepts).uniq(&:slug).sort_by(&:slug)
+      end
+
+      def materialized_concept(concept)
+        root = legacy_root_slug(concept.kind)
+        return concept unless root && concept.broader.empty?
+
+        Concept.new(slug: concept.slug, label: concept.label, kind: concept.kind, aliases: concept.aliases,
+                    broader: [root], facets: concept.facets, evidence_count: concept.evidence_count,
+                    confidence: concept.confidence, outcome: concept.outcome)
+      end
+
+      def legacy_root_slug(kind)
+        case kind.to_s
+        when "topic" then "topics"
+        when "entity" then "entities"
+        end
+      end
+
+      def legacy_root?(concept)
+        %w[topics entities].include?(concept.broader.first)
+      end
+
+      def legacy_root_concept(slug)
+        Concept.new(slug: slug, label: slug.capitalize, kind: "category", evidence_count: 0, confidence: 1.0)
       end
 
       def snapshot!(stamp)

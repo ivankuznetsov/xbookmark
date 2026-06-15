@@ -307,11 +307,12 @@ are available; apply mode writes a pre-apply snapshot and manifest under
 `$XBOOKMARK_WIKI_PATH/.xbookmark/`, renames numeric source notes to readable
 filenames with the tweet ID suffix, rewrites links to legacy numeric thread
 pages before pruning them (the legacy singleton-thread shape), writes a
-graph-health report, and reindexes QMD. The snapshot is kept for manual
-recovery and audit evidence; rebuilds are forward-only, so a mid-apply failure
-leaves completed repairs in place and reports `partial_failure`. Scheduled sync
-runs the same local maintenance path when X is unavailable, so cleanup and
-enrichment maintenance do not depend on live X access.
+graph-health report, materializes concept pages from local state, and reindexes
+QMD. The snapshot is kept for manual recovery and audit evidence; rebuilds are
+forward-only, so a mid-apply failure leaves completed repairs in place and
+reports `partial_failure`. Scheduled sync runs the same local maintenance path
+when X is unavailable, so cleanup and enrichment maintenance do not depend on
+live X access.
 
 ### install
 
