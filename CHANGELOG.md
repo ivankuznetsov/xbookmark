@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Reshape generated wiki output around readable source-note filenames, canonical concept pages, concept hierarchy links, and singleton-thread suppression.
+- Add `xbookmark taxonomy audit` and `xbookmark taxonomy rebuild --apply` for offline graph cleanup with snapshots, manifests, graph-health reports, state path updates, and QMD reindexing.
+- Re-root the QMD `bookmarks` collection at the bookmark wiki root so source notes, author pages, and concept pages are searchable.
+
 ## 0.2.4 - 2026-06-15
 
 - Keep image-backed bookmark enrichment moving by falling back to text-only Codex when image handling returns a transient or schema-invalid response.

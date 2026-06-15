@@ -11,6 +11,7 @@ require_relative "../enrich/codex"
 require_relative "../enrich/orchestrator"
 require_relative "../render/bookmark_renderer"
 require_relative "../qmd/registrar"
+require_relative "../taxonomy/rebuilder"
 
 module Xbookmark
   module Sync
@@ -63,7 +64,20 @@ module Xbookmark
       private
 
       def run_maintenance(force: false)
+        run_taxonomy_maintenance if force && taxonomy_maintenance?
         reindex_qmd if force
+      end
+
+      def taxonomy_maintenance?
+        @config.respond_to?(:taxonomy_maintenance) && @config.taxonomy_maintenance == true
+      end
+
+      def run_taxonomy_maintenance
+        registrar = @registrar || Xbookmark::Qmd::Registrar.new(config: @config)
+        report = Xbookmark::Taxonomy::Rebuilder.new(config: @config, store: @store, registrar: registrar).call(apply: true)
+        warn "[xbookmark] #{report}" unless report.clean?
+      rescue StandardError => e
+        warn "[xbookmark] taxonomy maintenance failed: #{e.message}"
       end
 
       def reindex_qmd

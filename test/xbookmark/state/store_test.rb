@@ -46,7 +46,7 @@ describe Xbookmark::State::Store do
       migrated.upsert_pending(tweet_id: "1", author_handle: "alice", bookmarked_at: "2026-01-01T00:00:00Z",
                               payload: { "data" => [{ "id" => "1" }] })
 
-      assert_equal "2", migrated.get_meta("schema_version")
+      assert_equal "3", migrated.get_meta("schema_version")
       old = migrated.find_bookmark("old")
       assert_equal "needs_retry", old[:status]
       assert_equal 2, old[:attempts]
@@ -89,10 +89,27 @@ describe Xbookmark::State::Store do
       repaired.upsert_pending(tweet_id: "1", author_handle: "alice", bookmarked_at: "2026-01-01T00:00:00Z",
                               payload: { "data" => [{ "id" => "1" }] })
 
-      assert_equal "2", repaired.get_meta("schema_version")
+      assert_equal "3", repaired.get_meta("schema_version")
       assert_equal [{ "id" => "1" }], repaired.payload_for("1")["data"]
       repaired.close
     end
+  end
+
+  it "persists concept metadata and seeds concepts from legacy aux pages" do
+    store.upsert_page(kind: "topic", slug: "ozempic", path: "topics/ozempic.md")
+    store.upsert_concept(slug: "adhd", label: "ADHD", kind: "idea", aliases: ["attention deficit hyperactivity disorder"],
+                         broader: ["health"], facets: ["domain/health"], evidence_count: 4, confidence: 0.4)
+
+    assert_includes store.concept_slugs, "adhd"
+    row = store.concepts.find { |concept| concept[:slug] == "adhd" }
+    assert_equal "ADHD", row[:label]
+    assert_equal ["health"], JSON.parse(row[:broader_json])
+    store.record_curator_decision(slug: "adhd", decision: { "state" => "kept" })
+
+    store.update_bookmark_path!(tweet_id: "missing", markdown_path: "bookmarks/x.md")
+    store.rewrite_page_path!(kind: "topic", slug: "ozempic", path: "concepts/ozempic.md")
+    assert store.pages.any? { |page| page[:slug] == "ozempic" }
+    assert_equal "concepts/ozempic.md", store.find_page("topic", "ozempic")[:path]
   end
 
   it "returns nil for an unknown bookmark" do

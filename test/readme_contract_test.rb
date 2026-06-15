@@ -66,4 +66,13 @@ describe "README setup contract" do
     assert_includes readme, "manual `bin/xbookmark sync` still exits non-zero"
     refute_includes readme, "job exits non-zero and logs the failure"
   end
+
+  it "documents taxonomy repair and concept-first graph output" do
+    assert_includes readme, "bin/xbookmark taxonomy audit"
+    assert_includes readme, "bin/xbookmark taxonomy rebuild --apply"
+    assert_includes readme, "concepts/index.md"
+    assert_includes readme, "<readable-slug>-<tweet_id>.md"
+    assert_includes commands_wiki, "xbookmark taxonomy audit"
+    assert_includes commands_wiki, "xbookmark taxonomy rebuild [--apply]"
+  end
 end

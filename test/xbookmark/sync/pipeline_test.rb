@@ -51,8 +51,7 @@ describe Xbookmark::Sync::Pipeline do
     Xbookmark::Enrich::EnrichmentResult.new(
       summary: "summary",
       tags: ["tag"],
-      topics: ["topic"],
-      entities: ["entity"],
+      concepts: [{ "label" => "topic", "kind" => "idea" }],
       links: [],
       image_captions: {},
       image_ocr: {},
@@ -106,13 +105,45 @@ describe Xbookmark::Sync::Pipeline do
       outcome = pipeline.process(bookmark(media: [mock("media")]))
 
       assert_equal :done, outcome.status
-      assert outcome.markdown_path.end_with?("bookmarks/2026/01/01/1001.md")
+      assert outcome.markdown_path.end_with?("bookmarks/2026/01/01/alice-summary-1001.md")
       assert File.exist?(File.join(vault, "media", "1001", "photo.jpg"))
       refute File.exist?(File.join(config.scratch_dir, "1001"))
       assert_equal [], orch.existing_slugs
       assert_includes File.read(outcome.markdown_path), "## Transcript"
       assert File.exist?(File.join(vault, "authors", "alice.md"))
-      assert File.exist?(File.join(vault, "threads", "1001.md"))
+      assert File.exist?(File.join(vault, "concepts", "topic.md"))
+      refute File.exist?(File.join(vault, "threads", "1001.md"))
+    end
+  end
+
+  it "writes a readable thread page when local state proves a real thread" do
+    Dir.mktmpdir do |vault|
+      config = config_for(vault)
+      store = Xbookmark::State::Store.new(":memory:")
+      store.upsert_pending(
+        tweet_id: "1002",
+        author_handle: "alice",
+        bookmarked_at: "2026-01-01T00:00:00Z",
+        payload: { "data" => [{ "id" => "1002", "conversation_id" => "thread-1" }], "includes" => {}, "meta" => {} }
+      )
+      threaded = bookmark
+      threaded.conversation_id = "thread-1"
+      orch = stub(enrich: enrichment)
+      orch.stubs(:existing_slugs=)
+      orch.stubs(:concept_registry=)
+      pipeline = described_class.new(
+        config: config,
+        store: store,
+        orchestrator: orch,
+        renderer: Xbookmark::Render::BookmarkRenderer.new(vault_path: vault),
+        downloader: stub(download: [])
+      )
+
+      outcome = pipeline.process(threaded)
+
+      assert_equal :done, outcome.status
+      assert File.exist?(File.join(vault, "threads", "alice-thread-1-thread.md"))
+      assert_includes File.read(outcome.markdown_path), "[[threads/alice-thread-1-thread|thread alice-thread-1-thread]]"
     end
   end
 

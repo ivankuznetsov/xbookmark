@@ -26,6 +26,7 @@ module Xbookmark
       :daily_sync_time,
       :min_run_interval_hours,
       :aux_summaries,
+      :taxonomy_maintenance,
       :env_file,
       :verbose,
       keyword_init: true
@@ -65,6 +66,7 @@ module Xbookmark
           daily_sync_time: merged["XBOOKMARK_DAILY_TIME"] || "06:00",
           min_run_interval_hours: (merged["XBOOKMARK_MIN_RUN_INTERVAL_HOURS"] || "20").to_f,
           aux_summaries: truthy?(merged["XBOOKMARK_AUX_SUMMARIES"]),
+          taxonomy_maintenance: !falsey?(merged["XBOOKMARK_TAXONOMY_MAINTENANCE"]),
           env_file: loaded_env_files.first,
           verbose: verbose
         )
@@ -131,6 +133,10 @@ module Xbookmark
 
       def truthy?(value)
         %w[1 true yes on].include?(value.to_s.strip.downcase)
+      end
+
+      def falsey?(value)
+        %w[0 false no off].include?(value.to_s.strip.downcase)
       end
 
       def configured_wiki_path(env)

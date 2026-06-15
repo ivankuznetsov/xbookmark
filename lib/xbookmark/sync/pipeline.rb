@@ -8,6 +8,11 @@ require_relative "../transcribe/whisper"
 require_relative "../enrich/orchestrator"
 require_relative "../render/bookmark_renderer"
 require_relative "../render/aux_page"
+require_relative "../render/concept_page"
+require_relative "../render/concept_index"
+require_relative "../taxonomy/normalizer"
+require_relative "../taxonomy/registry"
+require_relative "thread_index"
 
 module Xbookmark
   module Sync
@@ -36,17 +41,23 @@ module Xbookmark
 
         media_records = bookmark.media.empty? ? [] : @downloader.download(bookmark.media, media_scratch)
         transcripts = transcribe_videos(media_records)
-        @orch.existing_slugs = @store.all_topic_slugs if @orch.respond_to?(:existing_slugs=)
+        registry = Xbookmark::Taxonomy::Registry.from_vault(@config.vault_path, store: @store)
+        @orch.concept_registry = registry if @orch.respond_to?(:concept_registry=)
+        @orch.existing_slugs = @store.concept_slugs if @orch.respond_to?(:existing_slugs=)
         enrichment = @orch.enrich(bookmark, transcripts: transcripts, image_paths: image_paths(media_records))
+        enrichment.concepts = normalize_concepts(enrichment.concepts, registry: registry)
 
         # Move scratch media into the final bookmark wiki location.
         media_records = move_media_into_wiki(bookmark, media_records)
 
-        markdown = @renderer.render(bookmark, enrichment, media_records: media_records, transcripts: transcripts, link_blobs: Array(enrichment.link_blobs))
-        markdown_path = @renderer.write(bookmark, markdown)
+        thread = Xbookmark::Sync::ThreadIndex.new(store: @store).thread_for(bookmark)
+        existing_path = @store.find_bookmark(bookmark.tweet_id)&.dig(:markdown_path)
+        markdown = @renderer.render(bookmark, enrichment, media_records: media_records, transcripts: transcripts,
+                                    link_blobs: Array(enrichment.link_blobs), thread: thread)
+        markdown_path = @renderer.write(bookmark, markdown, enrichment: enrichment, existing_path: existing_path)
         digest = @renderer.digest(enrichment, bookmark)
 
-        ensure_aux_pages(bookmark, enrichment)
+        ensure_aux_pages(bookmark, enrichment, thread: thread)
 
         FileUtils.rm_rf(scratch)
         Outcome.new(status: :done, markdown_path: markdown_path, digest: digest)
@@ -104,26 +115,27 @@ module Xbookmark
         end
       end
 
-      def ensure_aux_pages(bookmark, enrichment)
+      def normalize_concepts(candidates, registry:)
+        Xbookmark::Taxonomy::Normalizer.new(registry: registry).normalize_candidates(candidates)
+      end
+
+      def ensure_aux_pages(bookmark, enrichment, thread:)
         aux_orchestrator = @config.respond_to?(:aux_summaries) && @config.aux_summaries ? @orch : nil
         author = Xbookmark::Render::Wikilinks.author_slug(bookmark.author_handle)
         author_page = Xbookmark::Render::AuthorPage.new(vault_path: @config.vault_path, store: @store, orchestrator: aux_orchestrator)
         snippet = bookmark.text.to_s
         author_page.ensure!(slug: author, label: "@#{bookmark.author_handle}", inputs: [snippet])
 
-        topic_page = Xbookmark::Render::TopicPage.new(vault_path: @config.vault_path, store: @store, orchestrator: aux_orchestrator)
-        Array(enrichment.topics).each do |t|
-          topic_page.ensure!(slug: Xbookmark::Render::Wikilinks.topic_slug(t), label: t, inputs: [snippet])
+        concept_page = Xbookmark::Render::ConceptPage.new(vault_path: @config.vault_path, store: @store)
+        Array(enrichment.concepts).each do |concept|
+          @store.upsert_concept(**concept.to_h.transform_keys(&:to_sym))
+          concept_page.ensure!(concept)
         end
+        Xbookmark::Render::ConceptIndex.new(vault_path: @config.vault_path).write(Array(enrichment.concepts))
 
-        entity_page = Xbookmark::Render::EntityPage.new(vault_path: @config.vault_path, store: @store, orchestrator: aux_orchestrator)
-        Array(enrichment.entities).each do |e|
-          entity_page.ensure!(slug: Xbookmark::Render::Wikilinks.entity_slug(e), label: e, inputs: [snippet])
-        end
-
-        if bookmark.conversation_id
+        if thread
           thread_page = Xbookmark::Render::ThreadPage.new(vault_path: @config.vault_path, store: @store, orchestrator: @orch)
-          thread_page.ensure!(slug: bookmark.conversation_id.to_s, label: "thread #{bookmark.conversation_id}", inputs: [snippet])
+          thread_page.ensure!(slug: thread[:slug], label: thread[:label], inputs: [snippet])
         end
       end
     end

@@ -7,7 +7,7 @@ updated: 2026-06-15
 tags: [commands, cli]
 ---
 
-**TLDR**: The README and implementation are aligned around the currently implemented Thor CLI: auth login/status/refresh, backfill, sync, resync, find, doctor, install, setup, and uninstall.
+**TLDR**: The README and implementation are aligned around the currently implemented Thor CLI: auth login/status/refresh, backfill, sync, resync, find, taxonomy audit/rebuild, doctor, install, setup, and uninstall.
 
 ## Fresh Setup Contract
 
@@ -32,9 +32,11 @@ Packaged binary installs also support running `xbookmark` with no arguments in a
 - `xbookmark auth status` reports whether an access token is present and still current; expired access tokens exit non-zero and point users at `auth refresh` or `auth login`.
 - `xbookmark auth refresh` uses the saved refresh token to rotate OAuth tokens immediately, reports the token destination on success, and exits non-zero with a direct `auth login` hint when X rejects the refresh token.
 - `xbookmark backfill [--limit N]` runs a limited test backfill when `--limit` is present and a full backfill otherwise.
-- `xbookmark sync [--from-scheduler]` runs incremental sync; scheduler invocations can skip if the last completed sync is too recent. Scheduled source-only outages exit successfully, log/report `source blocked`, keep local cleanup/QMD maintenance/cached retry work running, and do not stamp `last_sync_finished_at`; manual sync still exits non-zero on source errors.
+- `xbookmark sync [--from-scheduler]` runs incremental sync; scheduler invocations can skip if the last completed sync is too recent. Scheduled source-only outages exit successfully, log/report `source blocked`, keep local taxonomy cleanup/QMD maintenance/cached retry work running, and do not stamp `last_sync_finished_at`; manual sync still exits non-zero on source errors.
 - `xbookmark resync TWEET_ID` re-fetches and reprocesses one tweet.
-- `xbookmark find QUERY [--limit N]` searches the QMD `bookmarks` collection and prints numbered text results. `Qmd::Searcher` invokes `qmd query --collection bookmarks --types lex,vec --limit N --json QUERY` and caps parsed results to `N` even if the installed QMD returns extra hits.
+- `xbookmark find QUERY [--limit N]` searches the QMD `bookmarks` collection and prints numbered text results. `Qmd::Searcher` invokes `qmd query --collection bookmarks --types lex,vec --limit N --json QUERY` and caps parsed results to `N` even if the installed QMD returns extra hits. The collection is rooted at the bookmark wiki root, so source notes, author pages, and concept pages are searchable.
+- `xbookmark taxonomy audit` reports graph-health problems without modifying files. Clean audits exit 0; audits with proposed changes exit 1.
+- `xbookmark taxonomy rebuild [--apply]` performs an offline taxonomy repair workflow. Without `--apply`, it is a dry-run and reports proposed changes. With `--apply`, it snapshots generated wiki directories, writes a manifest and graph-health report under `.xbookmark`, renames numeric source notes, prunes generated numeric singleton thread pages, updates state paths, and reindexes QMD.
 - `xbookmark doctor` checks platform, scheduler backend, bookmark wiki path, state DB path, `codex`, whisper, `qmd`, and X auth token presence.
 - `xbookmark install [--time HH:MM] [--dry-run] [--uninstall]` installs or removes the daily scheduler and registers QMD when installing. Non-dry-run installs also remove stale invalid top-level Codex `service_tier` values before writing scheduler state, but cleanup failures are warnings. Linux installs try to enable systemd linger so the timer can fire after logout.
 - `xbookmark setup` is the interactive first-run wizard. It imports legacy env-file credentials into the active keystore, prompts for missing X keys, removes stale invalid Codex `service_tier` values, and installs the scheduler. Service-tier cleanup and scheduler failures are reported but do not abort the wizard.
@@ -51,9 +53,10 @@ Configuration loaded by these commands comes from `XBOOKMARK_ENV_FILE`, `$PWD/.e
 - `backfill` and `sync` first process cached pending/retry rows from SQLite. Rows with cached `payload_json` can be enriched without X; uncached legacy retry rows and new bookmark discovery still need X.
 - `sync` starts from the newest bookmark page and stops after a page with no new bookmarks; X `next_token` values are not treated as durable cursors between runs.
 - `find` delegates to `Xbookmark::Qmd::Searcher`.
+- `taxonomy audit` delegates to `Xbookmark::Taxonomy::Auditor`; `taxonomy rebuild` delegates to `Xbookmark::Taxonomy::Rebuilder`.
 - `install` delegates to `Xbookmark::Scheduler::Factory` and, when installing for real, `Xbookmark::CodexConfig` and `Xbookmark::Qmd::Registrar`; `--dry-run` and `--uninstall` do not register QMD or change Codex config.
 - `Xbookmark::Scheduler::Systemd` writes and enables the user timer, then runs `loginctl enable-linger <user>` when linger is not already enabled; failure is non-fatal and prints the manual command.
-- The registrar supports current QMD `collection list`/`collection add` command shapes and legacy `list`/`register`/`index` fallbacks, with `qmd update` as the final legacy indexing fallback.
+- The registrar supports current QMD `collection list`/`collection add` command shapes and legacy `list`/`register`/`index` fallbacks, with `qmd update` as the final legacy indexing fallback. It treats the old `vault_path/bookmarks` collection root as legacy and re-adds the collection at `vault_path`.
 - `doctor` performs local binary and auth checks without running a sync.
 
 ## Deferred Public Surface

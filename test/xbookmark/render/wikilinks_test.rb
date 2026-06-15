@@ -21,6 +21,11 @@ describe Xbookmark::Render::Wikilinks do
     assert_equal "bob_smith", described_class.author_slug("Bob_Smith")
   end
 
+  it "keeps legacy topic and entity slug helpers pointed at the canonical slugger" do
+    assert_equal "ai-agents", described_class.topic_slug("AI agents")
+    assert_equal "openai", described_class.entity_slug("OpenAI")
+  end
+
   it "renders wikilinks with optional label" do
     assert_equal "[[topics/llm-agents|LLM agents]]",
                  described_class.link("topics/llm-agents", "LLM agents")

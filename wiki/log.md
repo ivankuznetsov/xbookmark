@@ -259,3 +259,10 @@ Append-only log of meaningful wiki updates.
 **Pages updated:** CHANGELOG.md, lib/xbookmark/version.rb, Gemfile.lock, wiki/log.md
 **Decision:** Use a patch release because the installable changes improve daemon reliability and bookmark-enrichment recovery without changing the data model.
 **Source:** Code review findings on branch `fix/sync-enrichment-resilience`, `lib/xbookmark/version.rb`, `CHANGELOG.md`, and `Gemfile.lock`.
+
+## [2026-06-15T12:00:00Z] graph taxonomy reshape
+
+**Action:** Implemented readable bookmark source-note filenames, canonical concept pages, concept candidate enrichment, offline taxonomy audit/rebuild, graph-health reports, and scheduler-local taxonomy maintenance.
+**Pages updated:** README.md, CHANGELOG.md, wiki/architecture.md, wiki/data-model.md, wiki/commands.md, wiki/decisions.md, wiki/dependencies.md, wiki/active-areas.md, wiki/log.md
+**Decision:** Use concept pages plus broader wikilinks as the Obsidian graph hierarchy, keep nested tags as facets, suppress singleton thread pages, and keep taxonomy cleanup independent of live X API access.
+**Source:** `lib/xbookmark/taxonomy/*`, `lib/xbookmark/render/bookmark_renderer.rb`, `lib/xbookmark/enrich/orchestrator.rb`, `lib/xbookmark/sync/pipeline.rb`, `lib/xbookmark/sync/runner.rb`, `lib/xbookmark/qmd/registrar.rb`, and related tests.

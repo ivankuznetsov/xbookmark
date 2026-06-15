@@ -2,26 +2,28 @@
 
 require "yaml"
 require "json"
-require "time"
 require "fileutils"
 require "digest"
 require "pathname"
 require_relative "wikilinks"
 require_relative "atomic_writer"
+require_relative "markdown_safety"
+require_relative "path_builder"
+require_relative "../taxonomy/concept"
 
 module Xbookmark
   module Render
     SCHEMA_VERSION = 1
 
     class BookmarkRenderer
-      def initialize(vault_path:)
+      def initialize(vault_path:, path_builder: nil)
         @vault_path = vault_path
+        @path_builder = path_builder || PathBuilder.new(vault_path: vault_path)
       end
 
       # Final markdown path inside the bookmark wiki.
-      def markdown_path_for(bookmark)
-        date_dir = bookmark_date(bookmark).strftime("%Y/%m/%d")
-        File.join(@vault_path, "bookmarks", date_dir, "#{bookmark.tweet_id}.md")
+      def markdown_path_for(bookmark, enrichment: nil, existing_path: nil)
+        @path_builder.path_for(bookmark, enrichment: enrichment, existing_path: existing_path)
       end
 
       def media_dir_for(bookmark)
@@ -29,14 +31,14 @@ module Xbookmark
       end
 
       # Renders to a Markdown string. Pure function over inputs.
-      def render(bookmark, enrichment, media_records: [], transcripts: {}, link_blobs: [])
-        front = frontmatter(bookmark, enrichment, media_records)
-        body = body_for(bookmark, enrichment, media_records, transcripts, link_blobs)
+      def render(bookmark, enrichment, media_records: [], transcripts: {}, link_blobs: [], thread: nil)
+        front = frontmatter(bookmark, enrichment, media_records, thread: thread)
+        body = body_for(bookmark, enrichment, media_records, transcripts, link_blobs, thread: thread)
         "---\n#{front.to_yaml(line_width: -1).sub(/^---\n?/, "")}---\n\n#{body}"
       end
 
-      def write(bookmark, content)
-        path = markdown_path_for(bookmark)
+      def write(bookmark, content, enrichment: nil, existing_path: nil)
+        path = markdown_path_for(bookmark, enrichment: enrichment, existing_path: existing_path)
         AtomicWriter.write(path, content)
         path
       end
@@ -46,8 +48,7 @@ module Xbookmark
           tweet_id: bookmark.tweet_id,
           summary: enrichment.summary,
           tags: (enrichment.tags || []).sort,
-          topics: (enrichment.topics || []).sort,
-          entities: (enrichment.entities || []).sort,
+          concepts: concepts_for(enrichment).map(&:slug).sort,
           links: (enrichment.links || []).map { |l| l["url"] }.sort
         }
         Digest::SHA256.hexdigest(JSON.generate(canonical))
@@ -55,16 +56,8 @@ module Xbookmark
 
       private
 
-      def bookmark_date(bookmark)
-        Time.parse(bookmark.bookmarked_at.to_s).utc
-      rescue ArgumentError
-        # Fall back to created_at instead of Time.now — using "now" placed
-        # the same bookmark in different YYYY/MM/DD directories on retry,
-        # orphaning earlier files. created_at is stable across retries.
-        Time.parse(bookmark.created_at.to_s).utc
-      end
-
-      def frontmatter(bookmark, enrichment, media_records)
+      def frontmatter(bookmark, enrichment, media_records, thread:)
+        concepts = concepts_for(enrichment)
         {
           "xbookmark_schema" => SCHEMA_VERSION,
           "tweet_id" => bookmark.tweet_id.to_s,
@@ -73,30 +66,31 @@ module Xbookmark
           "author_name" => bookmark.author_name.to_s,
           "created_at" => bookmark.created_at.to_s,
           "bookmarked_at" => bookmark.bookmarked_at.to_s,
-          "tags" => (enrichment.tags || []),
-          "topics" => (enrichment.topics || []),
-          "entities" => (enrichment.entities || []),
+          "tags" => MarkdownSafety.tags(enrichment.tags || []),
+          "concepts" => concepts.map(&:slug),
+          "concept_labels" => concepts.map(&:label),
+          "facets" => MarkdownSafety.tags(concepts.flat_map(&:facets)),
           "media" => media_records.map { |m| { "path" => relativize(m[:path]), "kind" => m[:kind], "alt" => m[:alt_text] } },
           "media_files" => media_records.map { |m| "[[#{relativize(m[:path])}]]" },
-          "thread" => bookmark.conversation_id.to_s,
+          "conversation_id" => bookmark.conversation_id.to_s,
+          "thread" => thread && thread[:target],
           "links" => (enrichment.links || []).map { |l| l.is_a?(Hash) ? l["url"] : l }.compact,
           "summary" => enrichment.summary,
           "enrichment_status" => enrichment.partial? ? "partial" : "done"
         }
       end
 
-      def body_for(bookmark, enrichment, media_records, transcripts, link_blobs)
+      def body_for(bookmark, enrichment, media_records, transcripts, link_blobs, thread:)
         sections = []
-        sections << "# Tweet #{bookmark.tweet_id}"
+        sections << "# #{MarkdownSafety.wikilink_label(title_for(bookmark, enrichment))}"
         sections << enrichment.summary if enrichment.summary && !enrichment.summary.empty?
         sections << bookmark.text.to_s
         sections << author_section(bookmark)
-        sections << topics_section(enrichment.topics)
-        sections << entities_section(enrichment.entities)
+        sections << concepts_section(concepts_for(enrichment))
         sections << media_section(bookmark, media_records, enrichment) unless media_records.empty?
         sections << transcripts_section(transcripts, enrichment) unless transcripts.empty?
         sections << quoted_section(bookmark) if bookmark.quoted_tweet_id
-        sections << thread_section(bookmark) if bookmark.conversation_id
+        sections << thread_section(thread) if thread
         sections << links_section(link_blobs) unless link_blobs.empty?
         sections << source_section(bookmark)
         sections.compact.join("\n\n").rstrip + "\n"
@@ -108,16 +102,11 @@ module Xbookmark
         "## Author\n\n#{Wikilinks.link("authors/#{slug}", "@#{bookmark.author_handle}")}"
       end
 
-      def topics_section(topics)
-        return nil if topics.nil? || topics.empty?
-        items = topics.map { |t| "- #{Wikilinks.link("topics/#{Wikilinks.topic_slug(t)}", t)}" }
-        "## Topics\n\n#{items.join("\n")}"
-      end
+      def concepts_section(concepts)
+        return nil if concepts.empty?
 
-      def entities_section(entities)
-        return nil if entities.nil? || entities.empty?
-        items = entities.map { |e| "- #{Wikilinks.link("entities/#{Wikilinks.entity_slug(e)}", e)}" }
-        "## Entities\n\n#{items.join("\n")}"
+        items = concepts.map { |concept| "- #{Wikilinks.link("concepts/#{concept.slug}", concept.label)}" }
+        "## Concepts\n\n#{items.join("\n")}"
       end
 
       def media_section(bookmark, records, enrichment)
@@ -160,10 +149,8 @@ module Xbookmark
         "## Quoted\n\n#{body}\n\nQuoted tweet id: `#{bookmark.quoted_tweet_id}`"
       end
 
-      def thread_section(bookmark)
-        slug = bookmark.conversation_id.to_s
-        return nil if slug.empty?
-        "## Thread\n\n#{Wikilinks.link("threads/#{slug}", "thread #{slug}")}"
+      def thread_section(thread)
+        "## Thread\n\n#{Wikilinks.link(thread[:target], thread[:label])}"
       end
 
       def links_section(link_blobs)
@@ -177,6 +164,28 @@ module Xbookmark
       def source_section(bookmark)
         url = bookmark.url
         url ? "## Source\n\n#{url}" : nil
+      end
+
+      def concepts_for(enrichment)
+        Array(enrichment.concepts).map do |concept|
+          next concept if concept.is_a?(Xbookmark::Taxonomy::Concept)
+          if concept.is_a?(Hash)
+            Xbookmark::Taxonomy::Concept.new(
+              slug: concept["slug"] || concept[:slug] || concept["label"] || concept[:label],
+              label: concept["label"] || concept[:label],
+              kind: concept["kind"] || concept[:kind],
+              aliases: concept["aliases"] || concept[:aliases],
+              broader: concept["broader"] || concept[:broader],
+              facets: concept["facets"] || concept[:facets]
+            )
+          else
+            Xbookmark::Taxonomy::Concept.new(slug: concept)
+          end
+        end
+      end
+
+      def title_for(bookmark, enrichment)
+        [bookmark.author_handle && "@#{bookmark.author_handle}", enrichment.summary || bookmark.text || bookmark.tweet_id].compact.join(": ")
       end
 
       def relativize(path)

@@ -4,11 +4,12 @@ require "json"
 require "uri"
 require_relative "codex"
 require_relative "link_fetcher"
+require_relative "prompt_context"
 
 module Xbookmark
   module Enrich
     EnrichmentResult = Struct.new(
-      :summary, :tags, :topics, :entities, :links,
+      :summary, :tags, :concepts, :links,
       :image_captions, :image_ocr, :transcript_summaries,
       :formatted_transcripts, :partial, :link_blobs,
       keyword_init: true
@@ -24,12 +25,23 @@ module Xbookmark
 
       FINAL_SCHEMA = {
         "type" => "object",
-        "required" => %w[tags topics entities],
+        "required" => %w[tags concepts],
         "properties" => {
           "summary" => { "type" => %w[string null] },
           "tags" => { "type" => "array", "items" => { "type" => "string" } },
-          "topics" => { "type" => "array", "items" => { "type" => "string" } },
-          "entities" => { "type" => "array", "items" => { "type" => "string" } },
+          "concepts" => {
+            "type" => "array",
+            "items" => {
+              "type" => "object",
+              "required" => %w[label kind],
+              "properties" => {
+                "label" => { "type" => "string" },
+                "kind" => { "type" => "string" },
+                "aliases" => { "type" => "array", "items" => { "type" => "string" } },
+                "broader" => { "type" => "array", "items" => { "type" => "string" } }
+              }
+            }
+          },
           "links" => { "type" => "array" },
           "image_captions" => { "type" => "object" },
           "image_ocr" => { "type" => "object" },
@@ -38,12 +50,13 @@ module Xbookmark
         }
       }.freeze
 
-      attr_writer :existing_slugs
+      attr_writer :existing_slugs, :concept_registry
 
-      def initialize(codex:, link_fetcher: nil, existing_slugs: [])
+      def initialize(codex:, link_fetcher: nil, existing_slugs: [], concept_registry: nil)
         @codex = codex
         @link_fetcher = link_fetcher || LinkFetcher.new
         @existing_slugs = existing_slugs
+        @concept_registry = concept_registry
       end
 
       def enrich(bookmark, transcripts: {}, image_paths: [])
@@ -62,22 +75,21 @@ module Xbookmark
           final = final_call(bookmark, transcripts: transcripts, link_blobs: link_blobs, vision: vision, image_paths: final_image_paths)
         end
 
-        if (final["tags"] || []).empty? || (final["entities"] || []).empty?
+        if (final["tags"] || []).empty? || (final["concepts"] || []).empty?
           retried = retry_required_fields(bookmark, transcripts: transcripts, link_blobs: link_blobs, vision: vision, image_paths: final_image_paths)
-          if retried && (retried["tags"] || []).any? && (retried["entities"] || []).any?
+          if retried && (retried["tags"] || []).any? && (retried["concepts"] || []).any?
             final = retried
           else
             partial = true
             final["tags"] ||= []
-            final["entities"] ||= []
+            final["concepts"] ||= []
           end
         end
 
         EnrichmentResult.new(
           summary: final["summary"],
           tags: Array(final["tags"]).map(&:to_s),
-          topics: Array(final["topics"]).map(&:to_s),
-          entities: Array(final["entities"]).map(&:to_s),
+          concepts: concept_candidates(final["concepts"]),
           links: Array(final["links"] || []),
           image_captions: final["image_captions"] || vision["captions"] || {},
           image_ocr: final["image_ocr"] || vision["ocr"] || {},
@@ -145,13 +157,13 @@ module Xbookmark
                                    transcripts: transcripts.map { |k, v| "[#{k}]\n#{v}" }.join("\n\n"),
                                    vision_blob: format_vision(vision),
                                    link_blobs: format_link_blobs(link_blobs),
-                                   existing_slugs: @existing_slugs.first(50).join(", ")
+                                   registry_context: registry_context(bookmark)
                                  })
         @codex.run(prompt: prompt, images: image_paths, json_schema: FINAL_SCHEMA, timeout: timeout_for_images(image_paths))
       end
 
       def retry_required_fields(bookmark, **args)
-        prompt_extra = "\n\nIMPORTANT: tags AND entities arrays MUST contain at least one entry each. " \
+        prompt_extra = "\n\nIMPORTANT: tags AND concepts arrays MUST contain at least one entry each. " \
                        "Re-derive both from the tweet, transcripts, vision, and link extracts. " \
                        "Return JSON only with the same schema."
         @codex.run(prompt: build_retry_prompt(bookmark, **args, extra: prompt_extra), images: args[:image_paths],
@@ -171,7 +183,7 @@ module Xbookmark
                           transcripts: transcripts.map { |k, v| "[#{k}]\n#{v}" }.join("\n\n"),
                           vision_blob: format_vision(vision),
                           link_blobs: format_link_blobs(link_blobs),
-                          existing_slugs: @existing_slugs.first(50).join(", ")
+                          registry_context: registry_context(bookmark)
                         }) + extra
       end
 
@@ -192,6 +204,28 @@ module Xbookmark
       def string_object(value)
         return {} unless value.is_a?(Hash)
         value.each_with_object({}) { |(k, v), h| h[k.to_s] = v.to_s }
+      end
+
+      def concept_candidates(values)
+        Array(values).first(8).filter_map do |value|
+          next { "label" => value.to_s, "kind" => "idea", "aliases" => [], "broader" => [] } unless value.is_a?(Hash)
+
+          label = value["label"] || value[:label] || value["slug"] || value[:slug]
+          next if label.to_s.strip.empty?
+
+          {
+            "label" => label.to_s,
+            "kind" => (value["kind"] || value[:kind] || "idea").to_s,
+            "aliases" => Array(value["aliases"] || value[:aliases]).map(&:to_s).first(10),
+            "broader" => Array(value["broader"] || value[:broader]).map(&:to_s).first(5)
+          }
+        end
+      end
+
+      def registry_context(bookmark)
+        labels = [bookmark.text, bookmark.author_handle].compact
+        Xbookmark::Enrich::PromptContext.new(registry: @concept_registry, existing_slugs: @existing_slugs)
+          .to_json_for(labels)
       end
 
       def render_template(name, vars)

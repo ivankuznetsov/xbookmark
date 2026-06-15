@@ -31,7 +31,7 @@ The project contains:
 The runtime shells out to external tools:
 
 - `codex` for LLM enrichment via `codex exec --json`.
-  - Bookmark-note enrichment always uses Codex. Separate author/topic/entity page summaries are opt-in with `XBOOKMARK_AUX_SUMMARIES=true` because they add many extra Codex calls during backfill.
+  - Bookmark-note enrichment always uses Codex. Separate author page summaries are opt-in with `XBOOKMARK_AUX_SUMMARIES=true` because they add extra Codex calls during backfill.
   - Setup/install cleanup edits `~/.codex/config.toml` or `$CODEX_HOME/config.toml` only to remove stale invalid top-level `service_tier` values that can break scheduled runs; valid speed modes are preserved.
 - `qmd` for search collection registration, indexing, and querying.
 - A whisper backend, detected from `WHISPER_BIN` or PATH candidates `whisper-cli`, `whisper-cpp`, `whisper`, and `faster-whisper`.

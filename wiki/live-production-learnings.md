@@ -24,7 +24,7 @@ tags: [learnings, production, backfill, x-api, whisper, qmd, codex]
    Current `codex exec --json` can put the final answer under `item.completed` events with an `agent_message` item. The parser needs to accept that shape as well as older model-message/plain JSON shapes.
 
 5. **Aux-page summaries were the main avoidable backfill cost.**
-   Author/topic/entity/thread landing pages are useful for Obsidian graph navigation, but separate LLM summaries for each slug created hundreds of extra Codex calls during a small production backfill. The durable default is to always write aux pages, but make separate aux summaries opt-in with `XBOOKMARK_AUX_SUMMARIES=true`.
+   Author and concept landing pages are useful for Obsidian graph navigation, but separate LLM summaries for every generated page created hundreds of extra Codex calls during a small production backfill. The durable default is to always write author/concept pages, suppress singleton thread pages, and make separate author summaries opt-in with `XBOOKMARK_AUX_SUMMARIES=true`.
 
 6. **The enrichment hot path should avoid a planning LLM call.**
    Running a separate Codex planning call per bookmark made backfill slower without enough value. The production path now fetches allowed external article links directly and uses a final enrichment call.
@@ -62,7 +62,7 @@ Last verified on 2026-05-22:
 - X source: 4,745 live bookmark IDs over 95 pages with `max_results=50`; `max_results=100` returned only 98 IDs and no `next_token`.
 - Local state: 99 bookmark rows, all `done`, zero stored errors before rerunning backfill with the corrected page size.
 - Markdown: 99 bookmark files, 99 distinct frontmatter `tweet_id`s, no duplicate bookmark notes.
-- Aux pages: 91 authors, 440 topics, 335 entities, 99 threads.
+- Legacy snapshot before taxonomy rebuild: 91 authors, 440 topics, 335 entities, 99 threads. New output writes canonical `concepts/` pages instead of topic/entity graph pages.
 - Media/transcripts: 20 MP4 files, 20 transcript sidecars, 18 non-empty transcripts, 2 no-audio MP4s, 18 markdown transcript sections.
 - QMD: `bookmarks` collection has 99 files; `qmd embed` completed after transcript updates; `bin/xbookmark find Transcript --limit 3` returns exactly three results.
 - Scheduler: `xbookmark-sync.timer` active and enabled, triggering `xbookmark-sync.service`.

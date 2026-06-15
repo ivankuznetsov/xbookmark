@@ -6,7 +6,7 @@ module Xbookmark
     # current schema when needed, then runs explicit per-version migration
     # steps for existing databases.
     module Migrations
-      CURRENT_VERSION = 2
+      CURRENT_VERSION = 3
 
       SCHEMA = <<~SQL
         CREATE TABLE IF NOT EXISTS meta (
@@ -37,6 +37,26 @@ module Xbookmark
           summary_input_digest TEXT,
           PRIMARY KEY (kind, slug)
         );
+
+        CREATE TABLE IF NOT EXISTS concepts (
+          slug TEXT PRIMARY KEY,
+          label TEXT NOT NULL,
+          kind TEXT NOT NULL,
+          aliases_json TEXT NOT NULL DEFAULT '[]',
+          broader_json TEXT NOT NULL DEFAULT '[]',
+          facets_json TEXT NOT NULL DEFAULT '[]',
+          evidence_count INTEGER NOT NULL DEFAULT 0,
+          confidence REAL NOT NULL DEFAULT 0.0,
+          curator_outcome TEXT NOT NULL DEFAULT 'canonical',
+          updated_at TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS curator_decisions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          slug TEXT NOT NULL,
+          decision_json TEXT NOT NULL,
+          created_at TEXT NOT NULL
+        );
       SQL
 
       module_function
@@ -45,6 +65,7 @@ module Xbookmark
         db.execute_batch(SCHEMA)
         current = current_version(db)
         migrate_to_v2(db) if current < 2 || !column_exists?(db, "bookmarks", "payload_json")
+        migrate_to_v3(db) if current < 3
         return if current >= CURRENT_VERSION
         db.execute("INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)", ["schema_version", CURRENT_VERSION.to_s])
       end
@@ -60,6 +81,16 @@ module Xbookmark
         return if column_exists?(db, "bookmarks", "payload_json")
 
         db.execute("ALTER TABLE bookmarks ADD COLUMN payload_json TEXT")
+      end
+
+      def migrate_to_v3(db)
+        db.execute_batch(SCHEMA)
+        db.execute(<<~SQL)
+          INSERT OR IGNORE INTO concepts(slug, label, kind, evidence_count, confidence, curator_outcome)
+          SELECT slug, slug, kind, 1, 0.1, 'canonical'
+            FROM pages
+           WHERE kind IN ('topic', 'entity')
+        SQL
       end
 
       def column_exists?(db, table, column)

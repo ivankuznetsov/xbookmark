@@ -64,10 +64,15 @@ class FakeRegistrar
 
   def initialize
     @index_calls = 0
+    @ensure_calls = 0
   end
 
   def index!
     @index_calls += 1
+  end
+
+  def ensure_registered!
+    @ensure_calls += 1
   end
 end
 
@@ -100,6 +105,30 @@ describe Xbookmark::Sync::Runner do
     assert_equal 1, @report.permanent_errors
     assert_equal 0, registrar.index_calls
     assert_nil store.last_sync_finished_at
+  end
+
+  it "runs taxonomy maintenance during forced scheduled maintenance when enabled" do
+    config.taxonomy_maintenance = true
+    FileUtils.mkdir_p(File.join(vault, "bookmarks"))
+    File.write(File.join(vault, "bookmarks", "123.md"), "body")
+    runner = described_class.new(config: config, store: store, x_client: FakeXClient.new(pages: []),
+                                 pipeline: FakePipeline.new(->(_) { raise "unused" }), registrar: registrar)
+
+    err = capture_stderr { runner.send(:run_maintenance, force: true) }
+
+    assert_match(/taxonomy: applied/, err)
+    assert_operator registrar.index_calls, :>=, 1
+  end
+
+  it "logs taxonomy maintenance failures without raising" do
+    config.taxonomy_maintenance = true
+    runner = described_class.new(config: config, store: store, x_client: FakeXClient.new(pages: []),
+                                 pipeline: FakePipeline.new(->(_) { raise "unused" }), registrar: registrar)
+    Xbookmark::Taxonomy::Rebuilder.stubs(:new).raises("taxonomy down")
+
+    err = capture_stderr { runner.send(:run_maintenance, force: true) }
+
+    assert_match(/taxonomy maintenance failed: taxonomy down/, err)
   end
 
   it "backfill --limit 100 stops at exactly N items even when API returns more" do

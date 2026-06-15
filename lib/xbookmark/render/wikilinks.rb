@@ -35,10 +35,18 @@ module Xbookmark
 
       def link(target, label = nil)
         if label && label != target
-          "[[#{target}|#{label}]]"
+          "[[#{safe_link_part(target)}|#{safe_label(label)}]]"
         else
-          "[[#{target}]]"
+          "[[#{safe_link_part(target)}]]"
         end
+      end
+
+      def safe_label(value)
+        value.to_s.gsub(/\]\]|\||\[\[/, " ").gsub(/\s+/, " ").strip
+      end
+
+      def safe_link_part(value)
+        value.to_s.gsub(/\]\]|\[\[/, "").gsub(/\s+/, " ").strip
       end
     end
   end
