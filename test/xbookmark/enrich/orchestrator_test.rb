@@ -36,8 +36,7 @@ describe Xbookmark::Enrich::Orchestrator do
     fake.push({
       "summary" => "Talks about ozempic dosing.",
       "tags" => ["health"],
-      "topics" => ["ozempic"],
-      "entities" => ["novo-nordisk"],
+      "concepts" => [{ "label" => "ozempic", "kind" => "entity" }, { "label" => "novo-nordisk", "kind" => "organization" }],
       "links" => [{ "url" => "https://example.com/a", "title" => "Article", "summary" => "ok" }],
       "transcript_summaries" => { "video.mp4" => "A short transcript summary." },
       "formatted_transcripts" => { "video.mp4" => "**Speaker 1:** Hello." }
@@ -48,8 +47,7 @@ describe Xbookmark::Enrich::Orchestrator do
     result = orch.enrich(bookmark, transcripts: { "video.mp4" => "hello" })
     assert_equal "Talks about ozempic dosing.", result.summary
     assert_equal ["health"], result.tags
-    assert_equal ["ozempic"], result.topics
-    assert_equal ["novo-nordisk"], result.entities
+    assert_equal ["ozempic", "novo-nordisk"], result.concepts.map { |concept| concept["label"] }
     assert_equal({ "video.mp4" => "A short transcript summary." }, result.transcript_summaries)
     assert_equal({ "video.mp4" => "**Speaker 1:** Hello." }, result.formatted_transcripts)
     refute result.partial?
@@ -62,8 +60,8 @@ describe Xbookmark::Enrich::Orchestrator do
 
   it "marks result partial when retry still has empty required fields" do
     fake = FakeCodex.new
-    fake.push({ "summary" => "x", "tags" => [], "topics" => ["t"], "entities" => [] })
-    fake.push({ "summary" => "x", "tags" => [], "topics" => ["t"], "entities" => [] })
+    fake.push({ "summary" => "x", "tags" => [], "concepts" => [] })
+    fake.push({ "summary" => "x", "tags" => [], "concepts" => [] })
 
     codex = Xbookmark::Enrich::Codex.new(bin: "codex", runner: fake)
     orch = described_class.new(codex: codex, link_fetcher: link_fetcher)
@@ -73,21 +71,21 @@ describe Xbookmark::Enrich::Orchestrator do
 
   it "successful retry overwrites partial result" do
     fake = FakeCodex.new
-    fake.push({ "summary" => "x", "tags" => [], "topics" => ["t"], "entities" => [] })
-    fake.push({ "summary" => "x", "tags" => ["a"], "topics" => ["t"], "entities" => ["e"] })
+    fake.push({ "summary" => "x", "tags" => [], "concepts" => [] })
+    fake.push({ "summary" => "x", "tags" => ["a"], "concepts" => [{ "label" => "e", "kind" => "idea" }] })
 
     codex = Xbookmark::Enrich::Codex.new(bin: "codex", runner: fake)
     orch = described_class.new(codex: codex, link_fetcher: link_fetcher)
     result = orch.enrich(bookmark)
     refute result.partial?
     assert_equal ["a"], result.tags
-    assert_equal ["e"], result.entities
+    assert_equal ["e"], result.concepts.map { |concept| concept["label"] }
   end
 
   it "falls back to text-only enrichment when image codex fails transiently" do
     fake = FakeCodex.new
     fake.push(Xbookmark::CodexError.new("empty image response"))
-    fake.push({ "summary" => "x", "tags" => ["t"], "topics" => ["topic"], "entities" => ["entity"] })
+    fake.push({ "summary" => "x", "tags" => ["t"], "concepts" => [{ "label" => "topic", "kind" => "idea" }] })
 
     result = described_class.new(codex: Xbookmark::Enrich::Codex.new(bin: "codex", runner: fake), link_fetcher: link_fetcher)
       .enrich(bookmark, image_paths: ["/tmp/a.jpg"])
@@ -101,7 +99,7 @@ describe Xbookmark::Enrich::Orchestrator do
   it "falls back to text-only enrichment when image codex returns only wrapper events" do
     fake = FakeCodex.new
     fake.push({ "type" => "turn.started" }.to_json)
-    fake.push({ "summary" => "x", "tags" => ["t"], "topics" => ["topic"], "entities" => ["entity"] })
+    fake.push({ "summary" => "x", "tags" => ["t"], "concepts" => [{ "label" => "topic", "kind" => "idea" }] })
 
     result = described_class.new(codex: Xbookmark::Enrich::Codex.new(bin: "codex", runner: fake), link_fetcher: link_fetcher)
       .enrich(bookmark, image_paths: ["/tmp/a.jpg"])
@@ -140,8 +138,7 @@ describe Xbookmark::Enrich::Orchestrator do
     fake = FakeCodex.new.push({
       "summary" => "x",
       "tags" => ["t"],
-      "topics" => ["topic"],
-      "entities" => ["entity"]
+      "concepts" => [{ "label" => "topic", "kind" => "idea" }]
     })
 
     codex = Xbookmark::Enrich::Codex.new(bin: "codex", runner: fake)
@@ -165,8 +162,7 @@ describe Xbookmark::Enrich::Orchestrator do
     fake = FakeCodex.new.push({
       "summary" => "x",
       "tags" => ["t"],
-      "topics" => ["topic"],
-      "entities" => ["entity"]
+      "concepts" => [{ "label" => "topic", "kind" => "idea" }]
     })
     fetched = []
     link_fetcher.stubs(:fetch).with do |url|
@@ -186,7 +182,7 @@ describe Xbookmark::Enrich::Orchestrator do
 
   it "falls back to the first partial result when retry raises" do
     fake = FakeCodex.new
-    fake.push({ "summary" => "x", "tags" => [], "topics" => ["topic"], "entities" => [] })
+    fake.push({ "summary" => "x", "tags" => [], "concepts" => [] })
     fake.push(Xbookmark::PermanentError.new("bad retry"))
 
     result = described_class.new(codex: Xbookmark::Enrich::Codex.new(bin: "codex", runner: fake), link_fetcher: link_fetcher)
@@ -194,14 +190,14 @@ describe Xbookmark::Enrich::Orchestrator do
 
     assert result.partial?
     assert_equal [], result.tags
-    assert_equal [], result.entities
+    assert_equal [], result.concepts
   end
 
   it "includes quoted tweet text in retry prompts" do
     bookmark.quoted_tweet = { "text" => "quoted describe" }
     fake = FakeCodex.new
-    fake.push({ "summary" => "x", "tags" => [], "topics" => ["topic"], "entities" => [] })
-    fake.push({ "summary" => "x", "tags" => ["tag"], "topics" => ["topic"], "entities" => ["entity"] })
+    fake.push({ "summary" => "x", "tags" => [], "concepts" => [] })
+    fake.push({ "summary" => "x", "tags" => ["tag"], "concepts" => [{ "label" => "entity", "kind" => "idea" }] })
 
     described_class.new(codex: Xbookmark::Enrich::Codex.new(bin: "codex", runner: fake), link_fetcher: link_fetcher)
       .enrich(bookmark)
@@ -211,8 +207,8 @@ describe Xbookmark::Enrich::Orchestrator do
 
   it "includes transcript snippets in retry prompts" do
     fake = FakeCodex.new
-    fake.push({ "summary" => "x", "tags" => [], "topics" => ["topic"], "entities" => [] })
-    fake.push({ "summary" => "x", "tags" => ["tag"], "topics" => ["topic"], "entities" => ["entity"] })
+    fake.push({ "summary" => "x", "tags" => [], "concepts" => [] })
+    fake.push({ "summary" => "x", "tags" => ["tag"], "concepts" => [{ "label" => "entity", "kind" => "idea" }] })
 
     described_class.new(codex: Xbookmark::Enrich::Codex.new(bin: "codex", runner: fake), link_fetcher: link_fetcher)
       .enrich(bookmark, transcripts: { "video.mp4" => "spoken words" })

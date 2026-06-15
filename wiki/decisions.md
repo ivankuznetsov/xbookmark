@@ -24,16 +24,22 @@ tags: [decisions]
 - Require `X_CLIENT_ID` and `X_USER_ID` at config load time; store access and refresh tokens back into the env file with file mode `0600`.
 - Create a standalone bookmark wiki at `XBOOKMARK_WIKI_PATH`, separate from the project LLM wiki in `wiki/`.
 - Default new installs to `xbookmark-wiki`; migration from the earlier local `xbookmark-vault` name is not needed because the product has not been released.
-- Store local sync state in SQLite at `<bookmark-wiki>/.xbookmark/state.db`.
+- Store local sync state and concept metadata in SQLite at `<bookmark-wiki>/.xbookmark/state.db`.
 - Store minimized per-bookmark X payloads in SQLite for newly discovered bookmarks and resyncs. This lets pending and retryable rows continue enrichment later without depending on X availability, while new bookmark discovery still requires X.
 - Treat each bookmark as a transactional unit: scratch media/transcription/enrichment first, final markdown/media writes after success, then state update.
 - Use Codex headless CLI for LLM enrichment instead of a direct provider SDK.
 - Pass Codex prompts over stdin instead of argv so large bookmark/media/transcript prompts do not exceed OS argument-size limits.
 - Remove stale invalid top-level Codex `service_tier` values during setup/install so scheduled enrichment and wiki maintenance are not blocked by old `default`/`flex` config, while preserving intentional valid speed modes.
 - Use local Whisper tooling for audio/video transcription.
-- Register and query a QMD collection named `bookmarks`; current QMD `collection list`/`collection add` commands are preferred, with legacy `list`/`register`/`index` fallbacks.
+- Replace graph-facing topic/entity pages with canonical concept pages. Codex returns bounded concept candidates; deterministic local normalization owns canonical slugs, alias cleanup, recurrence thresholds, and demonym/acronym handling.
+- Use readable bookmark filenames with mandatory tweet ID suffixes. The raw ID remains in frontmatter and filenames for stability, while Obsidian graph labels become human-readable.
+- Suppress singleton thread pages. Only local evidence of a real multi-bookmark conversation creates a readable thread page.
+- Use concept wikilinks for graph hierarchy and nested tags only as facets.
+- Treat taxonomy rebuild snapshots as manual recovery/audit evidence, not automatic rollback. Rebuilds are forward-only and report `partial_failure` if a later operation fails after earlier repairs completed.
+- Run scheduled taxonomy curation from local concept state. Codex-driven curator output is sanitized through the concept model and falls back to deterministic rules when Codex is unavailable, so local maintenance does not depend on live X access or a successful LLM call.
+- Register and query a QMD collection named `bookmarks` at the bookmark wiki root; current QMD `collection list`/`collection add` commands are preferred, with legacy `list`/`register`/`index` fallbacks.
 - Use systemd user timers on Linux and launchd on macOS for daily sync, make scheduler installation part of the default setup flow, and enable Linux systemd linger when possible so daily timers can run after logout.
-- Scheduled sync should tolerate X source-only failures. It should continue local cleanup, QMD maintenance, and cached retry/enrichment work, report `source blocked`, exit successfully when no local bookmark work failed, and avoid stamping `last_sync_finished_at` so the next timer can fetch new bookmarks after reauth.
+- Scheduled sync should tolerate X source-only failures. It should continue local taxonomy cleanup, QMD maintenance, and cached retry/enrichment work, report `source blocked`, exit successfully when no local bookmark work failed, and avoid stamping `last_sync_finished_at` so the next timer can fetch new bookmarks after reauth.
 - Fail closed for external link fetch safety by rejecting private, loopback, link-local, reserved, multicast, and metadata-address ranges.
 
 ## README Setup Decisions

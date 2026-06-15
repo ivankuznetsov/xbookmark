@@ -21,6 +21,20 @@ describe Xbookmark::Config do
     end
   end
 
+  it "loads offline config for taxonomy commands without X credentials" do
+    Dir.mktmpdir do |cwd|
+      File.write(File.join(cwd, ".env"), "XBOOKMARK_WIKI_PATH=/offline/wiki\n")
+
+      config = described_class.load_offline(cwd: cwd, env: {})
+
+      assert_equal "/offline/wiki", config.vault_path
+      assert_nil config.x_client_id
+      assert_nil config.x_user_id
+      assert_equal "codex", config.codex_bin
+      assert_equal "qmd", config.qmd_bin
+    end
+  end
+
   it "uses XDG_DATA_HOME on Linux when set" do
     stub_platform_linux
     Dir.mktmpdir do |cwd|

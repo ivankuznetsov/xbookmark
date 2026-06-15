@@ -38,8 +38,8 @@ bin/xbookmark find 'rails'
 Example `find` output:
 
 ```
-bookmarks/2026/05/1789012345678901234.md  "Rails 8.0 ships with..."  @dhh
-bookmarks/2026/04/1788123456789012345.md  "A small Rails tip..."     @rosa
+bookmarks/2026/05/12/dhh-rails-8-ships-1789012345678901234.md  "Rails 8.0 ships with..."  @dhh
+concepts/rails.md                                                "Rails"                    concept
 ```
 
 ## Quick install with an AI agent
@@ -69,7 +69,7 @@ If you prefer to run the steps yourself, jump to [Installation](#installation) a
 - LLM enrichment (summary, tags) via the [`codex`](https://github.com/openai/codex) CLI.
 - Local Whisper transcription of audio and video linked from a bookmark, with
   LLM-produced transcript summaries and readable dialogue-style formatting.
-- Obsidian graph landing pages for authors, topics, entities, and threads.
+- Obsidian graph landing pages for authors, canonical concepts, concept hierarchy, and real multi-bookmark threads.
 - Official X API v2 only, via OAuth 2.0 with PKCE.
 - MIT-licensed and runs entirely on your machine.
 
@@ -200,7 +200,7 @@ Set `WHISPER_BACKEND` to either `whisper.cpp` (default, fast on CPU, one-time C+
 
 ### Aux page summaries
 
-Every enriched bookmark links to author, topic, entity, and thread landing pages so Obsidian's graph and backlinks work during large backfills. By default those landing pages are lightweight placeholders to keep the main bookmark pipeline fast. Set `XBOOKMARK_AUX_SUMMARIES=true` if you also want xbookmark to ask Codex for separate author/topic/entity page summaries during sync; that can add several extra LLM calls per bookmark.
+Every enriched bookmark links to author and concept landing pages so Obsidian's graph and backlinks work during large backfills. Real thread pages are written only when local state shows a multi-bookmark conversation. Author landing pages are lightweight placeholders by default to keep the main bookmark pipeline fast. Set `XBOOKMARK_AUX_SUMMARIES=true` if you also want xbookmark to ask Codex for separate author summaries during sync.
 
 ### Bookmark wiki path
 
@@ -261,7 +261,8 @@ larger page sizes up to 100, but live production testing showed that requesting
 100 can omit pagination even when thousands of older bookmarks exist.
 
 Backfill is idempotent. Rerunning it skips bookmarks already marked `done`, and
-bookmark/media paths are deterministic by tweet ID.
+bookmark/media paths are deterministic with readable bookmark filenames that
+retain the raw tweet ID suffix.
 
 ### find
 
@@ -280,15 +281,37 @@ bin/xbookmark find 'rails'
 Example output:
 
 ```
-1. [0.92] bookmarks/2026/05/12/1789012345678901234.md
+1. [0.92] bookmarks/2026/05/12/dhh-rails-8-ships-1789012345678901234.md
    Rails 8.0 ships with Solid Cache...
-2. [0.87] bookmarks/2026/04/28/1788123456789012345.md
-   A small Rails tip...
+2. [0.87] concepts/rails.md
+   Rails
 ```
 
 `find` searches the entire bookmark wiki through the QMD `bookmarks`
-collection, so matches can span multiple date partitions in a single result
-set.
+collection, so matches can include source notes, author pages, and concept
+pages in a single result set.
+
+### taxonomy
+
+Audit or repair the generated wiki graph without fetching anything from X.
+
+```bash
+bin/xbookmark taxonomy audit
+bin/xbookmark taxonomy rebuild          # dry-run; writes no files
+bin/xbookmark taxonomy rebuild --apply  # snapshot + manifest + repair
+```
+
+`taxonomy audit` prints `clean` or `proposed_changes` (rebuild reports add
+`applied` and `partial_failure`). Dry-run rebuilds exit non-zero when changes
+are available; apply mode writes a pre-apply snapshot and manifest under
+`$XBOOKMARK_WIKI_PATH/.xbookmark/`, renames numeric source notes to readable
+filenames with the tweet ID suffix, rewrites links to legacy numeric thread
+pages before pruning them (the legacy singleton-thread shape), writes a
+graph-health report, and reindexes QMD. The snapshot is kept for manual
+recovery and audit evidence; rebuilds are forward-only, so a mid-apply failure
+leaves completed repairs in place and reports `partial_failure`. Scheduled sync
+runs the same local maintenance path when X is unavailable, so cleanup and
+enrichment maintenance do not depend on live X access.
 
 ### install
 
@@ -326,7 +349,7 @@ Every subcommand accepts `--help`. The top-level `bin/xbookmark --help` lists al
 
 ## How it works
 
-xbookmark talks to the X API v2 to fetch your bookmarks, writes each one as a markdown file with YAML frontmatter into its bookmark wiki, then runs an enrichment pass (LLM summaries and tags via the default `codex` driver) and, for any linked audio or video, a local Whisper transcription. A QMD index over the bookmark wiki gives you fast full-text search through `bin/xbookmark find`.
+xbookmark talks to the X API v2 to fetch your bookmarks, writes each one as a readable markdown source note with YAML frontmatter into its bookmark wiki, then runs an enrichment pass (LLM summaries, tags, and reusable concept candidates via the default `codex` driver) and, for any linked audio or video, a local Whisper transcription. The taxonomy normalizer turns concept candidates into canonical pages with broader links and nested tag facets. A QMD index over the bookmark wiki gives you fast full-text search through `bin/xbookmark find`.
 
 ```text
 X API v2 -> Ingest -> Enrich -> Bookmark wiki -> QMD index
@@ -337,34 +360,44 @@ X API v2 -> Ingest -> Enrich -> Bookmark wiki -> QMD index
 
 ## Obsidian integration
 
-To open the bookmark wiki in Obsidian, choose "Open folder as vault" from the Obsidian launcher and pick the directory you configured as `XBOOKMARK_WIKI_PATH`. Bookmarks land under `bookmarks/YYYY/MM/DD/<id>.md`, partitioned by `bookmarked_at`.
+To open the bookmark wiki in Obsidian, choose "Open folder as vault" from the Obsidian launcher and pick the directory you configured as `XBOOKMARK_WIKI_PATH`. Bookmarks land under `bookmarks/YYYY/MM/DD/<readable-slug>-<tweet_id>.md`, partitioned by `bookmarked_at`.
 
-The graph view picks up wiki-links and tags from each bookmark's frontmatter, so re-tagging in `codex` enrichment automatically reshapes the graph.
+The graph view picks up wikilinks between source notes, authors, concepts, and real threads. Concepts live under `concepts/`; broad concepts such as `venezuela` can link to child concepts such as `venezuela-oil` and `venezuela-politics`. Nested tags such as `area/venezuela` and `facet/politics` are filter facets, not the primary hierarchy.
+
+Before inspecting a large existing wiki, run `bin/xbookmark taxonomy audit`.
+If it reports `proposed_changes`, run `bin/xbookmark taxonomy rebuild --apply`
+and inspect the graph-health report path printed by the command. In Obsidian,
+start from `concepts/index.md`; for graph browsing, hide attachments and
+optionally filter out `path:bookmarks/` when you want to inspect concept
+topology without every source note dominating the canvas.
 
 A typical bookmark file looks like this:
 
 ```markdown
 ---
-id: "1789012345678901234"
-url: "https://x.com/dhh/status/1789012345678901234"
-author: "@dhh"
+tweet_id: "1789012345678901234"
+author: dhh
 created_at: "2026-05-12T08:14:00Z"
 bookmarked_at: "2026-05-12T19:22:10Z"
-enriched_at: "2026-05-12T19:23:01Z"
 tags:
   - rails
   - framework
-  - release-notes
+concepts:
+  - rails
+  - rails-8
+facets:
+  - concept/rails
+  - concept/rails-8
 ---
 
-> Rails 8.0 ships today. Solid Cache, Solid Queue, Solid Cable are all
-> defaults now. Authentication generator. Propshaft by default.
+# @dhh: Rails 8.0 ships
 
-### Summary
+Rails 8.0 ships today. Solid Cache, Solid Queue, Solid Cable are all defaults now.
 
-Release announcement for Rails 8.0. Highlights the Solid trio as new
-defaults, a built-in authentication generator, and Propshaft replacing
-Sprockets in new apps.
+## Concepts
+
+- [[concepts/rails|Rails]]
+- [[concepts/rails-8|Rails 8]]
 ```
 
 ## Scheduling
@@ -396,7 +429,7 @@ The artifact written depends on your OS:
 | macOS | `~/Library/LaunchAgents/io.xbookmark.sync.plist` | `~/Library/Logs/xbookmark/sync.log` |
 | Linux | `~/.config/systemd/user/xbookmark-sync.{service,timer}` | `~/.local/state/xbookmark/sync.log` |
 
-If X is unreachable or the saved OAuth refresh token is rejected during a scheduled run, the job still exits successfully when no local bookmark processing failed. It logs `source blocked`, continues local cleanup, QMD maintenance, and cached retry/enrichment work, and does not stamp the run as completed so the next timer can fetch new bookmarks after auth is repaired. A manual `bin/xbookmark sync` still exits non-zero on source errors. Re-run `bin/xbookmark auth login` to re-issue a rejected refresh token.
+If X is unreachable or the saved OAuth refresh token is rejected during a scheduled run, the job still exits successfully when no local bookmark processing failed. It logs `source blocked`, continues local taxonomy cleanup, QMD maintenance, and cached retry/enrichment work, and does not stamp the run as completed so the next timer can fetch new bookmarks after auth is repaired. A manual `bin/xbookmark sync` still exits non-zero on source errors. Re-run `bin/xbookmark auth login` to re-issue a rejected refresh token.
 
 `bin/xbookmark install --uninstall` removes whichever artifact was created on this machine. Log files are preserved.
 
@@ -422,7 +455,7 @@ follow `meta.next_token`; xbookmark uses 50 per page and does this
 automatically during `backfill`.
 
 **Where are my markdown files?**
-Under `$XBOOKMARK_WIKI_PATH/bookmarks/YYYY/MM/DD/<id>.md`. The `bin/xbookmark find` output prints these paths so you can open them in your editor directly, or `cd "$(dirname ...)"` into the containing folder.
+Under `$XBOOKMARK_WIKI_PATH/bookmarks/YYYY/MM/DD/<readable-slug>-<tweet_id>.md`. Concept pages live under `$XBOOKMARK_WIKI_PATH/concepts/`. The `bin/xbookmark find` output prints these paths so you can open them in your editor directly, or `cd "$(dirname ...)"` into the containing folder.
 
 **Where are tokens stored?**
 `auth login` writes `X_ACCESS_TOKEN`, `X_REFRESH_TOKEN`, and

@@ -13,9 +13,13 @@ require "xbookmark/x/auth"
 require "xbookmark/x/client"
 
 describe Xbookmark::CLI do
-  FakeReport = Struct.new(:failed, :permanent_errors, :source_errors, :message, keyword_init: true) do
+  FakeReport = Struct.new(:failed, :permanent_errors, :source_errors, :maintenance_errors, :message, keyword_init: true) do
     def source_errors
       self[:source_errors] || 0
+    end
+
+    def maintenance_errors
+      self[:maintenance_errors] || 0
     end
 
     def to_s
@@ -61,7 +65,7 @@ describe Xbookmark::CLI do
 
   it "lists all top-level subcommands in --help" do
     out = capture_stdout { described_class.start(%w[help]) }
-    %w[auth backfill sync find doctor install resync].each do |cmd|
+    %w[auth backfill sync find doctor install resync taxonomy].each do |cmd|
       assert_match(/^\s*\S+\s#{cmd}\b/, out)
     end
   end
@@ -146,6 +150,55 @@ describe Xbookmark::CLI do
 
     Xbookmark::CLI::Install.expects(:new).with { |args, options| args == [] && options.is_a?(Hash) }.returns(stub(execute: nil))
     capture_stdout { described_class.start(%w[install --dry-run]) }
+  end
+
+  it "runs taxonomy audit and dry-run rebuild with documented exit states" do
+    assert Xbookmark::CLI::Taxonomy.exit_on_failure?
+    Dir.mktmpdir do |vault|
+      config = test_config(
+        vault_path: vault,
+        state_db_path: File.join(vault, ".xbookmark", "state.db"),
+        taxonomy_maintenance: false
+      )
+      Xbookmark::Config.stubs(:load_offline).returns(config)
+
+      clean = capture_stdout { Xbookmark::CLI::Taxonomy.start(%w[audit]) }
+      assert_includes clean, "taxonomy: clean"
+      refute File.exist?(config.state_db_path)
+      clean_rebuild = capture_stdout { Xbookmark::CLI::Taxonomy.start(%w[rebuild]) }
+      assert_includes clean_rebuild, "taxonomy: clean"
+      refute File.exist?(config.state_db_path)
+
+      FileUtils.mkdir_p(File.join(vault, "bookmarks"))
+      File.write(File.join(vault, "bookmarks", "123.md"), "body")
+      audit_exit = assert_raises(SystemExit) do
+        capture_stdout { Xbookmark::CLI::Taxonomy.start(%w[audit]) }
+      end
+      assert_equal 1, audit_exit.status
+      refute File.exist?(config.state_db_path)
+
+      rebuild_exit = assert_raises(SystemExit) do
+        capture_stdout { Xbookmark::CLI::Taxonomy.start(%w[rebuild]) }
+      end
+      assert_equal 1, rebuild_exit.status
+      refute File.exist?(config.state_db_path)
+    end
+  end
+
+  it "runs taxonomy apply rebuild through the state store" do
+    Dir.mktmpdir do |vault|
+      config = test_config(
+        vault_path: vault,
+        state_db_path: File.join(vault, ".xbookmark", "state.db"),
+        taxonomy_maintenance: false
+      )
+      Xbookmark::Config.stubs(:load_offline).returns(config)
+
+      out = capture_stdout { Xbookmark::CLI::Taxonomy.start(%w[rebuild --apply]) }
+
+      assert_includes out, "taxonomy: clean"
+      assert File.exist?(config.state_db_path)
+    end
   end
 
   it "runs auth login and reports the token destination" do
@@ -397,6 +450,19 @@ describe Xbookmark::CLI do
     Xbookmark::Config.stubs(:load).returns(test_config)
     Xbookmark::Sync::Runner.stubs(:new).returns(
       stub(run: FakeReport.new(failed: 1, permanent_errors: 0, source_errors: 1, message: "failed and source blocked"))
+    )
+
+    error = assert_raises(SystemExit) do
+      capture_stdout { Xbookmark::CLI::Sync.new([], { "from-scheduler": true }).sync_run }
+    end
+    assert_equal 1, error.status
+  end
+
+  it "fails scheduled sync when local maintenance fails" do
+    Xbookmark::Config.stubs(:load).returns(test_config)
+    Xbookmark::Sync::Runner.stubs(:new).returns(
+      stub(run: FakeReport.new(failed: 0, permanent_errors: 0, source_errors: 0, maintenance_errors: 1,
+                               message: "maintenance errors 1"))
     )
 
     error = assert_raises(SystemExit) do

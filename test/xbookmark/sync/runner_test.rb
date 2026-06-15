@@ -46,16 +46,31 @@ class MissingTweetClient
 end
 
 class FakePipeline
-  attr_reader :calls
+  attr_reader :calls, :indexed_pages
 
   def initialize(behavior)
     @behavior = behavior
     @calls = []
+    @indexed_pages = []
+    @prepared = false
+    @finalized = false
+  end
+
+  def prepare_run!
+    @prepared = true
+  end
+
+  def index_thread_bookmarks(bookmarks)
+    @indexed_pages << Array(bookmarks).map(&:tweet_id)
   end
 
   def process(bookmark)
     @calls << bookmark.tweet_id
     @behavior.call(bookmark)
+  end
+
+  def finalize_run!
+    @finalized = true
   end
 end
 
@@ -64,10 +79,15 @@ class FakeRegistrar
 
   def initialize
     @index_calls = 0
+    @ensure_calls = 0
   end
 
   def index!
     @index_calls += 1
+  end
+
+  def ensure_registered!
+    @ensure_calls += 1
   end
 end
 
@@ -102,6 +122,130 @@ describe Xbookmark::Sync::Runner do
     assert_nil store.last_sync_finished_at
   end
 
+  it "runs taxonomy maintenance during forced scheduled maintenance when enabled" do
+    config.taxonomy_maintenance = true
+    FileUtils.mkdir_p(File.join(vault, "bookmarks"))
+    File.write(File.join(vault, "bookmarks", "123.md"), "body")
+    runner = described_class.new(config: config, store: store, x_client: FakeXClient.new(pages: []),
+                                 pipeline: FakePipeline.new(->(_) { raise "unused" }), registrar: registrar)
+
+    err = capture_stderr { runner.send(:run_maintenance, force: true) }
+
+    assert_match(/taxonomy: applied/, err)
+    assert_equal 1, registrar.index_calls
+  end
+
+  it "logs taxonomy maintenance failures without raising" do
+    config.taxonomy_maintenance = true
+    runner = described_class.new(config: config, store: store, x_client: FakeXClient.new(pages: []),
+                                 pipeline: FakePipeline.new(->(_) { raise "unused" }), registrar: registrar)
+    Xbookmark::Taxonomy::Rebuilder.stubs(:new).raises("taxonomy down")
+
+    err = capture_stderr { runner.send(:run_maintenance, force: true) }
+
+    assert_match(/taxonomy maintenance failed: RuntimeError: taxonomy down/, err)
+    assert_includes store.get_meta("last_taxonomy_error"), "taxonomy down"
+  end
+
+  it "surfaces and records a partial_failure taxonomy maintenance result" do
+    config.taxonomy_maintenance = true
+    runner = described_class.new(config: config, store: store, x_client: FakeXClient.new(pages: []),
+                                 pipeline: FakePipeline.new(->(_) { raise "unused" }), registrar: registrar)
+    partial = Xbookmark::Taxonomy::Report.new(state: "partial_failure", counts: {}, snapshot_path: "/snap", skipped: ["boom"])
+    Xbookmark::Taxonomy::Rebuilder.any_instance.stubs(:call).returns(partial)
+
+    sync_report = Xbookmark::Sync::Report.new
+    err = capture_stderr { runner.send(:run_maintenance, force: true, report: sync_report) }
+
+    assert_match(/PARTIAL FAILURE/, err)
+    assert_includes store.get_meta("last_taxonomy_error"), "partial_failure"
+    assert_equal 1, sync_report.maintenance_errors
+    assert_includes sync_report.to_s, "maintenance errors 1"
+  end
+
+  it "runs LLM taxonomy curation during local maintenance" do
+    config.taxonomy_maintenance = true
+    store.upsert_concept(slug: "venezuela-economy", label: "Venezuela Economy", kind: "subtopic",
+                         aliases: [], broader: ["venezuela"], facets: ["area/venezuela"],
+                         evidence_count: 3, confidence: 0.3)
+    codex = mock("codex")
+    codex.expects(:run).returns(
+      "decisions" => [
+        {
+          "slug" => "venezuela-economy",
+          "label" => "Venezuela Economy",
+          "kind" => "subtopic",
+          "aliases" => ["Venezuelan economy"],
+          "broader" => ["venezuela"],
+          "evidence_count" => 3,
+          "confidence" => 0.9,
+          "curation_state" => "canonical"
+        }
+      ]
+    )
+    Xbookmark::Enrich::Codex.stubs(:new).returns(codex)
+    Xbookmark::Taxonomy::Rebuilder.any_instance.stubs(:call)
+      .returns(Xbookmark::Taxonomy::Report.new(state: "clean", counts: {}))
+    runner = described_class.new(config: config, store: store, x_client: FakeXClient.new(pages: []),
+                                 pipeline: FakePipeline.new(->(_) { raise "unused" }), registrar: registrar)
+
+    runner.send(:run_maintenance, force: true, report: Xbookmark::Sync::Report.new)
+
+    row = store.find_concept("venezuela-economy")
+    assert_equal ["Venezuelan economy"], JSON.parse(row[:aliases_json])
+    assert_equal 3, row[:evidence_count]
+    assert_equal "canonical", row[:curator_outcome]
+  end
+
+  it "counts taxonomy curation failures as maintenance errors" do
+    config.taxonomy_maintenance = true
+    store.upsert_concept(slug: "adhd", label: "ADHD", kind: "idea", evidence_count: 3, confidence: 0.3)
+    Xbookmark::Taxonomy::Rebuilder.any_instance.stubs(:call)
+      .returns(Xbookmark::Taxonomy::Report.new(state: "clean", counts: {}))
+    Xbookmark::Taxonomy::Curator.any_instance.stubs(:curate).raises("curator down")
+    runner = described_class.new(config: config, store: store, x_client: FakeXClient.new(pages: []),
+                                 pipeline: FakePipeline.new(->(_) { raise "unused" }), registrar: registrar)
+    sync_report = Xbookmark::Sync::Report.new
+
+    err = capture_stderr { runner.send(:run_maintenance, force: true, report: sync_report) }
+
+    assert_match(/taxonomy curation failed: RuntimeError: curator down/, err)
+    assert_equal 1, sync_report.maintenance_errors
+  end
+
+  it "counts and warns on partial enrichment for a synced bookmark" do
+    page = {
+      "data" => [{ "id" => "t1", "author_id" => "u1", "text" => "x", "created_at" => "2026-01-01T00:00:00Z", "conversation_id" => "c1" }],
+      "includes" => { "users" => [{ "id" => "u1", "username" => "alice" }] },
+      "meta" => {}
+    }
+    pipeline = FakePipeline.new(lambda { |_|
+      Xbookmark::Sync::Pipeline::Outcome.new(status: :done, markdown_path: "/x", digest: "d", partial: true)
+    })
+    runner = described_class.new(config: config, store: store, x_client: FakeXClient.new(pages: [page]),
+                                 pipeline: pipeline, registrar: registrar)
+
+    err = capture_stderr { @report = runner.run(mode: :backfill_limited, limit: 1) }
+
+    assert_equal 1, @report.partial
+    assert_match(/enriched with incomplete data \(partial\)/, err)
+  end
+
+  it "skips the whole run when another holder owns the taxonomy lock" do
+    pipeline = FakePipeline.new(->(_) { raise "should not run" })
+    runner = described_class.new(config: config, store: store, x_client: FakeXClient.new(pages: []),
+                                 pipeline: pipeline, registrar: registrar)
+    held = Xbookmark::Taxonomy::Lock.acquire(vault)
+    begin
+      out = capture_stdout { @report = runner.run(mode: :sync) }
+    ensure
+      Xbookmark::Taxonomy::Lock.release(held)
+    end
+
+    assert_match(/holds the taxonomy lock; skipping/, out)
+    assert_empty pipeline.calls
+  end
+
   it "backfill --limit 100 stops at exactly N items even when API returns more" do
     page = {
       "data" => Array.new(150) { |i| { "id" => "t#{i}", "author_id" => "u1", "text" => "x", "created_at" => "2026-01-01T00:00:00Z", "conversation_id" => "c#{i}" } },
@@ -119,6 +263,7 @@ describe Xbookmark::Sync::Runner do
     assert_equal "t0", store.payload_for("t0")["data"].first["id"]
     assert_equal Xbookmark::State::Store::MODE_TEST_BACKFILLED, store.mode
     assert_equal 1, registrar.index_calls
+    assert_equal (0...150).map { |i| "t#{i}" }, pipeline.indexed_pages.first
   end
 
   it "caches only the includes referenced by each bookmark" do

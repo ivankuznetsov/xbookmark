@@ -30,11 +30,15 @@ require_relative "cli/doctor"
 require_relative "cli/install"
 require_relative "cli/setup"
 require_relative "cli/uninstall"
+require_relative "cli/taxonomy"
 
 module Xbookmark
   class CLI
     desc "auth SUBCOMMAND ...ARGS", "Authenticate to X"
     subcommand "auth", Xbookmark::CLI::Auth
+
+    desc "taxonomy SUBCOMMAND ...ARGS", "Audit and repair generated wiki taxonomy"
+    subcommand "taxonomy", Xbookmark::CLI::Taxonomy
 
     desc "backfill [--limit N]", "Backfill X bookmarks. With --limit N performs a test backfill."
     method_option :limit, type: :numeric, desc: "Limit number of bookmarks (test backfill mode)"

@@ -194,6 +194,97 @@ module Xbookmark
         @db.execute("SELECT slug FROM pages WHERE kind IN ('topic', 'entity')").map { |r| r["slug"] }
       end
 
+      def concept_slugs
+        @db.execute("SELECT slug FROM concepts ORDER BY slug").map { |r| r["slug"] }
+      end
+
+      def pages(kind = nil)
+        rows =
+          if kind
+            @db.execute("SELECT * FROM pages WHERE kind = ? ORDER BY slug", [kind])
+          else
+            @db.execute("SELECT * FROM pages ORDER BY kind, slug")
+          end
+        rows.map { |r| symbolize_keys(r) }
+      end
+
+      def bookmarks
+        @db.execute("SELECT * FROM bookmarks ORDER BY bookmarked_at DESC").map { |r| symbolize_keys(r) }
+      end
+
+      def concepts
+        @db.execute("SELECT * FROM concepts ORDER BY slug").map { |r| symbolize_keys(r) }
+      end
+
+      def find_concept(slug)
+        row = @db.get_first_row("SELECT * FROM concepts WHERE slug = ?", [slug.to_s])
+        row && symbolize_keys(row)
+      end
+
+      def upsert_concept(slug:, label:, kind:, aliases: [], broader: [], facets: [],
+                         evidence_count: 0, confidence: 0.0, curator_outcome: "canonical", time: Time.now.utc)
+        params = [
+          slug.to_s,
+          label.to_s,
+          kind.to_s,
+          JSON.generate(Array(aliases)),
+          JSON.generate(Array(broader)),
+          JSON.generate(Array(facets)),
+          evidence_count.to_i,
+          confidence.to_f,
+          curator_outcome.to_s,
+          iso(time)
+        ]
+        @db.execute(<<~SQL, params)
+          INSERT INTO concepts(slug, label, kind, aliases_json, broader_json, facets_json,
+                               evidence_count, confidence, curator_outcome, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(slug) DO UPDATE SET
+            label = excluded.label,
+            kind = excluded.kind,
+            aliases_json = excluded.aliases_json,
+            broader_json = excluded.broader_json,
+            facets_json = excluded.facets_json,
+            evidence_count = concepts.evidence_count + excluded.evidence_count,
+            confidence = excluded.confidence,
+            curator_outcome = excluded.curator_outcome,
+            updated_at = excluded.updated_at
+        SQL
+      end
+
+      def record_curator_decision(slug:, decision:, time: Time.now.utc)
+        @db.execute("INSERT INTO curator_decisions(slug, decision_json, created_at) VALUES (?, ?, ?)",
+                    [slug.to_s, JSON.generate(decision), iso(time)])
+      end
+
+      def update_bookmark_path!(tweet_id:, markdown_path:)
+        @db.execute("UPDATE bookmarks SET markdown_path = ? WHERE tweet_id = ?", [markdown_path.to_s, tweet_id.to_s])
+      end
+
+      def rewrite_page_path!(kind:, slug:, path:)
+        @db.execute("UPDATE pages SET path = ? WHERE kind = ? AND slug = ?", [path.to_s, kind.to_s, slug.to_s])
+      end
+
+      def delete_page!(kind:, slug:)
+        @db.execute("DELETE FROM pages WHERE kind = ? AND slug = ?", [kind.to_s, slug.to_s])
+      end
+
+      def rename_page!(kind:, old_slug:, new_slug:, path:)
+        @db.execute(<<~SQL, [new_slug.to_s, path.to_s, kind.to_s, old_slug.to_s])
+          UPDATE pages SET slug = ?, path = ? WHERE kind = ? AND slug = ?
+        SQL
+      end
+
+      def commit_taxonomy_rebuild!(path_updates:, pruned_ids:, thread_moves: [])
+        @db.transaction do
+          path_updates.each { |tweet_id, relative| update_bookmark_path!(tweet_id: tweet_id, markdown_path: relative) }
+          thread_moves.each do |old_slug, new_slug, relative|
+            rename_page!(kind: "thread", old_slug: old_slug, new_slug: new_slug, path: relative)
+          end
+          pruned_ids.each { |id| delete_page!(kind: "thread", slug: id) }
+        end
+      end
+
       private
 
       def ensure_meta_defaults

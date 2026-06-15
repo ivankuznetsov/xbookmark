@@ -13,16 +13,23 @@ If images are attached to this request, inspect them directly and fill
 image_captions / image_ocr when useful.
 Linked article extracts (if any):
 %{link_blobs}
-Existing topic/entity slugs already in the bookmark wiki (use these instead of
-creating near-duplicates when meaning matches):
-%{existing_slugs}
+Relevant canonical concepts already in the bookmark wiki. Use these when meaning
+matches instead of creating near-duplicates. This context is intentionally
+bounded and sanitized:
+%{registry_context}
 
 Return JSON only with this schema:
 {
   "summary": "<one or two sentences, optional>",
   "tags": ["<short snake-or-kebab tags>", ...],            // REQUIRED, non-empty
-  "topics": ["<kebab-case topic slugs>", ...],              // REQUIRED, non-empty
-  "entities": ["<kebab-case proper-noun slugs>", ...],     // REQUIRED, non-empty
+  "concepts": [                                            // REQUIRED, 1-8 reusable concepts
+    {
+      "label": "<human concept label>",
+      "kind": "area|subtopic|entity|technology|place|organization|idea",
+      "aliases": ["<optional alias>", ...],
+      "broader": ["<optional parent candidate>", ...]
+    }
+  ],
   "links": [
     { "url": "...", "title": "...", "summary": "..." }
   ],

@@ -25,12 +25,13 @@ The application is a Ruby command-line application named `xbookmark`. Its runtim
 - State: `Xbookmark::State::Store` keeps local SQLite state under `<bookmark-wiki>/.xbookmark/state.db`, including cached per-bookmark X payloads for retryable local work.
 - Sync loop: `Xbookmark::Sync::Runner` drives backfill, sync, and resync modes; it processes cached pending/retry rows before fetching new X pages, and `Xbookmark::Sync::Pipeline` processes one bookmark at a time.
 - Media and transcription: `Xbookmark::Media::Downloader` downloads full-size X media without a default byte cap, and `Xbookmark::Transcribe::Whisper` extracts video audio through `ffmpeg` before shelling out to a local whisper backend with duration-aware timeouts.
-- Enrichment: `Xbookmark::Enrich::Orchestrator` calls `Xbookmark::Enrich::Codex`, fetches allowed external links, runs image OCR/captioning, and returns structured enrichment data.
-- Rendering: `Xbookmark::Render::BookmarkRenderer` writes per-bookmark markdown; `Xbookmark::Render::AuxPage` maintains author, topic, entity, and thread pages. Aux landing pages are created during normal sync, but their separate LLM summaries are opt-in through `XBOOKMARK_AUX_SUMMARIES` so large backfills stay focused on bookmark notes.
-- Search: `Xbookmark::Qmd::Registrar` registers the `bookmarks` QMD collection through current `qmd collection` commands with legacy fallbacks; `Xbookmark::Qmd::Searcher` shells out to `qmd query`.
+- Enrichment: `Xbookmark::Enrich::Orchestrator` calls `Xbookmark::Enrich::Codex`, fetches allowed external links, runs image OCR/captioning, and returns structured concept candidates rather than legacy topic/entity strings.
+- Taxonomy: `Xbookmark::Taxonomy::Normalizer`, `Registry`, `Curator`, `Auditor`, and `Rebuilder` canonicalize concepts, maintain SQLite concept metadata, produce graph-health reports, and repair existing generated wiki files offline without X access.
+- Rendering: `Xbookmark::Render::BookmarkRenderer` writes readable per-bookmark source notes with a required tweet ID suffix; `ConceptPage` and `ConceptIndex` maintain canonical concept graph pages; `AuxPage` still maintains authors and real thread pages. Author aux summaries remain opt-in through `XBOOKMARK_AUX_SUMMARIES`.
+- Search: `Xbookmark::Qmd::Registrar` registers the `bookmarks` QMD collection at the bookmark wiki root through current `qmd collection` commands with legacy fallbacks; `Xbookmark::Qmd::Searcher` shells out to `qmd query`.
 - Scheduling: `Xbookmark::Scheduler::Systemd` installs a user timer on Linux and tries to enable user linger; `Xbookmark::Scheduler::Launchd` installs a launch agent on macOS.
 - Setup safety: `Xbookmark::CodexConfig` removes only stale invalid top-level `service_tier` values in `~/.codex/config.toml` or `$CODEX_HOME/config.toml`, preserves valid speed modes and project tables, and rewrites changed config files atomically with `0600` permissions.
-- Coverage: `bundle exec rake coverage` uses Ruby's built-in `Coverage` API while running RSpec, then aborts unless every counted line under `bin/` and `lib/` is covered.
+- Coverage: `bundle exec rake coverage` uses Ruby's built-in `Coverage` API while running Minitest, then aborts unless every counted line under `bin/` and `lib/` is covered.
 
 Related details: [[commands]], [[data-model]], [[dependencies]].
 
@@ -40,12 +41,15 @@ Related details: [[commands]], [[data-model]], [[dependencies]].
 X API bookmarks or cached source payload
   -> local media download
   -> optional whisper transcription
-  -> codex enrichment
-  -> markdown + media in the bookmark wiki
+  -> codex concept-candidate enrichment
+  -> deterministic taxonomy normalization
+  -> readable markdown + concept pages + media in the bookmark wiki
   -> QMD indexing for search
 ```
 
-Per-bookmark work uses a scratch directory and atomic writes before updating state, so a failed bookmark should be retried rather than leaving partial final output. Image-based Codex failures degrade to text-only enrichment for that bookmark and mark the result partial, so one flaky vision response does not block the note. Scheduled runs tolerate source-only X auth, rate-limit, and transport failures: they report `source blocked`, keep maintenance and cached local work running, and avoid stamping `last_sync_finished_at` until a source-clean run completes.
+Per-bookmark work uses a scratch directory and atomic writes before updating state, so a failed bookmark should be retried rather than leaving partial final output. Image-based Codex failures degrade to text-only enrichment for that bookmark and mark the result partial, so one flaky vision response does not block the note. Scheduled runs tolerate source-only X auth, rate-limit, and transport failures: they report `source blocked`, keep taxonomy maintenance, QMD indexing, and cached local work running, and avoid stamping `last_sync_finished_at` until a source-clean run completes.
+
+The generated wiki is organized as source notes, authors, concepts, and facets. Source notes live under `bookmarks/YYYY/MM/DD/` with filenames like `alice-apple-management-2047091470201700828.md`; raw tweet IDs remain in frontmatter and filename suffixes for stability. Concepts live under `concepts/` with `broader` links so Obsidian graph edges carry hierarchy. Nested tags such as `area/venezuela` and `facet/politics` are filters rather than the main graph hierarchy. `xbookmark taxonomy audit` and `xbookmark taxonomy rebuild --apply` operate from local markdown and SQLite state, write manifests under `.xbookmark`, keep forward repairs in place on partial failures, and do not require live X access. Scheduled taxonomy maintenance also runs the curator over persisted concepts, falling back to deterministic rules if Codex is unavailable.
 
 ## Cross-Project Wiki Context
 

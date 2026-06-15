@@ -114,9 +114,13 @@ describe "v1 acceptance" do
           # final.txt — match on tweet_text section only (between "Tweet text:" and the next blank+section)
           tweet_text_section = prompt[/Tweet text:\n(.*?)(\n\n|\nAuthor:)/m, 1].to_s
           if tweet_text_section.include?("ozempic")
-            { "summary" => "Talks about ozempic dosing.", "tags" => ["health"], "topics" => ["ozempic"], "entities" => ["novo-nordisk"], "links" => [] }
+            { "summary" => "Talks about ozempic dosing.", "tags" => ["health"],
+              "concepts" => [{ "label" => "ozempic", "kind" => "entity" }, { "label" => "novo-nordisk", "kind" => "organization" }],
+              "links" => [] }
           else
-            { "summary" => "Talks about ai agents.", "tags" => ["ai"], "topics" => ["ai-agents"], "entities" => ["openai"], "links" => [] }
+            { "summary" => "Talks about ai agents.", "tags" => ["ai"],
+              "concepts" => [{ "label" => "ai-agents", "kind" => "technology" }, { "label" => "openai", "kind" => "organization" }],
+              "links" => [] }
           end
         end
       [JSON.generate(response), "", FakeCodex::DummyStatus.new(0)]
@@ -175,13 +179,13 @@ describe "v1 acceptance" do
     leftovers = Dir.glob(File.join(vault, "**/*.tmp.*"))
     assert_empty leftovers
 
-    # Aux pages exist (authors, topics, entities)
+    # Aux pages exist (authors, concepts)
     assert File.exist?(File.join(vault, "authors", "alice.md"))
     assert File.exist?(File.join(vault, "authors", "bob.md"))
-    assert File.exist?(File.join(vault, "topics", "ozempic.md"))
-    assert File.exist?(File.join(vault, "topics", "ai-agents.md"))
-    assert File.exist?(File.join(vault, "entities", "novo-nordisk.md"))
-    assert File.exist?(File.join(vault, "entities", "openai.md"))
+    assert File.exist?(File.join(vault, "concepts", "ozempic.md"))
+    assert File.exist?(File.join(vault, "concepts", "ai-agents.md"))
+    assert File.exist?(File.join(vault, "concepts", "novo-nordisk.md"))
+    assert File.exist?(File.join(vault, "concepts", "openai.md"))
 
     # Mode advanced to test_backfilled
     assert_equal "test_backfilled", store.mode

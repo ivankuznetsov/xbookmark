@@ -26,6 +26,7 @@ module Xbookmark
       :daily_sync_time,
       :min_run_interval_hours,
       :aux_summaries,
+      :taxonomy_maintenance,
       :env_file,
       :verbose,
       keyword_init: true
@@ -35,36 +36,46 @@ module Xbookmark
       def load(wiki_override: nil, vault_override: nil, cwd: Dir.pwd, env: ENV.to_h.dup, verbose: false, keystore: :auto)
         loaded_env_files = load_env_files!(cwd: cwd, env: env)
         hydrate_from_keystore!(env, keystore: keystore)
-        merged = env
+        validate_required!(env)
 
-        validate_required!(merged)
+        build_config(env, loaded_env_files: loaded_env_files, wiki_override: wiki_override,
+                          vault_override: vault_override, verbose: verbose)
+      end
 
-        vault_path = first_present(wiki_override, vault_override, configured_wiki_path(merged)) || default_wiki_dir(merged)
+      def load_offline(wiki_override: nil, vault_override: nil, cwd: Dir.pwd, env: ENV.to_h.dup, verbose: false)
+        loaded_env_files = load_env_files!(cwd: cwd, env: env)
+        build_config(env, loaded_env_files: loaded_env_files, wiki_override: wiki_override,
+                          vault_override: vault_override, verbose: verbose)
+      end
+
+      def build_config(env, loaded_env_files:, wiki_override:, vault_override:, verbose:)
+        vault_path = first_present(wiki_override, vault_override, configured_wiki_path(env)) || default_wiki_dir(env)
         vault_path = File.expand_path(vault_path)
 
         state_db_path = File.join(vault_path, ".xbookmark", "state.db")
         scratch_dir   = File.join(vault_path, ".xbookmark", "scratch")
-        logs_dir      = merged["XBOOKMARK_LOGS_DIR"] || default_logs_dir(merged)
+        logs_dir      = env["XBOOKMARK_LOGS_DIR"] || default_logs_dir(env)
 
         Struct::XbookmarkConfig.new(
           vault_path: vault_path,
           state_db_path: state_db_path,
           logs_dir: File.expand_path(logs_dir),
           scratch_dir: scratch_dir,
-          x_client_id: merged["X_CLIENT_ID"],
-          x_client_secret: merged["X_CLIENT_SECRET"],
-          x_redirect_uri: merged["X_REDIRECT_URI"] || default_redirect_uri,
-          x_user_id: merged["X_USER_ID"],
-          x_access_token: merged["X_ACCESS_TOKEN"],
-          x_refresh_token: merged["X_REFRESH_TOKEN"],
-          x_token_expires_at: parse_int_or_nil(merged["X_TOKEN_EXPIRES_AT"]),
-          codex_bin: merged["CODEX_BIN"] || "codex",
-          whisper_bin: merged["WHISPER_BIN"],
-          whisper_model: merged["WHISPER_MODEL"] || "base.en",
-          qmd_bin: merged["QMD_BIN"] || "qmd",
-          daily_sync_time: merged["XBOOKMARK_DAILY_TIME"] || "06:00",
-          min_run_interval_hours: (merged["XBOOKMARK_MIN_RUN_INTERVAL_HOURS"] || "20").to_f,
-          aux_summaries: truthy?(merged["XBOOKMARK_AUX_SUMMARIES"]),
+          x_client_id: env["X_CLIENT_ID"],
+          x_client_secret: env["X_CLIENT_SECRET"],
+          x_redirect_uri: env["X_REDIRECT_URI"] || default_redirect_uri,
+          x_user_id: env["X_USER_ID"],
+          x_access_token: env["X_ACCESS_TOKEN"],
+          x_refresh_token: env["X_REFRESH_TOKEN"],
+          x_token_expires_at: parse_int_or_nil(env["X_TOKEN_EXPIRES_AT"]),
+          codex_bin: env["CODEX_BIN"] || "codex",
+          whisper_bin: env["WHISPER_BIN"],
+          whisper_model: env["WHISPER_MODEL"] || "base.en",
+          qmd_bin: env["QMD_BIN"] || "qmd",
+          daily_sync_time: env["XBOOKMARK_DAILY_TIME"] || "06:00",
+          min_run_interval_hours: (env["XBOOKMARK_MIN_RUN_INTERVAL_HOURS"] || "20").to_f,
+          aux_summaries: truthy?(env["XBOOKMARK_AUX_SUMMARIES"]),
+          taxonomy_maintenance: !falsey?(env["XBOOKMARK_TAXONOMY_MAINTENANCE"]),
           env_file: loaded_env_files.first,
           verbose: verbose
         )
@@ -131,6 +142,10 @@ module Xbookmark
 
       def truthy?(value)
         %w[1 true yes on].include?(value.to_s.strip.downcase)
+      end
+
+      def falsey?(value)
+        %w[0 false no off].include?(value.to_s.strip.downcase)
       end
 
       def configured_wiki_path(env)

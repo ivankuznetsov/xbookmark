@@ -28,15 +28,13 @@ module Xbookmark
         # Exact field match — substring matching let "old-bookmarks"
         # falsely report the canonical "bookmarks" collection as already
         # registered.
-        out.lines.any? do |line|
-          line.split(/\s+/).any? { |field| field == COLLECTION_NAME }
-        end
+        out.lines.any? { |line| registered_line?(line) }
       rescue Errno::ENOENT
         false
       end
 
       def register!
-        path = File.join(@config.vault_path, "bookmarks")
+        path = @config.vault_path
         FileUtils.mkdir_p(path)
         _out, err, status = capture(@config.qmd_bin, "collection", "add", path, "--name", COLLECTION_NAME)
         return :indexed if status_success?(status)
@@ -49,15 +47,19 @@ module Xbookmark
         :failed
       end
 
+      # Returns :indexed on success or :failed on failure so callers (e.g. the
+      # rebuilder manifest) can record whether search was actually refreshed
+      # rather than assuming success.
       def index!
         _out, err, status = capture(@config.qmd_bin, "index", "--collection", COLLECTION_NAME)
-        return if status_success?(status)
+        return :indexed if status_success?(status)
 
         _update_out, update_err, update_status = capture(@config.qmd_bin, "update")
-        return if status_success?(update_status)
+        return :indexed if status_success?(update_status)
 
         err = [err, update_err].reject { |message| message.to_s.empty? }.join("\n")
         warn "[xbookmark] qmd index failed: #{err}"
+        :failed
       end
 
       private
@@ -95,6 +97,16 @@ module Xbookmark
 
       def status_success?(status)
         status.respond_to?(:success?) ? status.success? : status == 0
+      end
+
+      def registered_line?(line)
+        fields = line.split(/\s+/)
+        return false unless fields.any? { |field| field == COLLECTION_NAME }
+
+        legacy_path = File.join(@config.vault_path, "bookmarks")
+        return false if fields.include?(legacy_path)
+
+        true
       end
     end
   end

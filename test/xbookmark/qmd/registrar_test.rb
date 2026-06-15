@@ -24,7 +24,7 @@ describe Xbookmark::Qmd::Registrar do
     runner = ->(argv) {
       calls << argv
       if argv[1..2] == %w[collection list] && calls.size > 1
-        ["bookmarks #{File.join(vault, 'bookmarks')}\n", "", DummyStatus.new(0)]
+        ["bookmarks #{vault}\n", "", DummyStatus.new(0)]
       elsif argv[1..2] == %w[collection list]
         ["", "", DummyStatus.new(0)]
       elsif argv[1..2] == %w[collection add]
@@ -55,7 +55,7 @@ describe Xbookmark::Qmd::Registrar do
 
     described_class.new(config: config, runner: runner).ensure_registered!
 
-    assert_includes calls, ["qmd", "register", "--name", "bookmarks", "--path", File.join(vault, "bookmarks")]
+    assert_includes calls, ["qmd", "register", "--name", "bookmarks", "--path", vault]
     assert_includes calls, ["qmd", "index", "--collection", "bookmarks"]
   end
 
@@ -64,10 +64,13 @@ describe Xbookmark::Qmd::Registrar do
       if argv[1..2] == %w[collection list]
         ["", "Unknown command", DummyStatus.new(1)]
       else
-        ["bookmarks #{File.join(vault, 'bookmarks')}\n", "", DummyStatus.new(0)]
+        ["bookmarks #{vault}\n", "", DummyStatus.new(0)]
       end
     }
     assert described_class.new(config: config, runner: legacy_runner).registered?
+
+    legacy_root_runner = ->(_argv) { ["bookmarks #{File.join(vault, 'bookmarks')}\n", "", DummyStatus.new(0)] }
+    refute described_class.new(config: config, runner: legacy_root_runner).registered?
 
     missing_runner = ->(_argv) { raise Errno::ENOENT }
     refute described_class.new(config: config, runner: missing_runner).registered?

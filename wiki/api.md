@@ -7,7 +7,7 @@ updated: 2026-06-15
 tags: [api, x-api, oauth, cli]
 ---
 
-**TLDR**: `xbookmark` has no web app routes; its external surface is a CLI, X API v2 calls, a temporary local OAuth callback, and QMD registration/search subprocess calls.
+**TLDR**: `xbookmark` has no web app routes; its external surface is a CLI, X API v2 calls, a temporary local OAuth callback, and QMD registration/search/reindex subprocess calls.
 
 ## Scope
 
@@ -42,12 +42,13 @@ Bookmark requests use 50-item pages and follow `meta.next_token`. Production tes
 ## QMD Subprocess Surface
 
 - Collection name is `bookmarks`.
-- `Qmd::Registrar#registered?` invokes `qmd collection list` first and falls back to legacy `qmd list`.
-- `Qmd::Registrar#register!` creates `<bookmark-wiki>/bookmarks`, invokes `qmd collection add <path> --name bookmarks`, and treats that current command as already indexed.
+- `Qmd::Registrar#registered?` invokes `qmd collection list` first and falls back to legacy `qmd list`. It requires an exact `bookmarks` field match and treats the old `<bookmark-wiki>/bookmarks` root as legacy rather than current registration.
+- `Qmd::Registrar#register!` ensures the bookmark wiki root exists, invokes `qmd collection add <bookmark-wiki> --name bookmarks`, and treats that current command as already indexed.
 - If the current registration command fails, the registrar falls back to legacy `qmd register --name bookmarks --path <path>` and then indexes with `qmd index --collection bookmarks`.
-- If legacy indexing fails, the registrar falls back once more to `qmd update` before warning.
+- `Qmd::Registrar#index!` invokes `qmd index --collection bookmarks`; if that indexing command fails, the registrar falls back once more to `qmd update` before warning and returning a failed status.
 - `Qmd::Searcher` invokes `qmd query --collection bookmarks --types lex,vec --limit N --json QUERY`.
 - The CLI currently prints numbered text results with score, path, and optional snippet.
+- `sync` and `taxonomy rebuild --apply` reindex after generated wiki changes. Taxonomy rebuild records the QMD reindex status in its manifest rather than rolling back file repairs when search refresh fails.
 
 ## Codex Subprocess Surface
 

@@ -11,6 +11,10 @@ require_relative "../enrich/codex"
 require_relative "../enrich/orchestrator"
 require_relative "../render/bookmark_renderer"
 require_relative "../qmd/registrar"
+require_relative "../taxonomy/curator"
+require_relative "../taxonomy/lock"
+require_relative "../taxonomy/registry"
+require_relative "../taxonomy/rebuilder"
 
 module Xbookmark
   module Sync
@@ -21,7 +25,8 @@ module Xbookmark
         @x_client = x_client
         @renderer = renderer || Xbookmark::Render::BookmarkRenderer.new(vault_path: config.vault_path)
         @orch = orchestrator || default_orchestrator
-        @pipeline = pipeline || Xbookmark::Sync::Pipeline.new(config: config, store: store, orchestrator: @orch, renderer: @renderer)
+        @pipeline = pipeline || Xbookmark::Sync::Pipeline.new(config: config, store: store, orchestrator: @orch,
+                                                              renderer: @renderer, defer_concept_index: true)
         @registrar = registrar
       end
 
@@ -33,25 +38,41 @@ module Xbookmark
           return report
         end
 
-        @store.mark_sync_started!
-        FileUtils.mkdir_p(@config.scratch_dir)
-        cleanup_stale_scratch
-
-        case mode
-        when :backfill_limited then backfill(report, limit: limit || 100, from_scheduler: from_scheduler)
-        when :backfill_full    then backfill(report, limit: nil, from_scheduler: from_scheduler)
-        when :sync             then incremental_sync(report, from_scheduler: from_scheduler)
-        when :resync           then resync_one(report, tweet_id: tweet_id)
-        else
-          raise ArgumentError, "unknown mode: #{mode}"
+        # Hold the taxonomy lock for the whole run so a concurrent invocation
+        # (e.g. a manual `taxonomy rebuild --apply` firing while the scheduler
+        # syncs) can never mutate the same files at the same time. Maintenance
+        # reuses this lock via `locked: true`.
+        lock = Xbookmark::Taxonomy::Lock.acquire(@config.vault_path)
+        unless lock
+          puts "[xbookmark] another xbookmark run holds the taxonomy lock; skipping this run"
+          return report
         end
 
-        # Only stamp last_sync_finished_at on a real run — a rejected
-        # bootstrap (e.g. fresh-mode incremental sync) would otherwise pin
-        # the throttle window and cause the next scheduled invocation to
-        # skip even though no actual sync happened.
-        @store.mark_sync_finished! if real_run?(report)
-        run_maintenance(force: from_scheduler || report.synced.positive?)
+        begin
+          @store.mark_sync_started!
+          FileUtils.mkdir_p(@config.scratch_dir)
+          cleanup_stale_scratch
+          @pipeline.prepare_run! if @pipeline.respond_to?(:prepare_run!)
+
+          case mode
+          when :backfill_limited then backfill(report, limit: limit || 100, from_scheduler: from_scheduler)
+          when :backfill_full    then backfill(report, limit: nil, from_scheduler: from_scheduler)
+          when :sync             then incremental_sync(report, from_scheduler: from_scheduler)
+          when :resync           then resync_one(report, tweet_id: tweet_id)
+          else
+            raise ArgumentError, "unknown mode: #{mode}"
+          end
+
+          # Only stamp last_sync_finished_at on a real run — a rejected
+          # bootstrap (e.g. fresh-mode incremental sync) would otherwise pin
+          # the throttle window and cause the next scheduled invocation to
+          # skip even though no actual sync happened.
+          @pipeline.finalize_run! if @pipeline.respond_to?(:finalize_run!)
+          @store.mark_sync_finished! if real_run?(report)
+          run_maintenance(force: from_scheduler || report.synced.positive?, report: report)
+        ensure
+          Xbookmark::Taxonomy::Lock.release(lock)
+        end
         report
       end
 
@@ -62,8 +83,52 @@ module Xbookmark
 
       private
 
-      def run_maintenance(force: false)
-        reindex_qmd if force
+      def run_maintenance(force: false, report: nil)
+        taxonomy_report = run_taxonomy_maintenance(report) if force && taxonomy_maintenance?
+        reindex_qmd if force && !(taxonomy_report && taxonomy_report.state == "applied")
+      end
+
+      def taxonomy_maintenance?
+        @config.respond_to?(:taxonomy_maintenance) && @config.taxonomy_maintenance == true
+      end
+
+      def run_taxonomy_maintenance(sync_report = nil)
+        registrar = @registrar || Xbookmark::Qmd::Registrar.new(config: @config)
+        # locked: true — the run already holds the taxonomy lock.
+        report = Xbookmark::Taxonomy::Rebuilder.new(config: @config, store: @store, registrar: registrar).call(apply: true, locked: true)
+        if report.partial_failure?
+          # Make destructive maintenance failures loud and persist them so the
+          # next interactive run can surface them, rather than letting an
+          # unattended timer hide them on stderr.
+          sync_report.maintenance_errors += 1 if sync_report
+          @store.set_meta("last_taxonomy_error", report.to_s)
+          warn "[xbookmark] taxonomy maintenance PARTIAL FAILURE: #{report}"
+        elsif !report.clean?
+          warn "[xbookmark] #{report}"
+        end
+        if !report.partial_failure? && !run_taxonomy_curation
+          sync_report.maintenance_errors += 1 if sync_report
+        end
+        report
+      rescue StandardError => e
+        sync_report.maintenance_errors += 1 if sync_report
+        @store.set_meta("last_taxonomy_error", "#{e.class}: #{e.message}")
+        warn "[xbookmark] taxonomy maintenance failed: #{e.class}: #{e.message}"
+        nil
+      end
+
+      def run_taxonomy_curation
+        candidates = @store.concepts.map { |row| Xbookmark::Taxonomy::Registry.concept_from_row(row).to_h }
+        return true if candidates.empty?
+
+        registry = Xbookmark::Taxonomy::Registry.from_vault(@config.vault_path, store: @store)
+        codex = Xbookmark::Enrich::Codex.new(bin: @config.codex_bin)
+        Xbookmark::Taxonomy::Curator.new(codex: codex, registry: registry, store: @store).curate(candidates)
+        true
+      rescue StandardError => e
+        @store.set_meta("last_taxonomy_error", "#{e.class}: #{e.message}")
+        warn "[xbookmark] taxonomy curation failed: #{e.class}: #{e.message}"
+        false
       end
 
       def reindex_qmd
@@ -184,6 +249,7 @@ module Xbookmark
                             max_results: Xbookmark::X::Client::BOOKMARK_PAGE_SIZE) do |payload|
           report.api_pages += 1
           page_bookmarks = Xbookmark::X::Expansions.new(payload).bookmarks
+          @pipeline.index_thread_bookmarks(page_bookmarks) if @pipeline.respond_to?(:index_thread_bookmarks)
           page_new = 0
 
           page_bookmarks.each do |bm|
@@ -217,6 +283,10 @@ module Xbookmark
         when :done
           @store.record_success(tweet_id: bookmark.tweet_id, markdown_path: outcome.markdown_path, digest: outcome.digest)
           report.synced += 1
+          if outcome.partial
+            report.partial += 1
+            warn "[xbookmark] tweet #{bookmark.tweet_id} enriched with incomplete data (partial); will not auto-retry"
+          end
         when :needs_retry
           status = @store.record_failure(tweet_id: bookmark.tweet_id, error: outcome.error&.message || "unknown")
           if status == Xbookmark::State::Store::STATUS_PERMANENT

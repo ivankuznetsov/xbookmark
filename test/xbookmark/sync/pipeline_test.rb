@@ -47,12 +47,19 @@ describe Xbookmark::Sync::Pipeline do
     )
   end
 
+  def bookmark_with(id:, conversation: id, text: "tweet text")
+    bm = bookmark
+    bm.tweet_id = id
+    bm.conversation_id = conversation
+    bm.text = text
+    bm
+  end
+
   def enrichment
     Xbookmark::Enrich::EnrichmentResult.new(
       summary: "summary",
       tags: ["tag"],
-      topics: ["topic"],
-      entities: ["entity"],
+      concepts: [{ "label" => "topic", "kind" => "idea" }],
       links: [],
       image_captions: {},
       image_ocr: {},
@@ -106,13 +113,155 @@ describe Xbookmark::Sync::Pipeline do
       outcome = pipeline.process(bookmark(media: [mock("media")]))
 
       assert_equal :done, outcome.status
-      assert outcome.markdown_path.end_with?("bookmarks/2026/01/01/1001.md")
+      assert outcome.markdown_path.end_with?("bookmarks/2026/01/01/alice-summary-1001.md")
       assert File.exist?(File.join(vault, "media", "1001", "photo.jpg"))
       refute File.exist?(File.join(config.scratch_dir, "1001"))
       assert_equal [], orch.existing_slugs
       assert_includes File.read(outcome.markdown_path), "## Transcript"
       assert File.exist?(File.join(vault, "authors", "alice.md"))
-      assert File.exist?(File.join(vault, "threads", "1001.md"))
+      assert File.exist?(File.join(vault, "concepts", "topic.md"))
+      refute File.exist?(File.join(vault, "threads", "1001.md"))
+    end
+  end
+
+  it "reuses a persisted readable path so a re-sync never recreates the numeric file" do
+    Dir.mktmpdir do |vault|
+      config = config_for(vault)
+      store = Xbookmark::State::Store.new(":memory:")
+      readable = "bookmarks/2026/01/01/alice-summary-1001.md"
+      store.upsert_pending(tweet_id: "1001", author_handle: "alice", bookmarked_at: "2026-01-01T00:00:00Z")
+      store.record_success(tweet_id: "1001", markdown_path: readable, digest: "old")
+      orch = stub(enrich: enrichment)
+      orch.stubs(:existing_slugs=)
+      orch.stubs(:concept_registry=)
+      pipeline = described_class.new(
+        config: config,
+        store: store,
+        orchestrator: orch,
+        renderer: Xbookmark::Render::BookmarkRenderer.new(vault_path: vault),
+        downloader: stub(download: [])
+      )
+
+      outcome = pipeline.process(bookmark)
+
+      assert_equal File.join(vault, readable), outcome.markdown_path
+      refute File.exist?(File.join(vault, "bookmarks", "2026", "01", "01", "1001.md"))
+    end
+  end
+
+  it "writes a readable thread page when local state proves a real thread" do
+    Dir.mktmpdir do |vault|
+      config = config_for(vault)
+      store = Xbookmark::State::Store.new(":memory:")
+      store.upsert_pending(
+        tweet_id: "1002",
+        author_handle: "alice",
+        bookmarked_at: "2026-01-01T00:00:00Z",
+        payload: { "data" => [{ "id" => "1002", "conversation_id" => "thread-1" }], "includes" => {}, "meta" => {} }
+      )
+      threaded = bookmark
+      threaded.conversation_id = "thread-1"
+      orch = stub(enrich: enrichment)
+      orch.stubs(:existing_slugs=)
+      orch.stubs(:concept_registry=)
+      pipeline = described_class.new(
+        config: config,
+        store: store,
+        orchestrator: orch,
+        renderer: Xbookmark::Render::BookmarkRenderer.new(vault_path: vault),
+        downloader: stub(download: [])
+      )
+
+      outcome = pipeline.process(threaded)
+
+      assert_equal :done, outcome.status
+      assert File.exist?(File.join(vault, "threads", "thread-1.md"))
+      assert_includes File.read(outcome.markdown_path), "[[threads/thread-1|thread thread-1]]"
+    end
+  end
+
+  it "defers concept index writes until run finalization when requested" do
+    Dir.mktmpdir do |vault|
+      config = config_for(vault)
+      store = Xbookmark::State::Store.new(":memory:")
+      orch = stub(enrich: enrichment)
+      orch.stubs(:existing_slugs=)
+      orch.stubs(:concept_registry=)
+      pipeline = described_class.new(
+        config: config,
+        store: store,
+        orchestrator: orch,
+        renderer: Xbookmark::Render::BookmarkRenderer.new(vault_path: vault),
+        downloader: stub(download: []),
+        defer_concept_index: true
+      )
+      pipeline.prepare_run!
+
+      outcome = pipeline.process(bookmark)
+
+      assert_equal :done, outcome.status
+      refute File.exist?(File.join(vault, "concepts", "index.md"))
+      pipeline.finalize_run!
+      assert File.exist?(File.join(vault, "concepts", "index.md"))
+    end
+  end
+
+  it "graduates recurring compound concepts using per-run recurrence counts" do
+    Dir.mktmpdir do |vault|
+      config = config_for(vault)
+      store = Xbookmark::State::Store.new(":memory:")
+      orch = Class.new do
+        attr_writer :existing_slugs, :concept_registry
+
+        def enrich(_bookmark, transcripts:, image_paths:)
+          Xbookmark::Enrich::EnrichmentResult.new(
+            summary: "summary",
+            tags: ["tag"],
+            concepts: [{ "label" => "venezuelan-economy", "kind" => "subtopic" }],
+            links: [],
+            image_captions: {},
+            image_ocr: {},
+            partial: false,
+            link_blobs: []
+          )
+        end
+      end.new
+      pipeline = described_class.new(
+        config: config,
+        store: store,
+        orchestrator: orch,
+        renderer: Xbookmark::Render::BookmarkRenderer.new(vault_path: vault),
+        downloader: stub(download: []),
+        defer_concept_index: true
+      )
+      pipeline.prepare_run!
+
+      3.times do |i|
+        pipeline.process(bookmark_with(id: "100#{i}", text: "venezuela economy #{i}"))
+      end
+
+      assert File.exist?(File.join(vault, "concepts", "venezuela-economy.md"))
+      assert_includes File.read(File.join(vault, "concepts", "venezuela-economy.md")), "broader:"
+    end
+  end
+
+  it "counts existing registry evidence and plain string candidates for recurrence" do
+    Dir.mktmpdir do |vault|
+      pipeline = described_class.new(
+        config: config_for(vault),
+        store: Xbookmark::State::Store.new(":memory:"),
+        orchestrator: stub,
+        renderer: Xbookmark::Render::BookmarkRenderer.new(vault_path: vault),
+        downloader: stub(download: [])
+      )
+      registry = Xbookmark::Taxonomy::Registry.new([
+        Xbookmark::Taxonomy::Concept.new(slug: "existing", evidence_count: 2)
+      ])
+
+      counts = pipeline.send(:recurrence_counts_for, ["plain-topic"], registry: registry)
+
+      assert_equal 2, counts["existing"]
+      assert_equal 1, counts["plain-topic"]
     end
   end
 

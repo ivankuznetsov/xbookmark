@@ -14,3 +14,4 @@ spec/tmp/
 .rspec_status
 .qmd/
 /.llm-wiki/qmd-cache/
+.worktrees

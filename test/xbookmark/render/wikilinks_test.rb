@@ -21,6 +21,11 @@ describe Xbookmark::Render::Wikilinks do
     assert_equal "bob_smith", described_class.author_slug("Bob_Smith")
   end
 
+  it "keeps legacy topic and entity slug helpers pointed at the canonical slugger" do
+    assert_equal "ai-agents", described_class.topic_slug("AI agents")
+    assert_equal "openai", described_class.entity_slug("OpenAI")
+  end
+
   it "renders wikilinks with optional label" do
     assert_equal "[[topics/llm-agents|LLM agents]]",
                  described_class.link("topics/llm-agents", "LLM agents")
@@ -30,5 +35,11 @@ describe Xbookmark::Render::Wikilinks do
   it "creates deterministic slugs for external URLs" do
     assert_equal "example-com-some-path-q-1", described_class.link_slug("https://example.com/Some Path?q=1")
     assert_equal "example-com", described_class.link_slug("http://example.com")
+  end
+
+  it "strips wikilink metacharacters from targets and labels so links never corrupt" do
+    assert_equal "[[threads/ab|lab el with stuff]]",
+                 described_class.link("threads/a]]b", "lab|el]] with stuff")
+    assert_equal "[[concepts/x|a b c]]", described_class.link("concepts/x", "a\nb\tc")
   end
 end

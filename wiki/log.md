@@ -259,3 +259,24 @@ Append-only log of meaningful wiki updates.
 **Pages updated:** CHANGELOG.md, lib/xbookmark/version.rb, Gemfile.lock, wiki/log.md
 **Decision:** Use a patch release because the installable changes improve daemon reliability and bookmark-enrichment recovery without changing the data model.
 **Source:** Code review findings on branch `fix/sync-enrichment-resilience`, `lib/xbookmark/version.rb`, `CHANGELOG.md`, and `Gemfile.lock`.
+
+## [2026-06-15T12:00:00Z] graph taxonomy reshape
+
+**Action:** Implemented readable bookmark source-note filenames, canonical concept pages, concept candidate enrichment, offline taxonomy audit/rebuild, graph-health reports, and scheduler-local taxonomy maintenance.
+**Pages updated:** README.md, CHANGELOG.md, wiki/architecture.md, wiki/data-model.md, wiki/commands.md, wiki/decisions.md, wiki/dependencies.md, wiki/active-areas.md, wiki/log.md
+**Decision:** Use concept pages plus broader wikilinks as the Obsidian graph hierarchy, keep nested tags as facets, suppress singleton thread pages, and keep taxonomy cleanup independent of live X API access.
+**Source:** `lib/xbookmark/taxonomy/*`, `lib/xbookmark/render/bookmark_renderer.rb`, `lib/xbookmark/enrich/orchestrator.rb`, `lib/xbookmark/sync/pipeline.rb`, `lib/xbookmark/sync/runner.rb`, `lib/xbookmark/qmd/registrar.rb`, and related tests.
+
+## [2026-06-15T16:49:06Z] command and API surface refresh
+
+**Action:** Refreshed command/API wiki coverage after inspecting the taxonomy branch diff and CLI/QMD/taxonomy handlers.
+**Pages updated:** wiki/index.md, wiki/architecture.md, wiki/active-areas.md, wiki/commands.md, wiki/api.md, wiki/gaps.md, wiki/log.md
+**Decision:** Document `doctor --fix`, correct QMD registration to the bookmark wiki root, record taxonomy/sync reindex behavior, and align coverage wording with the current Minitest suite. No `qmd update` or `qmd embed` was run during this refresh.
+**Source:** `origin/main..origin/feat/wiki-graph-taxonomy` at `c83d53c`, `bin/xbookmark`, `lib/xbookmark/cli.rb`, `lib/xbookmark/cli/doctor.rb`, `lib/xbookmark/cli/taxonomy.rb`, `lib/xbookmark/qmd/registrar.rb`, `lib/xbookmark/taxonomy/rebuilder.rb`, `README.md`, and `test/readme_contract_test.rb`.
+
+## [2026-06-15T17:31:57Z] taxonomy maintenance review fixes
+
+**Action:** Hardened taxonomy maintenance after PR review by making rebuilds forward-only, migrating real numeric thread pages, preserving enrichment aliases/parents, using run-level registry/thread caches, wiring scheduled curator maintenance, and allowing offline taxonomy config without X credentials.
+**Pages updated:** README.md, wiki/architecture.md, wiki/commands.md, wiki/data-model.md, wiki/decisions.md, wiki/log.md
+**Decision:** Snapshots are manual recovery/audit evidence rather than automatic rollback; local cleanup, curator fallback, QMD maintenance, and cached enrichment should keep running when live X or Codex is unavailable.
+**Source:** PR #57 code review findings, `lib/xbookmark/taxonomy/rebuilder.rb`, `lib/xbookmark/taxonomy/curator.rb`, `lib/xbookmark/sync/pipeline.rb`, `lib/xbookmark/sync/runner.rb`, `lib/xbookmark/config.rb`, `lib/xbookmark/state/store.rb`, and related tests.
