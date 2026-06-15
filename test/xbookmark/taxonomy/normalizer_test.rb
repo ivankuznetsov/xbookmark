@@ -141,4 +141,18 @@ describe Xbookmark::Taxonomy::Curator do
     assert_equal "brand-new-concept", @decisions.first["slug"]
     assert_equal "blocked_conflicts", store.concepts.first[:curator_outcome]
   end
+
+  it "rolls back the whole batch when a persist fails partway through" do
+    store = Xbookmark::State::Store.new(":memory:")
+    store.stubs(:record_curator_decision).raises("db down")
+
+    assert_raises(RuntimeError) { described_class.new(store: store).curate(["brand-new-concept"]) }
+    assert_empty store.concepts
+  end
+
+  it "returns decisions without persisting when no store is given" do
+    decisions = described_class.new.curate(["brand-new-concept"])
+
+    assert_equal "brand-new-concept", decisions.first["slug"]
+  end
 end

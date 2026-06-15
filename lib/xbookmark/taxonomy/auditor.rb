@@ -11,6 +11,9 @@ module Xbookmark
       # taxonomy debt. Shared with Rebuilder so the audit gate and the apply
       # gate cannot drift apart.
       ACTIONABLE_KEYS = %i[numeric_bookmark_nodes singleton_thread_pages].freeze
+      # Slugs used as synthetic top-level roots during migration; a concept
+      # whose only `broader` is one of these has no real hierarchy.
+      GENERIC_ROOTS = %w[topics entities].freeze
 
       def initialize(vault_path:)
         @vault_path = vault_path
@@ -32,6 +35,8 @@ module Xbookmark
           one_off_compound_topics: compound_topics(files),
           duplicate_alias_clusters: duplicate_alias_clusters(concept_frontmatter),
           orphan_concepts: orphan_concepts(concept_frontmatter),
+          legacy_pages: legacy_pages(files),
+          concepts_with_real_broader: concepts_with_real_broader(concept_frontmatter),
           source_notes: files.count { |path| path.include?("/bookmarks/") },
           concept_pages: concept_frontmatter.size
         }
@@ -68,6 +73,18 @@ module Xbookmark
 
       def orphan_concepts(frontmatter)
         frontmatter.count { |front| Array(front["broader"]).empty? }
+      end
+
+      # Surviving legacy aux pages after a repair should be zero; any remaining
+      # topics/entities page means the migration did not finish.
+      def legacy_pages(files)
+        files.count { |path| path.include?("/topics/") || path.include?("/entities/") }
+      end
+
+      # A concept has "real" hierarchy when it has at least one broader parent
+      # that is not a synthetic generic root.
+      def concepts_with_real_broader(frontmatter)
+        frontmatter.count { |front| (Array(front["broader"]).map(&:to_s) - GENERIC_ROOTS).any? }
       end
 
       def frontmatter(path)

@@ -45,6 +45,8 @@ describe "taxonomy audit and rebuild" do
       assert_equal 1, report.counts[:singleton_thread_pages]
       assert_equal 1, report.counts[:one_off_compound_topics]
       assert_equal 1, report.counts[:duplicate_alias_clusters]
+      assert_equal 1, report.counts[:legacy_pages]
+      assert_equal 1, report.counts[:concepts_with_real_broader]
     end
   end
 
@@ -61,6 +63,25 @@ describe "taxonomy audit and rebuild" do
       assert_equal "proposed_changes", rebuild.state
       assert_equal 1, audit.counts[:one_off_compound_topics]
       assert_equal 1, audit.counts[:duplicate_alias_clusters]
+    end
+  end
+
+  it "prunes old snapshots beyond the retention limit after a successful apply" do
+    Dir.mktmpdir do |vault|
+      store = Xbookmark::State::Store.new(":memory:")
+      snaps = File.join(vault, ".xbookmark", "snapshots")
+      (1..5).each { |i| FileUtils.mkdir_p(File.join(snaps, format("taxonomy-2026010100000%d", i))) }
+      write_note(File.join(vault, "bookmarks", "2026", "01", "01", "123.md"), { "tweet_id" => "123" }, "body")
+
+      report = Xbookmark::Taxonomy::Rebuilder.new(
+        config: config_for(vault), store: store, clock: -> { Time.utc(2026, 6, 1, 2, 3, 4) }
+      ).call(apply: true)
+
+      assert_equal "applied", report.state
+      remaining = Dir.children(snaps).sort
+      assert_equal 3, remaining.size
+      refute_includes remaining, "taxonomy-20260101000001"
+      assert_includes remaining, "taxonomy-20260601020304"
     end
   end
 
@@ -90,9 +111,16 @@ describe "taxonomy audit and rebuild" do
         before: {},
         after: { numeric_bookmark_nodes: 0, singleton_thread_pages: 0, concept_pages: 0, source_notes: 1 }
       ).ready?
+      # Surviving legacy pages must fail the gate even with zero numeric nodes.
+      refute Xbookmark::Taxonomy::GraphHealthReport.new(
+        before: {},
+        after: { numeric_bookmark_nodes: 0, singleton_thread_pages: 0, legacy_pages: 1, concept_pages: 1 }
+      ).ready?
       assert ready.ready?
       path = ready.write(File.join(vault, ".xbookmark", "graph.json"))
-      assert_equal true, JSON.parse(File.read(path))["ready"]
+      parsed = JSON.parse(File.read(path))
+      assert_equal true, parsed["ready"]
+      assert parsed.key?("real_broader_ratio")
     end
   end
 

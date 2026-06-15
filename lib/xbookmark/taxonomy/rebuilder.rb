@@ -24,6 +24,11 @@ module Xbookmark
   module Taxonomy
     class Rebuilder
       SNAPSHOT_DIRS = %w[bookmarks authors concepts threads topics entities].freeze
+      # How many pre-apply snapshots to retain. Each snapshot is a full copy of
+      # the generated wiki dirs, so unbounded retention grows `.xbookmark`
+      # without limit; keep the most recent N (the current apply's is always
+      # kept).
+      SNAPSHOT_RETENTION = 3
 
       def initialize(config:, store:, registrar: nil, clock: -> { Time.now.utc })
         @config = config
@@ -131,6 +136,7 @@ module Xbookmark
         graph_path = File.join(@config.vault_path, ".xbookmark", "taxonomy-#{stamp}.graph-health.json")
         GraphHealthReport.new(before: before, after: after).write(graph_path)
         reindex_qmd(manifest)
+        prune_old_snapshots!(snapshot_path, manifest)
         manifest.write(snapshot_path: snapshot_path, graph_health_path: graph_path)
 
         Report.new(state: "applied", counts: after, manifest_path: manifest.path,
@@ -556,6 +562,18 @@ module Xbookmark
           FileUtils.cp_r(source, File.join(root, dir)) if File.directory?(source)
         end
         root
+      end
+
+      # Keep only the most recent SNAPSHOT_RETENTION snapshots after a
+      # successful apply; the current apply's snapshot is always retained.
+      def prune_old_snapshots!(current_path, manifest)
+        root = File.join(@config.vault_path, ".xbookmark", "snapshots")
+        dirs = Dir.glob(File.join(root, "taxonomy-*")).select { |path| File.directory?(path) }.sort
+        keep = (dirs.last(SNAPSHOT_RETENTION) + [current_path]).uniq
+        (dirs - keep).each do |dir|
+          FileUtils.rm_rf(dir)
+          manifest.add(:prune_snapshot, "path" => relativize(dir))
+        end
       end
 
       def with_lock(&block)
