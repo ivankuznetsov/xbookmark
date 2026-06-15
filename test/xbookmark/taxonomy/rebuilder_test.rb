@@ -48,7 +48,7 @@ describe "taxonomy audit and rebuild" do
     end
   end
 
-  it "reports alias and compound metrics without proposing unsupported rebuild actions" do
+  it "reports alias metrics while proposing supported legacy taxonomy cleanup" do
     Dir.mktmpdir do |vault|
       write_note(File.join(vault, "topics", "venezuela-oil-politics.md"), "kind" => "topic")
       write_note(File.join(vault, "concepts", "a.md"), "aliases" => ["dup"], "broader" => ["root"])
@@ -58,7 +58,7 @@ describe "taxonomy audit and rebuild" do
       rebuild = Xbookmark::Taxonomy::Rebuilder.new(config: config_for(vault), store: Xbookmark::State::Store.new(":memory:")).call
 
       assert_equal "clean", audit.state
-      assert_equal "clean", rebuild.state
+      assert_equal "proposed_changes", rebuild.state
       assert_equal 1, audit.counts[:one_off_compound_topics]
       assert_equal 1, audit.counts[:duplicate_alias_clusters]
     end
@@ -255,7 +255,7 @@ describe "taxonomy audit and rebuild" do
     end
   end
 
-  it "materializes stored concepts even when no file repairs are pending" do
+  it "materializes stored concepts and migrates legacy taxonomy surfaces" do
     Dir.mktmpdir do |vault|
       store = Xbookmark::State::Store.new(":memory:")
       store.upsert_concept(slug: "apple", label: "Apple", kind: "entity", evidence_count: 1, confidence: 0.1)
@@ -276,21 +276,85 @@ describe "taxonomy audit and rebuild" do
 
       assert_equal "applied", report.state
       assert File.exist?(File.join(vault, "concepts", "apple.md"))
-      assert File.exist?(File.join(vault, "concepts", "entities.md"))
-      assert File.exist?(File.join(vault, "concepts", "topics.md"))
+      refute File.exist?(File.join(vault, "concepts", "entities.md"))
+      refute File.exist?(File.join(vault, "concepts", "topics.md"))
       assert File.exist?(File.join(vault, "concepts", "index.md"))
-      assert_includes File.read(File.join(vault, "concepts", "apple.md")), "- [[concepts/entities|Entities]]"
+      refute_includes File.read(File.join(vault, "concepts", "apple.md")), "[[concepts/entities"
       assert_includes File.read(File.join(vault, "concepts", "apple.md")), "## Posts"
       assert_includes File.read(File.join(vault, "concepts", "apple.md")), "[[bookmarks/2026/01/01/post|Apple and Venezuela politics note]]"
-      assert_includes File.read(File.join(vault, "concepts", "venezuela-politics.md")), "- [[concepts/topics|Topics]]"
-      assert_includes File.read(File.join(vault, "topics", "venezuela-politics.md")), "## Posts"
-      assert_includes File.read(File.join(vault, "topics", "venezuela-politics.md")),
-                      "[[bookmarks/2026/01/01/post|Apple and Venezuela politics note]]"
+      refute_includes File.read(File.join(vault, "concepts", "venezuela-politics.md")), "[[concepts/topics"
+      refute File.exist?(File.join(vault, "topics", "venezuela-politics.md"))
+      post = File.read(File.join(vault, "bookmarks", "2026", "01", "01", "post.md"))
+      assert_includes post, "concepts:"
+      assert_includes post, "- apple"
+      assert_includes post, "- venezuela-politics"
+      refute_includes post, "\ntopics:"
+      refute_includes post, "\nentities:"
+      refute_includes post, "[[topics/"
+      refute_includes post, "[[entities/"
       manifest = JSON.parse(File.read(report.manifest_path))
       materialize = manifest["operations"].find { |op| op["type"] == "concept_materialize" }
-      assert_equal 4, materialize["count"]
+      assert_equal 2, materialize["count"]
       assert_equal "concepts/index.md", materialize["index_path"]
-      assert manifest["operations"].any? { |op| op["type"] == "legacy_aux_posts_materialize" }
+      assert manifest["operations"].any? { |op| op["type"] == "legacy_taxonomy_rewrite" }
+      assert manifest["operations"].any? { |op| op["type"] == "prune_legacy_aux" }
+    end
+  end
+
+  it "prunes author self concept duplicates while migrating legacy topic and entity notes" do
+    Dir.mktmpdir do |vault|
+      store = Xbookmark::State::Store.new(":memory:")
+      store.upsert_concept(slug: "immigration", label: "Immigration", kind: "topic", evidence_count: 1,
+                           confidence: 0.9)
+      store.upsert_concept(slug: "geiger-capital", label: "Geiger Capital", kind: "entity", evidence_count: 1,
+                           confidence: 0.9)
+      store.upsert_concept(slug: "curtis-yarvin", label: "Curtis Yarvin", kind: "entity", evidence_count: 1,
+                           confidence: 0.9)
+      store.upsert_page(kind: "topic", slug: "immigration", path: "topics/immigration.md")
+      store.upsert_page(kind: "entity", slug: "geiger-capital", path: "entities/geiger-capital.md")
+      store.upsert_page(kind: "entity", slug: "curtis-yarvin", path: "entities/curtis-yarvin.md")
+      store.upsert_page(kind: "concept", slug: "geiger-capital", path: "concepts/geiger-capital.md")
+      write_note(File.join(vault, "authors", "geiger_capital.md"),
+                 { "kind" => "author", "slug" => "geiger_capital", "label" => "@Geiger_Capital" })
+      write_note(File.join(vault, "concepts", "geiger-capital.md"),
+                 { "kind" => "concept", "slug" => "geiger-capital", "label" => "Geiger Capital" })
+      write_note(File.join(vault, "topics", "immigration.md"),
+                 { "kind" => "topic", "slug" => "immigration", "label" => "Immigration" })
+      write_note(File.join(vault, "entities", "geiger-capital.md"),
+                 { "kind" => "entity", "slug" => "geiger-capital", "label" => "Geiger Capital" })
+      write_note(File.join(vault, "entities", "curtis-yarvin.md"),
+                 { "kind" => "entity", "slug" => "curtis-yarvin", "label" => "Curtis Yarvin" })
+      write_note(File.join(vault, "bookmarks", "2026", "01", "01", "post.md"),
+                 { "tweet_id" => "1", "author" => "Geiger_Capital", "bookmarked_at" => "2026-01-01T00:00:00Z",
+                   "summary" => "Geiger post", "topics" => ["immigration"],
+                   "entities" => ["geiger-capital", "curtis-yarvin"] },
+                 "# Geiger post\n\n## Topics\n\n- [[topics/immigration|immigration]]\n\n## Entities\n\n" \
+                 "- [[entities/geiger-capital|geiger-capital]]\n" \
+                 "- [[entities/curtis-yarvin|curtis-yarvin]]\n\n## Source\n\nhttps://example.com/post")
+
+      report = Xbookmark::Taxonomy::Rebuilder.new(
+        config: config_for(vault), store: store, clock: -> { Time.utc(2026, 1, 2, 3, 4, 5) }
+      ).call(apply: true)
+
+      assert_equal "applied", report.state
+      post = File.read(File.join(vault, "bookmarks", "2026", "01", "01", "post.md"))
+      assert_includes post, "[[concepts/immigration|immigration]]"
+      assert_includes post, "[[concepts/curtis-yarvin|curtis-yarvin]]"
+      assert_operator post.index("## Concepts"), :<, post.index("## Source")
+      refute_includes post, "geiger-capital"
+      refute_includes post, "[[topics/"
+      refute_includes post, "[[entities/"
+      refute File.exist?(File.join(vault, "topics", "immigration.md"))
+      refute File.exist?(File.join(vault, "entities", "geiger-capital.md"))
+      refute File.exist?(File.join(vault, "entities", "curtis-yarvin.md"))
+      refute File.exist?(File.join(vault, "concepts", "geiger-capital.md"))
+      assert File.exist?(File.join(vault, "authors", "geiger_capital.md"))
+      assert File.exist?(File.join(vault, "concepts", "immigration.md"))
+      assert File.exist?(File.join(vault, "concepts", "curtis-yarvin.md"))
+      assert_nil store.find_page("entity", "geiger-capital")
+      assert_nil store.find_page("concept", "geiger-capital")
+      manifest = JSON.parse(File.read(report.manifest_path))
+      assert manifest["operations"].any? { |op| op["type"] == "prune_concept" && op["path"] == "concepts/geiger-capital.md" }
     end
   end
 
@@ -394,6 +458,20 @@ describe "taxonomy audit and rebuild" do
       partial = rebuilder.call(apply: true)
       assert_equal "partial_failure", partial.state
       assert_includes partial.skipped.first, "audit failed"
+    end
+  end
+
+  it "detects legacy taxonomy fields in bookmark notes without legacy page directories" do
+    Dir.mktmpdir do |vault|
+      write_note(File.join(vault, "authors", "alice.md"), { "kind" => "author" }, "# Alice")
+      write_note(File.join(vault, "bookmarks", "2026", "01", "01", "post.md"),
+                 { "tweet_id" => "1", "topics" => ["oil"] },
+                 "# Post")
+      rebuilder = Xbookmark::Taxonomy::Rebuilder.new(
+        config: config_for(vault), store: Xbookmark::State::Store.new(":memory:")
+      )
+
+      assert rebuilder.send(:legacy_taxonomy_surface?)
     end
   end
 

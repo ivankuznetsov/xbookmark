@@ -16,6 +16,16 @@ describe Xbookmark::Render::ConceptPage do
     assert_includes md, "[[concepts/oil|Oil]]"
   end
 
+  it "keeps generic legacy roots in frontmatter without rendering graph links to them" do
+    concept = Xbookmark::Taxonomy::Concept.new(slug: "apple", label: "Apple", broader: %w[entities technology])
+    md = described_class.new(vault_path: "/vault").render(concept)
+
+    assert_includes md, "broader:"
+    assert_includes md, "- entities"
+    refute_includes md, "[[concepts/entities"
+    assert_includes md, "[[concepts/technology|Technology]]"
+  end
+
   it "renders direct and inherited post references from bookmark notes" do
     Dir.mktmpdir do |vault|
       FileUtils.mkdir_p(File.join(vault, "bookmarks", "2026", "01", "01"))
@@ -40,6 +50,15 @@ describe Xbookmark::Render::ConceptPage do
       assert_includes md, "## Posts"
       assert_includes md, "[[bookmarks/2026/01/01/post|Venezuela oil policy update]]"
       assert_includes md, "@alice, 2026-01-01"
+    end
+  end
+
+  it "skips bookmark notes with malformed YAML when collecting post references" do
+    Dir.mktmpdir do |vault|
+      FileUtils.mkdir_p(File.join(vault, "bookmarks"))
+      File.write(File.join(vault, "bookmarks", "bad.md"), "---\n: bad: yaml\n---\n")
+
+      assert_empty described_class.references_by_concept(vault_path: vault)
     end
   end
 

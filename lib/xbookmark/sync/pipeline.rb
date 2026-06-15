@@ -74,6 +74,7 @@ module Xbookmark
         @orch.existing_slugs = registry.all.map(&:slug) if @orch.respond_to?(:existing_slugs=)
         enrichment = @orch.enrich(bookmark, transcripts: transcripts, image_paths: image_paths(media_records))
         enrichment.concepts = normalize_concepts(enrichment.concepts, registry: registry)
+        enrichment.concepts = reject_author_self_concepts(enrichment.concepts, bookmark)
 
         # Move scratch media into the final bookmark wiki location.
         media_records = move_media_into_wiki(bookmark, media_records)
@@ -150,6 +151,11 @@ module Xbookmark
           recurrence_counts: recurrence_counts_for(candidates, registry: registry)
         )
         normalizer.normalize_candidates(candidates)
+      end
+
+      def reject_author_self_concepts(concepts, bookmark)
+        author_slug = Xbookmark::Render::Wikilinks.slug(bookmark.author_handle)
+        Array(concepts).reject { |concept| concept.slug == author_slug }
       end
 
       def ensure_aux_pages(bookmark, enrichment, thread:)

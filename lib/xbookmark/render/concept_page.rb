@@ -9,6 +9,8 @@ require_relative "wikilinks"
 module Xbookmark
   module Render
     class ConceptPage
+      GENERIC_ROOTS = %w[topics entities].freeze
+
       def initialize(vault_path:, store: nil, references: nil)
         @vault_path = vault_path
         @store = store
@@ -41,7 +43,7 @@ module Xbookmark
           "confidence" => concept.confidence,
           "curator_outcome" => concept.outcome
         }
-        broader = concept.broader.map { |slug| "- #{Wikilinks.link("concepts/#{slug}", label_for(slug))}" }
+        broader = graph_broader_slugs(concept).map { |slug| "- #{Wikilinks.link("concepts/#{slug}", label_for(slug))}" }
         posts = post_items(@references[concept.slug])
         body = ["# #{MarkdownSafety.wikilink_label(concept.label)}"]
         body << "## Broader\n\n#{broader.join("\n")}" unless broader.empty?
@@ -102,8 +104,10 @@ module Xbookmark
       end
 
       def self.concept_slugs(front)
+        author = Wikilinks.slug(front["author"])
         (Array(front["concepts"]) + Array(front["topics"]) + Array(front["entities"]))
           .map { |slug| Wikilinks.slug(slug) }
+          .reject { |slug| !author.empty? && slug == author }
           .reject(&:empty?)
           .uniq
       end
@@ -166,6 +170,10 @@ module Xbookmark
           suffix = meta.empty? ? "" : " — #{meta}"
           "- #{Wikilinks.link(reference[:target], reference[:label])}#{suffix}"
         end
+      end
+
+      def graph_broader_slugs(concept)
+        Array(concept.broader).reject { |slug| GENERIC_ROOTS.include?(slug.to_s) }
       end
 
       def label_for(slug)

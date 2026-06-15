@@ -63,7 +63,7 @@ The renderer writes final markdown under:
 
 Bookmark markdown frontmatter includes `xbookmark_schema`, tweet and author fields, timestamps, sanitized tags, canonical concept slugs/labels, facet tags, media records, conversation/thread references, links, summary, and `enrichment_status`.
 
-Concept pages include `kind: concept`, `slug`, `label`, `concept_kind`, `aliases`, `broader`, `tags`, `evidence_count`, `confidence`, and `curator_outcome`. `broader` relationships are also rendered as wikilinks so Obsidian graph edges show hierarchy. Concept, topic, and entity landing pages include a generated `## Posts` section linking to matching bookmark source notes; concept pages inherit post references from narrower child concepts through `broader`.
+Concept pages include `kind: concept`, `slug`, `label`, `concept_kind`, `aliases`, `broader`, `tags`, `evidence_count`, `confidence`, and `curator_outcome`. `broader` relationships are also rendered as wikilinks so Obsidian graph edges show hierarchy, except generic legacy roots such as `topics` and `entities` remain frontmatter-only and are not rendered as graph hubs. Concept pages include a generated `## Posts` section linking to matching bookmark source notes and inherit post references from narrower child concepts through `broader`. Taxonomy rebuild migrates legacy `topics:`/`entities:` source-note frontmatter and `[[topics/...]]`/`[[entities/...]]` wikilinks into canonical `concepts:` and `[[concepts/...]]`, then prunes the old topic/entity landing pages.
 
 ## Transactional Behavior
 
