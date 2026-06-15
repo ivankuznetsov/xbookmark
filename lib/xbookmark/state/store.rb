@@ -228,6 +228,13 @@ module Xbookmark
         row && symbolize_keys(row)
       end
 
+      # Zero every concept's evidence_count. A full offline re-enrichment
+      # regenerates every note's concepts, so counts must start from zero to
+      # avoid double-counting on top of the original run's additive upserts.
+      def reset_concept_evidence!
+        @db.execute("UPDATE concepts SET evidence_count = 0")
+      end
+
       def upsert_concept(slug:, label:, kind:, aliases: [], broader: [], facets: [],
                          evidence_count: 0, confidence: 0.0, curator_outcome: "canonical", time: Time.now.utc)
         params = [

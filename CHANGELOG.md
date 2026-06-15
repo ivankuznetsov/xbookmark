@@ -8,6 +8,7 @@
 - Enrichment now produces a concise `title`; bookmark filenames and graph labels derive from it instead of the full summary.
 - Generate schema-2 frontmatter as queryable Obsidian Properties: typed `created_at`/`bookmarked_at` dates, a single semantic concept `kind`, and a kept `tags` keyword vocabulary (the empty `facets` key is dropped). `taxonomy rebuild --apply` migrates existing notes to schema 2 offline (no re-enrichment) and stops regenerating the synthetic `topics`/`entities` broader roots.
 - Make scheduled taxonomy curation rollback-safe (atomic batch writes), fail the graph-health gate when legacy pages survive a repair, report a real-broader ratio, and retain only the most recent pre-apply snapshots.
+- Add `xbookmark reenrich [--limit N]` for offline re-enrichment of existing notes under the current contract. It reconstructs each note's enrichment inputs (original tweet text, captions, transcripts) from the note itself instead of re-fetching from X, so it works without rate limits and without losing since-deleted tweets, reuses captions rather than paying for a fresh vision pass, rewrites notes in place, is resumable (skips current-schema notes), and resets concept evidence on a fresh full run.
 
 ## 0.2.4 - 2026-06-15
 

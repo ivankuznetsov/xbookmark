@@ -7,7 +7,7 @@ updated: 2026-06-15
 tags: [commands, cli]
 ---
 
-**TLDR**: The README and implementation are aligned around the currently implemented Thor CLI: auth login/status/refresh, backfill, sync, resync, find, taxonomy audit/rebuild, doctor/doctor --fix, install, setup, and uninstall.
+**TLDR**: The README and implementation are aligned around the currently implemented Thor CLI: auth login/status/refresh, backfill, sync, resync, reenrich, find, taxonomy audit/rebuild, doctor/doctor --fix, install, setup, and uninstall.
 
 ## Fresh Setup Contract
 
@@ -34,6 +34,7 @@ Packaged binary installs also support running `xbookmark` with no arguments in a
 - `xbookmark backfill [--limit N]` runs a limited test backfill when `--limit` is present and a full backfill otherwise.
 - `xbookmark sync [--from-scheduler]` runs incremental sync; scheduler invocations can skip if the last completed sync is too recent. Scheduled source-only outages exit successfully, log/report `source blocked`, keep local taxonomy cleanup/QMD maintenance/cached retry work running, and do not stamp `last_sync_finished_at`; manual sync still exits non-zero on source errors.
 - `xbookmark resync TWEET_ID` re-fetches and reprocesses one tweet.
+- `xbookmark reenrich [--limit N]` re-runs the current enrichment contract over notes already in the wiki, offline. `Enrich::NoteSource` reconstructs each note's enrichment inputs (original tweet text, captions, transcripts) from the rendered note instead of re-fetching from X, so it never hits rate limits and never loses since-deleted tweets. It rewrites notes in place via `Pipeline#process_offline` (no media download/transcription, captions reused as the `vision:` context), is resumable (skips notes already at the current schema), and resets concept evidence counts on a fresh full run so the additive concept upserts do not double-count. See [[data-model]] and [[architecture]].
 - `xbookmark find QUERY [--limit N]` searches the QMD `bookmarks` collection and prints numbered text results. `Qmd::Searcher` invokes `qmd query --collection bookmarks --types lex,vec --limit N --json QUERY` and caps parsed results to `N` even if the installed QMD returns extra hits. The collection is rooted at the bookmark wiki root, so source notes, author pages, and concept pages are searchable.
 - `xbookmark taxonomy audit` reports graph-health problems without modifying files. Clean audits exit 0; audits with proposed changes exit 1.
 - `xbookmark taxonomy rebuild [--apply]` performs an offline taxonomy repair workflow. Without `--apply`, it is a dry-run and reports proposed changes. With `--apply`, it snapshots generated wiki directories for manual recovery/audit evidence, writes a manifest and graph-health report under `.xbookmark`, renames numeric source notes, migrates real numeric thread pages to readable `thread-<id>` pages, prunes generated numeric singleton thread pages, materializes concept pages from local state, updates state paths, and reindexes QMD. Rebuilds are forward-only: completed repairs remain in place if a later operation reports `partial_failure`.
