@@ -294,3 +294,10 @@ Append-only log of meaningful wiki updates.
 **Pages updated:** wiki/architecture.md, wiki/log.md
 **Decision:** Scheduled taxonomy curation processes a bounded batch of persisted concepts per maintenance run instead of sending the entire local concept corpus to one Codex call.
 **Source:** Forced `XBOOKMARK_MIN_RUN_INTERVAL_HOURS=0 bin/xbookmark sync --from-scheduler` run, `lib/xbookmark/sync/runner.rb`, and `test/xbookmark/sync/runner_test.rb`.
+
+## [2026-06-15T18:12:00Z] topic-derived thread labels
+
+**Action:** Fixed post-merge local verification gap where real multi-bookmark thread pages still rendered as `thread-<conversation-id>` graph nodes.
+**Pages updated:** wiki/architecture.md, wiki/log.md
+**Decision:** Future thread pages and taxonomy rebuild migrations derive their leading slug and wikilink label from cached local tweet text while retaining the conversation ID suffix for stable mapping; rebuilds repair existing placeholder thread pages without live X access.
+**Source:** Local vault spot-check after PR #59 merge, `lib/xbookmark/sync/thread_index.rb`, `lib/xbookmark/taxonomy/rebuilder.rb`, and related tests.

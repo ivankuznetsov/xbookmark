@@ -7,8 +7,8 @@ require "xbookmark/sync/thread_index"
 require "xbookmark/state/store"
 
 describe Xbookmark::Sync::ThreadIndex do
-  def bookmark(id:, conversation:, author: "alice")
-    OpenStruct.new(tweet_id: id, conversation_id: conversation, author_handle: author)
+  def bookmark(id:, conversation:, author: "alice", text: "Thread starter about practical taxonomy")
+    OpenStruct.new(tweet_id: id, conversation_id: conversation, author_handle: author, text: text)
   end
 
   it "suppresses singleton self-conversations and emits readable thread targets for real threads" do
@@ -19,7 +19,8 @@ describe Xbookmark::Sync::ThreadIndex do
     second = bookmark(id: "2", conversation: "c1")
     thread = described_class.new(bookmarks: [first, second]).thread_for(first)
 
-    assert_equal "threads/thread-c1", thread[:target]
+    assert_equal "threads/thread-thread-starter-about-practical-taxonomy-c1", thread[:target]
+    assert_equal "Thread: Thread starter about practical taxonomy", thread[:label]
     assert described_class.new(bookmarks: [first, second]).real_thread?(second)
 
     # Cross-author replies in the same conversation resolve to one thread page.
@@ -37,7 +38,7 @@ describe Xbookmark::Sync::ThreadIndex do
 
     thread = described_class.new(store: store).thread_for(bookmark(id: "1", conversation: "1", author: nil))
 
-    assert_equal "threads/thread-1", thread[:target]
+    assert_equal "threads/thread-thread-starter-about-practical-taxonomy-1", thread[:target]
   end
 
   it "can add a fetched page before the first bookmark is processed" do
@@ -47,6 +48,6 @@ describe Xbookmark::Sync::ThreadIndex do
 
     index.add_bookmarks([first, second])
 
-    assert_equal "threads/thread-c1", index.thread_for(first)[:target]
+    assert_equal "threads/thread-thread-starter-about-practical-taxonomy-c1", index.thread_for(first)[:target]
   end
 end

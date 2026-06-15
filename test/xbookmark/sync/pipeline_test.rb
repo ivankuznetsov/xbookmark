@@ -175,8 +175,8 @@ describe Xbookmark::Sync::Pipeline do
       outcome = pipeline.process(threaded)
 
       assert_equal :done, outcome.status
-      assert File.exist?(File.join(vault, "threads", "thread-1.md"))
-      assert_includes File.read(outcome.markdown_path), "[[threads/thread-1|thread thread-1]]"
+      assert File.exist?(File.join(vault, "threads", "thread-tweet-text-thread-1.md"))
+      assert_includes File.read(outcome.markdown_path), "[[threads/thread-tweet-text-thread-1|Thread: tweet text]]"
     end
   end
 
