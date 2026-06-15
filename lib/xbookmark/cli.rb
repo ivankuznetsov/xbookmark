@@ -59,6 +59,8 @@ module Xbookmark
 
     desc "reenrich", "Offline re-enrichment of existing notes under the current contract (no X fetch)"
     method_option :limit, type: :numeric, desc: "Re-enrich at most N notes (resumable; omit for all)"
+    method_option :model, type: :string, default: "gpt-5.4-mini",
+                          desc: "Codex model for re-enrichment (a mini model is plenty for this task)"
     def reenrich
       Xbookmark::CLI::Sync.new([], options).reenrich_run
     end

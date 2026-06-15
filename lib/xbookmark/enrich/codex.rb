@@ -25,9 +25,12 @@ module Xbookmark
 
       attr_reader :bin
 
-      def initialize(bin: "codex", runner: nil)
+      # model: optional override for the codex `--model` flag. nil keeps the
+      # model configured in codex's own config.toml.
+      def initialize(bin: "codex", runner: nil, model: nil)
         @bin = bin
         @runner = runner
+        @model = model
       end
 
       # prompt: String. images: Array of paths. json_schema: optional schema
@@ -57,6 +60,7 @@ module Xbookmark
 
       def build_argv(prompt:, images:, extra_argv:)
         argv = [@bin, "exec", "--json"]
+        argv.push("--model", @model) if @model
         Array(images).each { |p| argv.push("--image", p.to_s) }
         argv.concat(extra_argv) if extra_argv && !extra_argv.empty?
         argv.push("--", "-")

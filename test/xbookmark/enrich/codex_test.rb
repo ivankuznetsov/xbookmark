@@ -15,6 +15,18 @@ describe Xbookmark::Enrich::Codex do
     assert_includes fake.calls.first, "--json"
   end
 
+  it "injects the --model flag only when a model override is set" do
+    with_model = FakeCodex.new.push({ "tags" => ["a"] })
+    described_class.new(bin: "codex", runner: with_model, model: "gpt-5.4-mini")
+      .run(prompt: "x", json_schema: { "type" => "object", "required" => %w[tags] })
+    assert_equal %w[--model gpt-5.4-mini], with_model.calls.first.each_cons(2).find { |a, _| a == "--model" }
+
+    without_model = FakeCodex.new.push({ "tags" => ["a"] })
+    described_class.new(bin: "codex", runner: without_model)
+      .run(prompt: "x", json_schema: { "type" => "object", "required" => %w[tags] })
+    refute_includes without_model.calls.first, "--model"
+  end
+
   it "passes prompts over stdin instead of argv" do
     prompt = "x" * 200_000
     fake = FakeCodex.new.push({ "tags" => ["a"] })

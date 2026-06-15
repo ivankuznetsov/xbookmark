@@ -39,9 +39,10 @@ module Xbookmark
         end
       end
 
-      def initialize(config:, store:, pipeline: nil, logger: nil)
+      def initialize(config:, store:, pipeline: nil, logger: nil, model: nil)
         @config = config
         @store = store
+        @model = model
         @pipeline = pipeline || default_pipeline
         @logger = logger || ->(msg) { puts msg }
       end
@@ -131,7 +132,7 @@ module Xbookmark
       end
 
       def default_pipeline
-        codex = Xbookmark::Enrich::Codex.new(bin: @config.codex_bin)
+        codex = Xbookmark::Enrich::Codex.new(bin: @config.codex_bin, model: @model)
         orchestrator = Xbookmark::Enrich::Orchestrator.new(codex: codex, link_fetcher: NullLinkFetcher)
         renderer = Xbookmark::Render::BookmarkRenderer.new(vault_path: @config.vault_path)
         Pipeline.new(config: @config, store: @store, orchestrator: orchestrator, renderer: renderer)
