@@ -23,7 +23,7 @@ The active production-hardening behavior is:
 - `Xbookmark::Qmd::Registrar` tries current `qmd collection list`/`collection add` first and preserves legacy command fallbacks.
 - `Xbookmark::Enrich::Codex` unwraps current `codex exec --json` `item.completed` agent messages.
 - Specs cover the README setup contract, legacy registrar fallback, scheduler linger setup, and current Codex JSON event parsing.
-- `bundle exec rake coverage` runs RSpec under Ruby's built-in `Coverage` API and enforces 100% line coverage for `bin/` and `lib/`.
+- `bundle exec rake coverage` runs Minitest under Ruby's built-in `Coverage` API and enforces 100% line coverage for `bin/` and `lib/`.
 - The earlier `XBOOKMARK_WIKI_PATH` runtime wiki terminology is already on `main`.
 - Production verification and reusable lessons are summarized in [[live-production-learnings]].
 

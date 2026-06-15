@@ -266,3 +266,10 @@ Append-only log of meaningful wiki updates.
 **Pages updated:** README.md, CHANGELOG.md, wiki/architecture.md, wiki/data-model.md, wiki/commands.md, wiki/decisions.md, wiki/dependencies.md, wiki/active-areas.md, wiki/log.md
 **Decision:** Use concept pages plus broader wikilinks as the Obsidian graph hierarchy, keep nested tags as facets, suppress singleton thread pages, and keep taxonomy cleanup independent of live X API access.
 **Source:** `lib/xbookmark/taxonomy/*`, `lib/xbookmark/render/bookmark_renderer.rb`, `lib/xbookmark/enrich/orchestrator.rb`, `lib/xbookmark/sync/pipeline.rb`, `lib/xbookmark/sync/runner.rb`, `lib/xbookmark/qmd/registrar.rb`, and related tests.
+
+## [2026-06-15T16:49:06Z] command and API surface refresh
+
+**Action:** Refreshed command/API wiki coverage after inspecting the taxonomy branch diff and CLI/QMD/taxonomy handlers.
+**Pages updated:** wiki/index.md, wiki/architecture.md, wiki/active-areas.md, wiki/commands.md, wiki/api.md, wiki/gaps.md, wiki/log.md
+**Decision:** Document `doctor --fix`, correct QMD registration to the bookmark wiki root, record taxonomy/sync reindex behavior, and align coverage wording with the current Minitest suite. No `qmd update` or `qmd embed` was run during this refresh.
+**Source:** `origin/main..origin/feat/wiki-graph-taxonomy` at `c83d53c`, `bin/xbookmark`, `lib/xbookmark/cli.rb`, `lib/xbookmark/cli/doctor.rb`, `lib/xbookmark/cli/taxonomy.rb`, `lib/xbookmark/qmd/registrar.rb`, `lib/xbookmark/taxonomy/rebuilder.rb`, `README.md`, and `test/readme_contract_test.rb`.
