@@ -218,6 +218,30 @@ describe "taxonomy audit and rebuild" do
     end
   end
 
+  it "renames placeholder thread pages from local bookmark summaries when payload text is missing" do
+    Dir.mktmpdir do |vault|
+      store = Xbookmark::State::Store.new(":memory:")
+      store.upsert_page(kind: "thread", slug: "thread-123", path: "threads/thread-123.md")
+      write_note(File.join(vault, "bookmarks", "2026", "01", "01", "first.md"),
+                 { "tweet_id" => "201", "thread" => "threads/thread-123",
+                   "summary" => "PostgreSQL read-your-writes consistency" },
+                 "first\n\n## Thread\n\n[[threads/thread-123|thread thread-123]]")
+      write_note(File.join(vault, "threads", "thread-123.md"),
+                 { "kind" => "thread", "slug" => "thread-123", "label" => "thread thread-123" },
+                 "# thread 123\n\n## Summary\n\n(no summary yet)\n\n## References\n\nrefs")
+
+      report = Xbookmark::Taxonomy::Rebuilder.new(
+        config: config_for(vault), store: store, clock: -> { Time.utc(2026, 1, 2, 3, 4, 5) }
+      ).call(apply: true)
+
+      moved_path = File.join(vault, "threads", "thread-postgresql-read-your-writes-consistency-123.md")
+      assert_equal "applied", report.state
+      assert File.exist?(moved_path)
+      assert_includes File.read(File.join(vault, "bookmarks", "2026", "01", "01", "first.md")),
+                      "[[threads/thread-postgresql-read-your-writes-consistency-123|Thread: PostgreSQL read-your-writes consistency]]"
+    end
+  end
+
   it "ignores corrupt cached payloads when classifying numeric thread pages" do
     Dir.mktmpdir do |vault|
       store = Xbookmark::State::Store.new(":memory:")

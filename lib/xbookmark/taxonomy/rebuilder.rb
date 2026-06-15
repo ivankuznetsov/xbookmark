@@ -253,14 +253,41 @@ module Xbookmark
       end
 
       def thread_texts
-        @thread_texts ||= Array(@store.bookmarks).each_with_object({}) do |row, texts|
-          payload = row[:payload_json].to_s.empty? ? nil : JSON.parse(row[:payload_json])
-          data = Array(payload && payload["data"]).first || {}
-          conversation = data["conversation_id"].to_s
-          text = data["text"].to_s
-          texts[conversation] ||= text if !conversation.empty? && !text.strip.empty?
-        rescue JSON::ParserError
-          next
+        @thread_texts ||= begin
+          texts = thread_texts_from_store
+          thread_texts_from_notes(texts)
+          texts
+        end
+      end
+
+      def thread_texts_from_store
+        Array(@store.bookmarks).each_with_object({}) do |row, texts|
+          begin
+            payload = row[:payload_json].to_s.empty? ? nil : JSON.parse(row[:payload_json])
+            data = Array(payload && payload["data"]).first || {}
+            conversation = data["conversation_id"].to_s
+            text = data["text"].to_s
+            texts[conversation] ||= text if !conversation.empty? && !text.strip.empty?
+          rescue JSON::ParserError
+            next
+          end
+        end
+      end
+
+      def thread_texts_from_notes(texts)
+        @safety.allowed_markdown_files.each do |path|
+          next if path.include?("/threads/")
+
+          front, body = parse_note(path)
+          next unless front
+
+          text = front["summary"].to_s
+          text = body.to_s.lines.find { |line| line.start_with?("# ") }.to_s.delete_prefix("# ").strip if text.strip.empty?
+          next if text.strip.empty?
+
+          File.read(path).scan(%r{threads/thread-(\d+)}).flatten.each do |conversation|
+            texts[conversation] ||= text
+          end
         end
       end
 

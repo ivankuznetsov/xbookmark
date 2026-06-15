@@ -299,5 +299,5 @@ Append-only log of meaningful wiki updates.
 
 **Action:** Fixed post-merge local verification gap where real multi-bookmark thread pages still rendered as `thread-<conversation-id>` graph nodes.
 **Pages updated:** wiki/architecture.md, wiki/log.md
-**Decision:** Future thread pages and taxonomy rebuild migrations derive their leading slug and wikilink label from cached local tweet text while retaining the conversation ID suffix for stable mapping; rebuilds repair existing placeholder thread pages without live X access.
+**Decision:** Future thread pages and taxonomy rebuild migrations derive their leading slug and wikilink label from cached local tweet text, falling back to rendered bookmark summaries, while retaining the conversation ID suffix for stable mapping; rebuilds repair existing placeholder thread pages without live X access.
 **Source:** Local vault spot-check after PR #59 merge, `lib/xbookmark/sync/thread_index.rb`, `lib/xbookmark/taxonomy/rebuilder.rb`, and related tests.
