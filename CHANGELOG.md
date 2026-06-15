@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.3 - 2026-06-15
+
+- Report OAuth login callback timeouts and auth failures without a Ruby stack trace.
+
 ## 0.2.2 - 2026-06-15
 
 - Report expired saved X OAuth access tokens from `auth status` with the exact expiry timestamp and next recovery command.
