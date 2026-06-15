@@ -190,6 +190,31 @@ describe "taxonomy audit and rebuild" do
     end
   end
 
+  it "materializes stored concepts even when no file repairs are pending" do
+    Dir.mktmpdir do |vault|
+      store = Xbookmark::State::Store.new(":memory:")
+      store.upsert_concept(slug: "apple", label: "Apple", kind: "entity", evidence_count: 1, confidence: 0.1)
+      store.upsert_concept(slug: "venezuela-politics", label: "Venezuela Politics", kind: "topic",
+                           evidence_count: 1, confidence: 0.1)
+
+      report = Xbookmark::Taxonomy::Rebuilder.new(
+        config: config_for(vault), store: store, clock: -> { Time.utc(2026, 1, 2, 3, 4, 5) }
+      ).call(apply: true)
+
+      assert_equal "applied", report.state
+      assert File.exist?(File.join(vault, "concepts", "apple.md"))
+      assert File.exist?(File.join(vault, "concepts", "entities.md"))
+      assert File.exist?(File.join(vault, "concepts", "topics.md"))
+      assert File.exist?(File.join(vault, "concepts", "index.md"))
+      assert_includes File.read(File.join(vault, "concepts", "apple.md")), "- [[concepts/entities|Entities]]"
+      assert_includes File.read(File.join(vault, "concepts", "venezuela-politics.md")), "- [[concepts/topics|Topics]]"
+      manifest = JSON.parse(File.read(report.manifest_path))
+      materialize = manifest["operations"].find { |op| op["type"] == "concept_materialize" }
+      assert_equal 4, materialize["count"]
+      assert_equal "concepts/index.md", materialize["index_path"]
+    end
+  end
+
   it "records a failed qmd reindex without aborting the apply" do
     Dir.mktmpdir do |vault|
       store = Xbookmark::State::Store.new(":memory:")
