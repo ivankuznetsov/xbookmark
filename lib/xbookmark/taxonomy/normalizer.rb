@@ -81,10 +81,10 @@ module Xbookmark
         root, child = split_parent_child(slug)
         explicit_broader = Array(broader).map { |parent| canonical_slug(parent) }.reject(&:empty?)
         broader = if explicit_broader.empty? && root && child
-                    [root, FACET_PARENTS[child] || child]
-                  else
-                    explicit_broader
-                  end
+          [root, FACET_PARENTS[child] || child]
+        else
+          explicit_broader
+        end
         facets = facets_for(slug, root, child)
         Concept.new(slug: slug, label: label_for(slug), kind: kind, aliases: aliases, broader: broader, facets: facets,
                     evidence_count: recurrence_for(slug))
