@@ -149,6 +149,48 @@ describe Xbookmark::Sync::Pipeline do
     end
   end
 
+  it "does not create a concept page for the bookmark author handle" do
+    Dir.mktmpdir do |vault|
+      config = config_for(vault)
+      store = Xbookmark::State::Store.new(":memory:")
+      result = Xbookmark::Enrich::EnrichmentResult.new(
+        summary: "geiger summary",
+        tags: ["markets"],
+        concepts: [{ "label" => "Geiger Capital", "kind" => "entity" }, { "label" => "oil", "kind" => "topic" }],
+        links: [],
+        image_captions: {},
+        image_ocr: {},
+        partial: false,
+        link_blobs: []
+      )
+      orch = stub(enrich: result)
+      orch.stubs(:existing_slugs=)
+      orch.stubs(:concept_registry=)
+      source = bookmark
+      source.author_handle = "Geiger_Capital"
+      source.author_name = "Geiger Capital"
+      pipeline = described_class.new(
+        config: config,
+        store: store,
+        orchestrator: orch,
+        renderer: Xbookmark::Render::BookmarkRenderer.new(vault_path: vault),
+        downloader: stub(download: [])
+      )
+
+      outcome = pipeline.process(source)
+
+      assert_equal :done, outcome.status
+      markdown = File.read(outcome.markdown_path)
+      assert_includes markdown, "[[authors/geiger_capital|@Geiger_Capital]]"
+      assert_includes markdown, "[[concepts/oil|Oil]]"
+      refute_includes markdown, "concepts/geiger-capital"
+      assert File.exist?(File.join(vault, "authors", "geiger_capital.md"))
+      assert File.exist?(File.join(vault, "concepts", "oil.md"))
+      refute File.exist?(File.join(vault, "concepts", "geiger-capital.md"))
+      assert_nil store.find_concept("geiger-capital")
+    end
+  end
+
   it "writes a readable thread page when local state proves a real thread" do
     Dir.mktmpdir do |vault|
       config = config_for(vault)

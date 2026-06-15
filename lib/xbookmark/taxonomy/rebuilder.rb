@@ -54,7 +54,8 @@ module Xbookmark
       end
 
       def needs_rebuild?(counts)
-        actionable?(counts) || missing_concept_pages? || placeholder_thread_pages? || missing_post_lists?
+        actionable?(counts) || missing_concept_pages? || placeholder_thread_pages? ||
+          missing_post_lists? || legacy_taxonomy_surface? || stale_concept_pages?
       end
 
       def actionable?(counts)
@@ -62,11 +63,11 @@ module Xbookmark
       end
 
       def missing_concept_pages?
-        concepts = Array(@store.concepts)
+        concepts = concept_pages_from_store
         return false if concepts.empty?
 
-        concepts.any? do |row|
-          !File.exist?(File.join(@config.vault_path, "concepts", "#{row[:slug]}.md"))
+        concepts.any? do |concept|
+          !File.exist?(File.join(@config.vault_path, "concepts", "#{concept.slug}.md"))
         end
       end
 
@@ -87,6 +88,21 @@ module Xbookmark
         end
       end
 
+      def legacy_taxonomy_surface?
+        Dir.glob(File.join(@config.vault_path, "{topics,entities}", "*.md")).any? ||
+          @safety.allowed_markdown_files.any? do |path|
+            next false unless path.include?("/bookmarks/")
+
+            content = File.read(path)
+            content.include?("\ntopics:") || content.include?("\nentities:") ||
+              content.include?("[[topics/") || content.include?("[[entities/")
+          end
+      end
+
+      def stale_concept_pages?
+        stale_concept_paths.any?
+      end
+
       def apply_changes(before)
         stamp = @clock.call.strftime("%Y%m%d%H%M%S")
         snapshot_path = snapshot!(stamp)
@@ -103,11 +119,13 @@ module Xbookmark
         thread_moves = move_numeric_threads(manifest, real_thread_ids)
         thread_moves.concat(rename_placeholder_threads(manifest))
         rewrite_thread_links(manifest, singleton_thread_ids, thread_moves)
+        rewrite_legacy_taxonomy_links(manifest)
+        clear_reference_caches!
         prune_numeric_threads(manifest, singleton_thread_ids)
 
         commit_state!(path_updates, singleton_thread_ids, thread_moves)
         materialize_concepts(manifest)
-        materialize_legacy_aux_posts(manifest)
+        prune_legacy_aux_pages(manifest)
 
         after = Auditor.new(vault_path: @config.vault_path).metrics
         graph_path = File.join(@config.vault_path, ".xbookmark", "taxonomy-#{stamp}.graph-health.json")
@@ -378,56 +396,120 @@ module Xbookmark
 
       def materialize_concepts(manifest)
         concepts = concept_pages_from_store
-        return if concepts.empty?
-
-        page = Xbookmark::Render::ConceptPage.new(vault_path: @config.vault_path, store: @store,
-                                                  references: post_references_by_slug)
-        concepts.each { |concept| page.ensure!(concept) }
-        conflicts = concepts.count { |concept| !concept.canonical? }
-        index_path = Xbookmark::Render::ConceptIndex.new(vault_path: @config.vault_path).write(concepts, conflicts: conflicts)
-        manifest.add(:concept_materialize, "count" => concepts.size, "index_path" => relativize(index_path))
+        unless concepts.empty?
+          page = Xbookmark::Render::ConceptPage.new(vault_path: @config.vault_path, store: @store,
+                                                    references: post_references_by_slug)
+          concepts.each { |concept| page.ensure!(concept) }
+          conflicts = concepts.count { |concept| !concept.canonical? }
+          index_path = Xbookmark::Render::ConceptIndex.new(vault_path: @config.vault_path).write(concepts, conflicts: conflicts)
+          manifest.add(:concept_materialize, "count" => concepts.size, "index_path" => relativize(index_path))
+        end
+        prune_stale_concept_pages(manifest)
       end
 
       def concept_pages_from_store
         @concept_pages_from_store ||= begin
-          concepts = Array(@store.concepts).map { |row| materialized_concept(Registry.concept_from_row(row)) }
-          roots = concepts.filter_map { |concept| legacy_root_concept(concept.broader.first) if legacy_root?(concept) }
-          (roots + concepts).uniq(&:slug).sort_by(&:slug)
+          all_concepts_from_store.select { |concept| concept_referenced?(concept) }.sort_by(&:slug)
         end
       end
 
-      def materialize_legacy_aux_posts(manifest)
-        count = 0
-        count += materialize_legacy_aux_dir(kind: "topic", klass: Xbookmark::Render::TopicPage, dir: "topics")
-        count += materialize_legacy_aux_dir(kind: "entity", klass: Xbookmark::Render::EntityPage, dir: "entities")
-        manifest.add(:legacy_aux_posts_materialize, "count" => count) if count.positive?
+      def all_concepts_from_store
+        @all_concepts_from_store ||= Array(@store.concepts).map { |row| materialized_concept(Registry.concept_from_row(row)) }.uniq(&:slug)
       end
 
-      def materialize_legacy_aux_dir(kind:, klass:, dir:)
-        page = klass.new(vault_path: @config.vault_path, store: @store, references: legacy_post_references_by_slug)
-        Dir.glob(File.join(@config.vault_path, dir, "*.md")).sum do |path|
-          front, = parse_note(path)
-          next 0 unless front
+      def concept_referenced?(concept)
+        Array(post_references_by_slug[concept.slug]).any?
+      end
 
-          slug = (front["slug"] || File.basename(path, ".md")).to_s
-          next 0 if Array(legacy_post_references_by_slug[slug]).empty?
+      def rewrite_legacy_taxonomy_links(manifest)
+        count = 0
+        Dir.glob(File.join(@config.vault_path, "bookmarks", "**", "*.md")).sort.each do |path|
+          front, body = parse_note(path)
+          next unless front
 
-          label = (front["label"] || slug).to_s
-          page.ensure!(slug: slug, label: label, inputs: [])
-          @store.upsert_page(kind: kind, slug: slug, path: relativize(path)) if @store
-          1
+          concepts = source_note_concepts(front)
+          rewritten_body = rewrite_legacy_concept_sections(body, concepts)
+          rewritten_front = rewrite_legacy_concept_frontmatter(front, concepts)
+          next if rewritten_front == front && rewritten_body == body
+
+          File.write(path, "---\n#{rewritten_front.to_yaml(line_width: -1).sub(/^---\n?/, "")}---\n\n#{rewritten_body.to_s.sub(/\A\n+/, "")}")
+          count += 1
+        end
+        manifest.add(:legacy_taxonomy_rewrite, "count" => count) if count.positive?
+      end
+
+      def source_note_concepts(front)
+        author = Xbookmark::Render::Wikilinks.slug(front["author"])
+        (Array(front["concepts"]) + Array(front["topics"]) + Array(front["entities"]))
+          .map { |slug| Xbookmark::Render::Wikilinks.slug(slug) }
+          .reject(&:empty?)
+          .reject { |slug| !author.empty? && slug == author }
+          .uniq
+      end
+
+      def rewrite_legacy_concept_frontmatter(front, concepts)
+        rewritten = front.dup
+        rewritten.delete("concepts")
+        rewritten.delete("topics")
+        rewritten.delete("entities")
+        rewritten["concepts"] = concepts unless concepts.empty?
+        rewritten
+      end
+
+      def rewrite_legacy_concept_sections(body, concepts)
+        text = body.to_s
+          .gsub(/\n\n## Topics\n\n.*?(?=\n\n## |\z)/m, "")
+          .gsub(/\n\n## Entities\n\n.*?(?=\n\n## |\z)/m, "")
+        section = concepts_section(concepts)
+        text = text.gsub(/\n\n## Concepts\n\n.*?(?=\n\n## |\z)/m, "")
+        return text if section.empty?
+
+        insert_before_next_section(text, section)
+      end
+
+      def concepts_section(concepts)
+        return "" if concepts.empty?
+
+        items = concepts.map { |slug| "- #{Xbookmark::Render::Wikilinks.link("concepts/#{slug}", slug)}" }
+        "## Concepts\n\n#{items.join("\n")}"
+      end
+
+      def insert_before_next_section(body, section)
+        index = body.index(/\n\n## /, 1)
+        return "#{body.rstrip}\n\n#{section}\n" unless index
+
+        "#{body[0...index].rstrip}\n\n#{section}#{body[index..]}"
+      end
+
+      def prune_legacy_aux_pages(manifest)
+        count = 0
+        %w[topics entities].each do |dir|
+          Dir.glob(File.join(@config.vault_path, dir, "*.md")).sort.each do |path|
+            FileUtils.rm_f(path)
+            count += 1
+            manifest.add(:prune_legacy_aux, "path" => relativize(path))
+          end
+          FileUtils.rmdir(File.join(@config.vault_path, dir)) rescue nil
+        end
+        %w[topic entity].each do |kind|
+          Array(@store.pages(kind)).each { |row| @store.delete_page!(kind: kind, slug: row[:slug]) }
+        end
+        count
+      end
+
+      def prune_stale_concept_pages(manifest)
+        stale_concept_paths.each do |path|
+          FileUtils.rm_f(path)
+          @store.delete_page!(kind: "concept", slug: File.basename(path, ".md")) if @store
+          manifest.add(:prune_concept, "path" => relativize(path), "reason" => "no_source_references")
         end
       end
 
       def post_references_by_slug
         @post_references_by_slug ||= Xbookmark::Render::ConceptPage.references_by_concept(
           vault_path: @config.vault_path,
-          concepts: concept_pages_from_store
+          concepts: all_concepts_from_store
         )
-      end
-
-      def legacy_post_references_by_slug
-        @legacy_post_references_by_slug ||= Xbookmark::Render::ConceptPage.references_by_concept(vault_path: @config.vault_path)
       end
 
       def post_list_paths_for(slug)
@@ -436,6 +518,18 @@ module Xbookmark
           File.join(@config.vault_path, "topics", "#{slug}.md"),
           File.join(@config.vault_path, "entities", "#{slug}.md")
         ]
+      end
+
+      def stale_concept_paths
+        desired = concept_pages_from_store.map(&:slug).to_set
+        Dir.glob(File.join(@config.vault_path, "concepts", "*.md")).reject do |path|
+          File.basename(path) == "index.md" || desired.include?(File.basename(path, ".md"))
+        end
+      end
+
+      def clear_reference_caches!
+        @post_references_by_slug = nil
+        @concept_pages_from_store = nil
       end
 
       def materialized_concept(concept)
@@ -452,14 +546,6 @@ module Xbookmark
         when "topic" then "topics"
         when "entity" then "entities"
         end
-      end
-
-      def legacy_root?(concept)
-        %w[topics entities].include?(concept.broader.first)
-      end
-
-      def legacy_root_concept(slug)
-        Concept.new(slug: slug, label: slug.capitalize, kind: "category", evidence_count: 0, confidence: 1.0)
       end
 
       def snapshot!(stamp)

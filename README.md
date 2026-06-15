@@ -200,7 +200,7 @@ Set `WHISPER_BACKEND` to either `whisper.cpp` (default, fast on CPU, one-time C+
 
 ### Aux page summaries
 
-Every enriched bookmark links to author and concept landing pages so Obsidian's graph works during large backfills. Concept/topic/entity landing pages also include a `## Posts` section with direct links to matching source notes, so browsing does not depend on Obsidian's backlinks panel. Real thread pages are written only when local state shows a multi-bookmark conversation. Author landing pages are lightweight placeholders by default to keep the main bookmark pipeline fast. Set `XBOOKMARK_AUX_SUMMARIES=true` if you also want xbookmark to ask Codex for separate author summaries during sync.
+Every enriched bookmark links to author and canonical concept landing pages so Obsidian's graph works during large backfills. Concept pages include a `## Posts` section with direct links to matching source notes, so browsing does not depend on Obsidian's backlinks panel. Taxonomy rebuilds migrate legacy `topics/` and `entities/` links into `concepts/`, prune the old landing pages, and suppress author-handle concepts that would duplicate the author page. Real thread pages are written only when local state shows a multi-bookmark conversation. Author landing pages are lightweight placeholders by default to keep the main bookmark pipeline fast. Set `XBOOKMARK_AUX_SUMMARIES=true` if you also want xbookmark to ask Codex for separate author summaries during sync.
 
 ### Bookmark wiki path
 
@@ -363,7 +363,7 @@ X API v2 -> Ingest -> Enrich -> Bookmark wiki -> QMD index
 
 To open the bookmark wiki in Obsidian, choose "Open folder as vault" from the Obsidian launcher and pick the directory you configured as `XBOOKMARK_WIKI_PATH`. Bookmarks land under `bookmarks/YYYY/MM/DD/<readable-slug>-<tweet_id>.md`, partitioned by `bookmarked_at`.
 
-The graph view picks up wikilinks between source notes, authors, concepts, and real threads. Concepts live under `concepts/`; broad concepts such as `venezuela` can link to child concepts such as `venezuela-oil` and `venezuela-politics`. Concept pages include `## Posts`, inheriting posts from child concepts, so opening `venezuela` shows source notes tagged with narrower concepts like `venezuela-politics`. Legacy `topics/` and `entities/` landing pages are also refreshed with `## Posts` while old notes still reference them. Nested tags such as `area/venezuela` and `facet/politics` are filter facets, not the primary hierarchy.
+The graph view picks up wikilinks between source notes, authors, concepts, and real threads. Concepts live under `concepts/`; broad concepts such as `venezuela` can link to child concepts such as `venezuela-oil` and `venezuela-politics`. Concept pages include `## Posts`, inheriting posts from child concepts, so opening `venezuela` shows source notes tagged with narrower concepts like `venezuela-politics`. Legacy `topics/` and `entities/` links are migrated into canonical concepts and the old landing pages are pruned during taxonomy rebuilds. Nested tags such as `area/venezuela` and `facet/politics` are filter facets, not the primary hierarchy.
 
 Before inspecting a large existing wiki, run `bin/xbookmark taxonomy audit`.
 If it reports `proposed_changes`, run `bin/xbookmark taxonomy rebuild --apply`

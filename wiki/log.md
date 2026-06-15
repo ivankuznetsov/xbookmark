@@ -315,3 +315,10 @@ Append-only log of meaningful wiki updates.
 **Pages updated:** README.md, wiki/architecture.md, wiki/data-model.md, wiki/log.md
 **Decision:** Generated concept pages and legacy topic/entity pages include explicit `## Posts` lists built from local bookmark frontmatter. Concept pages inherit posts from narrower child concepts through `broader`, so broad concepts are useful browsing entry points.
 **Source:** Local vault inspection of legacy `topics/` and `entities/` pages, `lib/xbookmark/render/concept_page.rb`, `lib/xbookmark/render/aux_page.rb`, `lib/xbookmark/taxonomy/rebuilder.rb`, and related tests.
+
+## [2026-06-15T20:07:01Z] legacy taxonomy graph duplicate cleanup
+
+**Action:** Fixed Obsidian graph duplicate labels caused by legacy `topics/` and `entities/` pages coexisting with canonical `concepts/` pages and author pages.
+**Pages updated:** README.md, wiki/architecture.md, wiki/data-model.md, wiki/log.md
+**Decision:** Taxonomy rebuild now rewrites legacy source-note topic/entity frontmatter and wikilinks into canonical concepts, prunes legacy topic/entity landing pages, suppresses author-handle concepts that duplicate author pages, and avoids rendering generic `topics`/`entities` concept roots as graph hubs.
+**Source:** Local Obsidian graph inspection showing repeated `geiger-capital` nodes, `lib/xbookmark/taxonomy/rebuilder.rb`, `lib/xbookmark/render/concept_page.rb`, `lib/xbookmark/sync/pipeline.rb`, and related tests.
