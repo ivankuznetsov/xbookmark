@@ -51,7 +51,7 @@ module Xbookmark
 
       def curate(candidates)
         decisions = llm_decisions(candidates) || deterministic_decisions(candidates)
-        decisions.each { |decision| persist(decision) }
+        persist_decisions(decisions)
         decisions
       end
 
@@ -72,6 +72,20 @@ module Xbookmark
       end
 
       private
+
+      # Persist the whole batch atomically when the store supports a
+      # transaction, so a failure partway through the batch (a bad row, a DB
+      # error) rolls back every concept write from this curation pass rather
+      # than leaving orphan concept/curator_decision rows that diverge from the
+      # generated files. Curation is a pure-DB phase, so a transaction gives
+      # true all-or-nothing semantics here.
+      def persist_decisions(decisions)
+        if @store.respond_to?(:transaction)
+          @store.transaction { decisions.each { |decision| persist(decision) } }
+        else
+          decisions.each { |decision| persist(decision) }
+        end
+      end
 
       def deterministic_decisions(candidates)
         concepts = @normalizer.normalize_candidates(candidates)

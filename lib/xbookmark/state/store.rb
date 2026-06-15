@@ -38,6 +38,13 @@ module Xbookmark
         @db = nil
       end
 
+      # Run a block inside a single SQLite transaction so a failure partway
+      # through rolls every write in the block back as one unit. Used by the
+      # taxonomy curator to make a batch of concept writes all-or-nothing.
+      def transaction(&block)
+        @db.transaction(&block)
+      end
+
       # ---- meta ----
 
       def get_meta(key)

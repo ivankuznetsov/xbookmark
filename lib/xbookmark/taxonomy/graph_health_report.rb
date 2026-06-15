@@ -20,6 +20,7 @@ module Xbookmark
       def ready?
         after.fetch(:numeric_bookmark_nodes, 0).zero? &&
           after.fetch(:singleton_thread_pages, 0).zero? &&
+          after.fetch(:legacy_pages, 0).zero? &&
           orphan_ratio <= ORPHAN_RATIO_LIMIT &&
           source_note_dominance <= SOURCE_DOMINANCE_LIMIT
       end
@@ -29,9 +30,13 @@ module Xbookmark
           "ready" => ready?,
           "before" => stringify(before),
           "after" => stringify(after),
+          # Reported (warn-only) signal for hierarchy quality; not yet a hard
+          # gate because most concepts are still single-source singletons.
+          "real_broader_ratio" => real_broader_ratio,
           "thresholds" => {
             "numeric_bookmark_nodes" => 0,
             "singleton_thread_pages" => 0,
+            "legacy_pages" => 0,
             "orphan_ratio_max" => ORPHAN_RATIO_LIMIT,
             "source_note_dominance_max" => SOURCE_DOMINANCE_LIMIT
           }
@@ -59,6 +64,13 @@ module Xbookmark
         return Float::INFINITY if concepts.zero?
 
         after.fetch(:source_notes, 0).to_f / concepts
+      end
+
+      def real_broader_ratio
+        concepts = after.fetch(:concept_pages, 0).to_f
+        return 0.0 if concepts.zero?
+
+        after.fetch(:concepts_with_real_broader, 0).to_f / concepts
       end
 
       def stringify(hash)

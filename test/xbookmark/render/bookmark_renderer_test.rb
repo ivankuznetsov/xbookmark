@@ -56,10 +56,12 @@ describe Xbookmark::Render::BookmarkRenderer do
     renderer = described_class.new(vault_path: "/vault")
     md = renderer.render(bookmark, enrichment, media_records: media_records, transcripts: transcripts, link_blobs: [])
     front_yaml = md.split("---\n", 3)[1]
-    front = YAML.safe_load(front_yaml)
-    assert_equal 1, front["xbookmark_schema"]
+    front = YAML.safe_load(front_yaml, permitted_classes: [Date, Time])
+    assert_equal 2, front["xbookmark_schema"]
     assert_equal "1001", front["tweet_id"]
     assert_equal ["ozempic", "novo-nordisk"], front["concepts"]
+    assert_equal Date.new(2026, 1, 1), front["created_at"]  # typed date Property
+    refute front.key?("facets")                              # dead facets key dropped
     assert_equal "done", front["enrichment_status"]
     assert_equal "media/1001/photo.jpg", front["media"].first["path"]
     assert_equal ["[[media/1001/photo.jpg]]"], front["media_files"]
@@ -105,7 +107,7 @@ describe Xbookmark::Render::BookmarkRenderer do
     )
     renderer = described_class.new(vault_path: "/vault")
     md = renderer.render(bookmark, partial)
-    front = YAML.safe_load(md.split("---\n", 3)[1])
+    front = YAML.safe_load(md.split("---\n", 3)[1], permitted_classes: [Date, Time])
     assert_equal "partial", front["enrichment_status"]
   end
 

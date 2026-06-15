@@ -37,13 +37,17 @@ module Xbookmark
 
       def human_prefix(bookmark, enrichment = nil)
         author = Wikilinks.author_slug(bookmark.author_handle)
-        source = [summary(enrichment), bookmark.text].find { |value| !value.to_s.strip.empty? }
+        source = [title(enrichment), summary(enrichment), bookmark.text].find { |value| !value.to_s.strip.empty? }
         slug = Wikilinks.slug([author, source].compact.join(" "))
         slug = "bookmark" if RESERVED.include?(slug) || slug.empty?
         truncate_bytes(slug, HUMAN_PREFIX_BYTES)
       end
 
       private
+
+      def title(enrichment)
+        enrichment.respond_to?(:title) ? enrichment.title : nil
+      end
 
       def summary(enrichment)
         enrichment.respond_to?(:summary) ? enrichment.summary : nil

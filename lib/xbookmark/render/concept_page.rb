@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "date"
 require "yaml"
 require_relative "atomic_writer"
 require_relative "bookmark_renderer"
@@ -32,12 +33,13 @@ module Xbookmark
       def render(concept)
         front = {
           "xbookmark_schema" => SCHEMA_VERSION,
-          "kind" => "concept",
+          # Single queryable semantic kind (no separate page-type "concept" +
+          # concept_kind pair); generic-root broader is never written.
+          "kind" => concept.kind,
           "slug" => concept.slug,
           "label" => MarkdownSafety.frontmatter_string(concept.label),
-          "concept_kind" => concept.kind,
           "aliases" => MarkdownSafety.alias_list(concept.aliases),
-          "broader" => concept.broader,
+          "broader" => graph_broader_slugs(concept),
           "tags" => MarkdownSafety.tags(concept.facets),
           "evidence_count" => concept.evidence_count,
           "confidence" => concept.confidence,
@@ -125,7 +127,7 @@ module Xbookmark
         return [{}, raw] unless raw.start_with?("---\n")
 
         _empty, yaml, body = raw.split("---\n", 3)
-        front = YAML.safe_load(yaml, aliases: false)
+        front = YAML.safe_load(yaml, permitted_classes: [Date, Time], aliases: false)
         return [nil, raw] unless front.nil? || front.is_a?(Hash)
 
         [front || {}, body.to_s]

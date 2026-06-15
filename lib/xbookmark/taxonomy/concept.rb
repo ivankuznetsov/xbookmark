@@ -8,6 +8,12 @@ module Xbookmark
     class Concept
       DEFAULT_KIND = "idea"
       DEFAULT_OUTCOME = "canonical"
+      # The single closed kind vocabulary, shared by the enrichment prompt, the
+      # normalizer, and the curator. Any kind outside this set (including the
+      # legacy migration kinds) is coerced to a canonical value so `kind` is a
+      # reliable queryable Property.
+      KINDS = %w[area subtopic entity technology place organization idea].freeze
+      KIND_ALIASES = { "topic" => "idea", "concept" => "idea", "org" => "organization" }.freeze
 
       attr_reader :slug, :label, :kind, :aliases, :broader, :facets, :evidence_count,
                   :confidence, :outcome
@@ -16,7 +22,7 @@ module Xbookmark
                      evidence_count: 1, confidence: nil, outcome: DEFAULT_OUTCOME)
         @slug = Xbookmark::Render::Wikilinks.slug(slug)
         @label = Xbookmark::Render::MarkdownSafety.frontmatter_string(label || titleize(@slug)) || @slug
-        @kind = Xbookmark::Render::MarkdownSafety.frontmatter_string(kind) || DEFAULT_KIND
+        @kind = canonical_kind(kind)
         @aliases = Xbookmark::Render::MarkdownSafety.alias_list(aliases).freeze
         @broader = Array(broader).map { |parent| Xbookmark::Render::Wikilinks.slug(parent) }.reject(&:empty?).uniq.freeze
         @facets = Xbookmark::Render::MarkdownSafety.tags(facets).freeze
@@ -50,6 +56,16 @@ module Xbookmark
 
       def titleize(slug)
         slug.to_s.split("-").map(&:capitalize).join(" ")
+      end
+
+      # Coerce any kind (LLM output, legacy migration value, malformed string)
+      # into the closed KINDS set; legacy/aliased kinds map through KIND_ALIASES.
+      def canonical_kind(kind)
+        cleaned = Xbookmark::Render::MarkdownSafety.frontmatter_string(kind)&.downcase
+        return DEFAULT_KIND if cleaned.nil? || cleaned.empty?
+
+        mapped = KIND_ALIASES.fetch(cleaned, cleaned)
+        KINDS.include?(mapped) ? mapped : DEFAULT_KIND
       end
 
       def confidence_from_evidence(count)

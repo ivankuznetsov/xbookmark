@@ -8,6 +8,11 @@ require_relative "wikilinks"
 module Xbookmark
   module Render
     class ConceptIndex
+      # Cap the root-concept list so the index stays a navigable entry point
+      # rather than an alphabetical dump of every root once generic-root broader
+      # links are stripped. The most-referenced roots are shown first.
+      ROOT_DISPLAY_LIMIT = 200
+
       def initialize(vault_path:)
         @vault_path = vault_path
       end
@@ -19,12 +24,15 @@ module Xbookmark
       end
 
       def render(concepts, conflicts: 0)
-        roots = concepts.select { |concept| concept.broader.empty? }.sort_by(&:slug)
         # "Orphan" means no broader link — the same definition the Auditor and
         # GraphHealthReport use, so the index and the health report agree.
         orphans = concepts.select { |concept| concept.broader.empty? }
+        # Show the most-referenced roots first, capped for navigability.
+        roots = orphans.sort_by { |concept| [-concept.evidence_count, concept.slug] }
+        shown = roots.first(ROOT_DISPLAY_LIMIT)
         lines = ["# Concepts", "", "## Root Concepts"]
-        lines += roots.map { |concept| "- #{Wikilinks.link("concepts/#{concept.slug}", concept.label)}" }
+        lines += shown.map { |concept| "- #{Wikilinks.link("concepts/#{concept.slug}", concept.label)}" }
+        lines << "- _…and #{roots.size - shown.size} more root concepts_" if roots.size > shown.size
         lines << ""
         lines << "## Graph Health"
         lines << ""

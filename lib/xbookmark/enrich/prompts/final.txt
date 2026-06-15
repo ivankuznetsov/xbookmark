@@ -20,6 +20,7 @@ bounded and sanitized:
 
 Return JSON only with this schema:
 {
+  "title": "<concise 3-7 word human title, no trailing punctuation>",
   "summary": "<one or two sentences, optional>",
   "tags": ["<short snake-or-kebab tags>", ...],            // REQUIRED, non-empty
   "concepts": [                                            // REQUIRED, 1-8 reusable concepts

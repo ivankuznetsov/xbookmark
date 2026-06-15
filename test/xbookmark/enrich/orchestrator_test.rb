@@ -46,6 +46,8 @@ describe Xbookmark::Enrich::Orchestrator do
     orch = described_class.new(codex: codex, link_fetcher: link_fetcher)
     result = orch.enrich(bookmark, transcripts: { "video.mp4" => "hello" })
     assert_equal "Talks about ozempic dosing.", result.summary
+    # No title in the payload → defaults to the summary's first clause.
+    assert_equal "Talks about ozempic dosing", result.title
     assert_equal ["health"], result.tags
     assert_equal ["ozempic", "novo-nordisk"], result.concepts.map { |concept| concept["label"] }
     assert_equal({ "video.mp4" => "A short transcript summary." }, result.transcript_summaries)
@@ -56,6 +58,21 @@ describe Xbookmark::Enrich::Orchestrator do
     assert_equal 1, result.link_blobs.size
     assert_equal "https://example.com/a", result.link_blobs.first[:url]
     assert_equal 1, fake.calls.size
+  end
+
+  it "uses the model title when present and sanitizes wikilink metacharacters" do
+    fake = FakeCodex.new
+    fake.push({
+      "title" => "Ozempic dosing]] | guide",
+      "summary" => "Talks about dosing.",
+      "tags" => ["health"],
+      "concepts" => [{ "label" => "ozempic", "kind" => "entity" }]
+    })
+    codex = Xbookmark::Enrich::Codex.new(bin: "codex", runner: fake)
+
+    result = described_class.new(codex: codex, link_fetcher: link_fetcher).enrich(bookmark)
+
+    assert_equal "Ozempic dosing guide", result.title
   end
 
   it "marks result partial when retry still has empty required fields" do
