@@ -287,3 +287,10 @@ Append-only log of meaningful wiki updates.
 **Pages updated:** README.md, wiki/architecture.md, wiki/commands.md, wiki/data-model.md, wiki/log.md
 **Decision:** `taxonomy rebuild --apply` now materializes concept pages and `concepts/index.md` from local concept state even when no path/thread repair is pending; legacy topic/entity imports receive broad `topics`/`entities` parents so the graph has hierarchy.
 **Source:** Local run against `/home/asterio/xbookmark-wiki` after PR #57 merge, `lib/xbookmark/taxonomy/rebuilder.rb`, and `test/xbookmark/taxonomy/rebuilder_test.rb`.
+
+## [2026-06-15T17:52:41Z] bounded scheduled taxonomy curation
+
+**Action:** Fixed forced local scheduler verification hanging in Codex after the legacy wiki exposed 9k persisted concepts.
+**Pages updated:** wiki/architecture.md, wiki/log.md
+**Decision:** Scheduled taxonomy curation processes a bounded batch of persisted concepts per maintenance run instead of sending the entire local concept corpus to one Codex call.
+**Source:** Forced `XBOOKMARK_MIN_RUN_INTERVAL_HOURS=0 bin/xbookmark sync --from-scheduler` run, `lib/xbookmark/sync/runner.rb`, and `test/xbookmark/sync/runner_test.rb`.
