@@ -166,24 +166,14 @@ module Xbookmark
           code_verifier: verifier
         }
 
-        res = token_conn.post(TOKEN_URL) do |req|
-          req.headers["Content-Type"] = "application/x-www-form-urlencoded"
-          if @config.x_client_secret && !@config.x_client_secret.to_s.empty?
-            req.headers["Authorization"] = basic_auth(@config.x_client_id, @config.x_client_secret)
-          end
-          req.body = URI.encode_www_form(body)
-        end
+        res = token_exchange_response(body)
 
         unless res.success?
-          raise AuthError, "Token exchange failed (#{res.status}): #{res.body}"
+          error_class = transient_token_response?(res) ? TransientAuthError : AuthError
+          raise error_class, token_response_error("Token exchange failed", res)
         end
 
-        body = JSON.parse(res.body)
-        if body.is_a?(Hash) && body["error"] && (!body["access_token"] || body["access_token"].to_s.empty?)
-          detail = body["error_description"] || body["error"]
-          raise AuthError, "Token exchange returned error: #{detail}"
-        end
-        body
+        parse_success_token!(res.body, operation: "Token exchange")
       end
 
       def write_tokens!(token, preserve_refresh: false)
@@ -296,7 +286,19 @@ module Xbookmark
         end
       end
 
+      def token_exchange_response(body)
+        post_token_request(body)
+      rescue Faraday::Error => e
+        raise TransientAuthError, "Token exchange transport failed: #{e.message}"
+      end
+
       def refresh_token_response(body)
+        post_token_request(body)
+      rescue Faraday::Error => e
+        raise TransientAuthError, "Token refresh transport failed: #{e.message}"
+      end
+
+      def post_token_request(body)
         token_conn.post(TOKEN_URL) do |req|
           req.headers["Content-Type"] = "application/x-www-form-urlencoded"
           if @config.x_client_secret && !@config.x_client_secret.to_s.empty?
@@ -304,8 +306,6 @@ module Xbookmark
           end
           req.body = URI.encode_www_form(body)
         end
-      rescue Faraday::Error => e
-        raise TransientAuthError, "Token refresh transport failed: #{e.message}"
       end
 
       def resolve_keystore(keystore)

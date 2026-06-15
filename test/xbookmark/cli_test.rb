@@ -160,6 +160,65 @@ describe Xbookmark::CLI do
     assert_includes err, "Tokens written to /tmp/.env"
   end
 
+  it "reports auth login failures without a stack trace" do
+    config = test_config
+    auth = stub
+    auth.stubs(:login).raises(Xbookmark::AuthError, "OAuth callback timed out after 600s")
+    Xbookmark::Config.stubs(:load).returns(config)
+    Xbookmark::X::Auth.expects(:new).with(config).returns(auth)
+
+    old_stderr = $stderr
+    $stderr = StringIO.new
+    error = assert_raises(SystemExit) { Xbookmark::CLI::Auth.start(%w[login]) }
+
+    assert_equal 1, error.status
+    assert_includes $stderr.string, "[xbookmark] OAuth callback timed out after 600s"
+    assert_includes $stderr.string, "Run: xbookmark auth login"
+    refute_includes $stderr.string, "xbookmark/cli/auth.rb"
+  ensure
+    $stderr = old_stderr
+  end
+
+  it "redacts token-like values from auth login failures" do
+    config = test_config
+    auth = stub
+    auth.stubs(:login).raises(
+      Xbookmark::AuthError,
+      'Token exchange failed (400): {"access_token":"ACCESSSECRET12345678901234567890"}'
+    )
+    Xbookmark::Config.stubs(:load).returns(config)
+    Xbookmark::X::Auth.expects(:new).with(config).returns(auth)
+
+    old_stderr = $stderr
+    $stderr = StringIO.new
+    error = assert_raises(SystemExit) { Xbookmark::CLI::Auth.start(%w[login]) }
+
+    assert_equal 1, error.status
+    assert_includes $stderr.string, "[REDACTED]"
+    refute_includes $stderr.string, "ACCESSSECRET"
+  ensure
+    $stderr = old_stderr
+  end
+
+  it "reports transient auth login failures as retryable" do
+    config = test_config
+    auth = stub
+    auth.stubs(:login).raises(Xbookmark::TransientAuthError, "Token exchange transport failed: timeout")
+    Xbookmark::Config.stubs(:load).returns(config)
+    Xbookmark::X::Auth.expects(:new).with(config).returns(auth)
+
+    old_stderr = $stderr
+    $stderr = StringIO.new
+    error = assert_raises(SystemExit) { Xbookmark::CLI::Auth.start(%w[login]) }
+
+    assert_equal 2, error.status
+    assert_includes $stderr.string, "[xbookmark] Token exchange transport failed: timeout"
+    assert_includes $stderr.string, "X token login is temporarily unavailable. Retry auth login later."
+    refute_includes $stderr.string, "Run: xbookmark auth login"
+  ensure
+    $stderr = old_stderr
+  end
+
   it "prints auth status without exiting when a token is present" do
     Xbookmark::Config.stubs(:load).returns(test_config(x_access_token: "token", x_token_expires_at: 2_000_000_000))
     Time.stubs(:now).returns(Time.at(1_000_000_000))

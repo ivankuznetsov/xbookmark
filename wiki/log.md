@@ -231,3 +231,10 @@ Append-only log of meaningful wiki updates.
 **Pages updated:** CHANGELOG.md, lib/xbookmark/version.rb, wiki/log.md
 **Decision:** Use a patch release because the installable change improves daemon/auth recovery diagnostics and token safety over 0.2.1 without changing the bookmark data model.
 **Source:** `lib/xbookmark/version.rb`, `CHANGELOG.md`, and PR #53.
+
+## [2026-06-15T01:24:00Z] auth login timeout diagnostics
+
+**Action:** Caught `AuthError` from `auth login` and normalized token-exchange transport/malformed-response failures so OAuth callback timeouts and login failures print concise recovery guidance instead of a Ruby stack trace.
+**Pages updated:** CHANGELOG.md, lib/xbookmark/version.rb, wiki/log.md
+**Decision:** Prepare xbookmark 0.2.3 because the just-tested OAuth login flow still had user-facing failure output that should be in the installable build.
+**Source:** `lib/xbookmark/cli/auth.rb`, `lib/xbookmark/x/auth.rb`, `test/xbookmark/cli_test.rb`, `test/xbookmark/x/auth_test.rb`, and the timed-out production OAuth login attempt.

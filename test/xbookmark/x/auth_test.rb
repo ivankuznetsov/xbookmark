@@ -243,14 +243,59 @@ describe Xbookmark::X::Auth do
         .to_return(status: 200, body: { error: "invalid_request", error_description: "bad code" }.to_json)
 
       error = assert_raises(Xbookmark::AuthError) { auth.exchange_code_for_token(code: "BAD", verifier: "VERIFIER") }
-      assert_match(/bad code/, error.message)
+      assert_match(/Token exchange returned error: invalid_request: bad code/, error.message)
 
       stub_request(:post, "https://api.twitter.com/2/oauth2/token")
         .to_return(status: 400, body: "bad request")
 
       error = assert_raises(Xbookmark::AuthError) { auth.exchange_code_for_token(code: "DENIED", verifier: "VERIFIER") }
-      assert_match(/Token exchange failed \(400\): bad request/, error.message)
+      assert_match(/Token exchange failed \(400\)/, error.message)
     end
+  end
+
+  it "wraps token exchange transport failures as transient auth errors" do
+    auth = described_class.new(fake_config(env_path: "/tmp/.env"), opener: false, env_path: "/tmp/.env")
+    stub_request(:post, "https://api.twitter.com/2/oauth2/token")
+      .to_raise(Faraday::TimeoutError.new("execution expired"))
+
+    error = assert_raises(Xbookmark::TransientAuthError) { auth.exchange_code_for_token(code: "CODE", verifier: "VERIFIER") }
+    assert_match(/Token exchange transport failed: execution expired/, error.message)
+  end
+
+  it "sanitizes token exchange error bodies" do
+    auth = described_class.new(fake_config(env_path: "/tmp/.env"), opener: false, env_path: "/tmp/.env")
+    body = {
+      error: "invalid_request",
+      error_description: "bad access_token=ACCESSSECRET12345678901234567890"
+    }.to_json
+    stub_request(:post, "https://api.twitter.com/2/oauth2/token")
+      .to_return(status: 400, body: body)
+
+    error = assert_raises(Xbookmark::AuthError) { auth.exchange_code_for_token(code: "BAD", verifier: "VERIFIER") }
+
+    assert_match(/Token exchange failed \(400\): invalid_request: bad access_token=\[REDACTED\]/, error.message)
+    refute_includes error.message, "ACCESSSECRET"
+    refute_includes error.message, body
+  end
+
+  it "rejects malformed token exchange success bodies" do
+    auth = described_class.new(fake_config(env_path: "/tmp/.env"), opener: false, env_path: "/tmp/.env")
+    stub_request(:post, "https://api.twitter.com/2/oauth2/token")
+      .to_return(status: 200, body: "not-json")
+
+    error = assert_raises(Xbookmark::AuthError) { auth.exchange_code_for_token(code: "CODE", verifier: "VERIFIER") }
+
+    assert_match(/Token exchange returned invalid JSON/, error.message)
+  end
+
+  it "rejects token exchange responses without a positive expiry" do
+    auth = described_class.new(fake_config(env_path: "/tmp/.env"), opener: false, env_path: "/tmp/.env")
+    stub_request(:post, "https://api.twitter.com/2/oauth2/token")
+      .to_return(status: 200, body: { access_token: "ACC", refresh_token: "REF" }.to_json)
+
+    error = assert_raises(Xbookmark::AuthError) { auth.exchange_code_for_token(code: "CODE", verifier: "VERIFIER") }
+
+    assert_match(/Token exchange returned invalid expires_in/, error.message)
   end
 
   it "raises AuthError when token endpoint returns non-2xx" do

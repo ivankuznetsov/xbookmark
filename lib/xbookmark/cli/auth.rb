@@ -17,6 +17,14 @@ module Xbookmark
         config = Xbookmark::Config.load(wiki_override: options[:wiki], vault_override: options[:vault], verbose: options[:verbose])
         result = Xbookmark::X::Auth.new(config).login
         warn "Logged in. Tokens written to #{result.env_file}." if result
+      rescue Xbookmark::TransientAuthError => e
+        warn "[xbookmark] #{redact_secret_like_values(e.message)}"
+        warn "X token login is temporarily unavailable. Retry auth login later."
+        exit 2
+      rescue Xbookmark::AuthError => e
+        warn "[xbookmark] #{redact_secret_like_values(e.message)}"
+        warn "Run: xbookmark auth login"
+        exit 1
       end
 
       desc "status", "Print the current X auth status"
