@@ -36,4 +36,10 @@ describe Xbookmark::Render::Wikilinks do
     assert_equal "example-com-some-path-q-1", described_class.link_slug("https://example.com/Some Path?q=1")
     assert_equal "example-com", described_class.link_slug("http://example.com")
   end
+
+  it "strips wikilink metacharacters from targets and labels so links never corrupt" do
+    assert_equal "[[threads/ab|lab el with stuff]]",
+                 described_class.link("threads/a]]b", "lab|el]] with stuff")
+    assert_equal "[[concepts/x|a b c]]", described_class.link("concepts/x", "a\nb\tc")
+  end
 end

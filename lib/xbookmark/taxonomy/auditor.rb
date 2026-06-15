@@ -7,6 +7,11 @@ require_relative "report"
 module Xbookmark
   module Taxonomy
     class Auditor
+      # Metric keys that, when any is positive, mean the wiki has repairable
+      # taxonomy debt. Shared with Rebuilder so the audit gate and the apply
+      # gate cannot drift apart.
+      ACTIONABLE_KEYS = %i[numeric_bookmark_nodes singleton_thread_pages one_off_compound_topics duplicate_alias_clusters].freeze
+
       def initialize(vault_path:)
         @vault_path = vault_path
         @safety = PathSafety.new(vault_path: vault_path)
@@ -35,7 +40,7 @@ module Xbookmark
       private
 
       def actionable?(counts)
-        counts.values_at(:numeric_bookmark_nodes, :singleton_thread_pages, :one_off_compound_topics, :duplicate_alias_clusters).any?(&:positive?)
+        counts.values_at(*ACTIONABLE_KEYS).any?(&:positive?)
       end
 
       def numeric_bookmarks(files)

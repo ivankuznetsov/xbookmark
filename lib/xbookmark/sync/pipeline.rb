@@ -19,11 +19,11 @@ module Xbookmark
     # Per-bookmark transactional pipeline:
     # 1. media download into scratch
     # 2. whisper transcription (best-effort; missing binary => transient)
-    # 3. codex enrichment (plan -> external -> final)
+    # 3. codex enrichment (external links -> final call)
     # 4. atomic move of media dir + atomic .md write
     # 5. ensure aux pages exist (after the bookmark write succeeds)
     class Pipeline
-      Outcome = Struct.new(:status, :error, :markdown_path, :digest, keyword_init: true)
+      Outcome = Struct.new(:status, :error, :markdown_path, :digest, :partial, keyword_init: true)
 
       def initialize(config:, store:, orchestrator:, renderer:, downloader: nil, whisper: nil)
         @config = config
@@ -60,7 +60,7 @@ module Xbookmark
         ensure_aux_pages(bookmark, enrichment, thread: thread)
 
         FileUtils.rm_rf(scratch)
-        Outcome.new(status: :done, markdown_path: markdown_path, digest: digest)
+        Outcome.new(status: :done, markdown_path: markdown_path, digest: digest, partial: enrichment.partial?)
       rescue Xbookmark::TransientError, Xbookmark::RateLimited => e
         # WhisperUnavailable, MediaError, and CodexError already inherit
         # from TransientError — the rescue list above covers all of them.
@@ -128,10 +128,18 @@ module Xbookmark
 
         concept_page = Xbookmark::Render::ConceptPage.new(vault_path: @config.vault_path, store: @store)
         Array(enrichment.concepts).each do |concept|
-          @store.upsert_concept(**concept.to_h.transform_keys(&:to_sym))
+          # Each bookmark contributes one unit of evidence; the store
+          # accumulates across bookmarks (see Store#upsert_concept).
+          attrs = concept.to_h.transform_keys(&:to_sym)
+          attrs[:evidence_count] = 1
+          @store.upsert_concept(**attrs)
           concept_page.ensure!(concept)
         end
-        Xbookmark::Render::ConceptIndex.new(vault_path: @config.vault_path).write(Array(enrichment.concepts))
+        # Rebuild the index from the full concept set so it reflects the whole
+        # taxonomy, not just this bookmark's concepts.
+        all_concepts = @store.concepts.map { |row| Xbookmark::Taxonomy::Registry.concept_from_row(row) }
+        conflicts = all_concepts.count { |concept| !concept.canonical? }
+        Xbookmark::Render::ConceptIndex.new(vault_path: @config.vault_path).write(all_concepts, conflicts: conflicts)
 
         if thread
           thread_page = Xbookmark::Render::ThreadPage.new(vault_path: @config.vault_path, store: @store, orchestrator: @orch)

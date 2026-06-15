@@ -128,7 +128,54 @@ describe Xbookmark::Sync::Runner do
 
     err = capture_stderr { runner.send(:run_maintenance, force: true) }
 
-    assert_match(/taxonomy maintenance failed: taxonomy down/, err)
+    assert_match(/taxonomy maintenance failed: RuntimeError: taxonomy down/, err)
+    assert_includes store.get_meta("last_taxonomy_error"), "taxonomy down"
+  end
+
+  it "surfaces and records a partial_failure taxonomy maintenance result" do
+    config.taxonomy_maintenance = true
+    runner = described_class.new(config: config, store: store, x_client: FakeXClient.new(pages: []),
+                                 pipeline: FakePipeline.new(->(_) { raise "unused" }), registrar: registrar)
+    partial = Xbookmark::Taxonomy::Report.new(state: "partial_failure", counts: {}, snapshot_path: "/snap", skipped: ["boom"])
+    Xbookmark::Taxonomy::Rebuilder.any_instance.stubs(:call).returns(partial)
+
+    err = capture_stderr { runner.send(:run_maintenance, force: true) }
+
+    assert_match(/PARTIAL FAILURE/, err)
+    assert_includes store.get_meta("last_taxonomy_error"), "partial_failure"
+  end
+
+  it "counts and warns on partial enrichment for a synced bookmark" do
+    page = {
+      "data" => [{ "id" => "t1", "author_id" => "u1", "text" => "x", "created_at" => "2026-01-01T00:00:00Z", "conversation_id" => "c1" }],
+      "includes" => { "users" => [{ "id" => "u1", "username" => "alice" }] },
+      "meta" => {}
+    }
+    pipeline = FakePipeline.new(lambda { |_|
+      Xbookmark::Sync::Pipeline::Outcome.new(status: :done, markdown_path: "/x", digest: "d", partial: true)
+    })
+    runner = described_class.new(config: config, store: store, x_client: FakeXClient.new(pages: [page]),
+                                 pipeline: pipeline, registrar: registrar)
+
+    err = capture_stderr { @report = runner.run(mode: :backfill_limited, limit: 1) }
+
+    assert_equal 1, @report.partial
+    assert_match(/enriched with incomplete data \(partial\)/, err)
+  end
+
+  it "skips the whole run when another holder owns the taxonomy lock" do
+    pipeline = FakePipeline.new(->(_) { raise "should not run" })
+    runner = described_class.new(config: config, store: store, x_client: FakeXClient.new(pages: []),
+                                 pipeline: pipeline, registrar: registrar)
+    held = Xbookmark::Taxonomy::Lock.acquire(vault)
+    begin
+      out = capture_stdout { @report = runner.run(mode: :sync) }
+    ensure
+      Xbookmark::Taxonomy::Lock.release(held)
+    end
+
+    assert_match(/holds the taxonomy lock; skipping/, out)
+    assert_empty pipeline.calls
   end
 
   it "backfill --limit 100 stops at exactly N items even when API returns more" do

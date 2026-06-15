@@ -301,14 +301,17 @@ bin/xbookmark taxonomy rebuild          # dry-run; writes no files
 bin/xbookmark taxonomy rebuild --apply  # snapshot + manifest + repair
 ```
 
-`taxonomy audit` prints one of `clean`, `proposed_changes`, or
-`blocked_conflicts`. Dry-run rebuilds exit non-zero when changes are available;
-apply mode writes a pre-apply snapshot and manifest under
+`taxonomy audit` prints `clean` or `proposed_changes` (rebuild reports add
+`applied` and `partial_failure`). Dry-run rebuilds exit non-zero when changes
+are available; apply mode writes a pre-apply snapshot and manifest under
 `$XBOOKMARK_WIKI_PATH/.xbookmark/`, renames numeric source notes to readable
-filenames with the tweet ID suffix, prunes generated numeric singleton thread
-pages, writes a graph-health report, and reindexes QMD. Scheduled sync runs the
-same local maintenance path when X is unavailable, so cleanup and enrichment
-maintenance do not depend on live X access.
+filenames with the tweet ID suffix, rewrites links to legacy numeric thread
+pages before pruning them (the legacy singleton-thread shape), writes a
+graph-health report, and reindexes QMD. Every file operation runs before any
+state write, so a mid-apply failure rolls the wiki back to the snapshot and
+reports `partial_failure`. Scheduled sync runs the same local maintenance path
+when X is unavailable, so cleanup and enrichment maintenance do not depend on
+live X access.
 
 ### install
 

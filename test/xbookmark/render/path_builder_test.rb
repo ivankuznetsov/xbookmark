@@ -34,4 +34,25 @@ describe Xbookmark::Render::PathBuilder do
       assert_match(/\Abookmark-[a-f0-9]{8}-123\.md\z/, collided)
     end
   end
+
+  it "truncates long titles within the byte cap while keeping the tweet id suffix" do
+    Dir.mktmpdir do |vault|
+      builder = described_class.new(vault_path: vault)
+      name = builder.filename_for(bookmark(id: "999", text: "word " * 80, author: "alice"))
+
+      assert name.end_with?("-999.md"), name
+      human = name.delete_suffix("-999.md")
+      assert_operator human.bytesize, :<=, described_class::HUMAN_PREFIX_BYTES
+    end
+  end
+
+  it "produces filesystem-safe ascii names for unicode titles, preserving the suffix" do
+    Dir.mktmpdir do |vault|
+      builder = described_class.new(vault_path: vault)
+      name = builder.filename_for(bookmark(id: "42", text: "Привет мир 🌍 café", author: "alice"))
+
+      assert name.end_with?("-42.md"), name
+      assert_match(%r{\A[a-z0-9-]+-42\.md\z}, name)
+    end
+  end
 end

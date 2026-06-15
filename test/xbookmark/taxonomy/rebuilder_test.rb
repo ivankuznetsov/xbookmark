@@ -79,14 +79,16 @@ describe "taxonomy audit and rebuild" do
     Dir.mktmpdir do |vault|
       store = Xbookmark::State::Store.new(":memory:")
       store.upsert_pending(tweet_id: "123", author_handle: "alice", bookmarked_at: "2026-01-01T00:00:00Z")
+      store.upsert_page(kind: "thread", slug: "123", path: "threads/123.md")
       write_note(File.join(vault, "bookmarks", "2026", "01", "01", "123.md"),
-                 { "tweet_id" => "123", "author" => "alice", "bookmarked_at" => "2026-01-01T00:00:00Z", "summary" => "Great topic" },
-                 "bookmark body")
+                 { "tweet_id" => "123", "author" => "alice", "bookmarked_at" => "2026-01-01T00:00:00Z",
+                   "summary" => "Great topic", "thread" => "threads/123" },
+                 "bookmark body\n\n## Thread\n\n[[threads/123|thread 123]]")
       write_note(File.join(vault, "bookmarks", "2026", "01", "01", "already-readable.md"), { "tweet_id" => "999" })
       write_note(File.join(vault, "threads", "123.md"), "kind" => "thread")
       registrar = mock("registrar")
       registrar.expects(:ensure_registered!)
-      registrar.expects(:index!)
+      registrar.expects(:index!).returns(:indexed)
 
       report = Xbookmark::Taxonomy::Rebuilder.new(
         config: config_for(vault),
@@ -95,15 +97,65 @@ describe "taxonomy audit and rebuild" do
         clock: -> { Time.utc(2026, 1, 2, 3, 4, 5) }
       ).call(apply: true)
 
+      renamed_path = File.join(vault, "bookmarks", "2026", "01", "01", "alice-great-topic-123.md")
       assert_equal "applied", report.state
-      assert File.exist?(File.join(vault, "bookmarks", "2026", "01", "01", "alice-great-topic-123.md"))
+      assert File.exist?(renamed_path)
       refute File.exist?(File.join(vault, "threads", "123.md"))
+      # Legacy thread links are rewritten before the thread page is pruned.
+      renamed = File.read(renamed_path)
+      refute_includes renamed, "[[threads/123"
+      refute_includes renamed, "thread: threads/123"
       manifest = JSON.parse(File.read(report.manifest_path))
       assert manifest["operations"].any? { |op| op["type"] == "rename" }
       assert manifest["operations"].any? { |op| op["type"] == "prune_thread" }
-      assert manifest["operations"].any? { |op| op["type"] == "qmd_reindex" }
+      assert manifest["operations"].any? { |op| op["type"] == "link_rewrite" }
+      assert manifest["operations"].any? { |op| op["type"] == "qmd_reindex" && op["status"] == "indexed" }
       assert File.directory?(manifest["snapshot_path"])
+      assert report.snapshot_path
       assert_equal "bookmarks/2026/01/01/alice-great-topic-123.md", store.find_bookmark("123")[:markdown_path]
+      # The orphaned thread page row is removed from the state DB.
+      assert_nil store.find_page("thread", "123")
+    end
+  end
+
+  it "records a failed qmd reindex without aborting the apply" do
+    Dir.mktmpdir do |vault|
+      store = Xbookmark::State::Store.new(":memory:")
+      write_note(File.join(vault, "bookmarks", "2026", "01", "01", "123.md"), { "tweet_id" => "123" }, "body")
+      registrar = mock("registrar")
+      registrar.stubs(:ensure_registered!)
+      registrar.stubs(:index!).raises("qmd down")
+
+      report = Xbookmark::Taxonomy::Rebuilder.new(
+        config: config_for(vault), store: store, registrar: registrar, clock: -> { Time.utc(2026, 1, 2) }
+      ).call(apply: true)
+
+      assert_equal "applied", report.state
+      manifest = JSON.parse(File.read(report.manifest_path))
+      reindex = manifest["operations"].find { |op| op["type"] == "qmd_reindex" }
+      assert_equal "failed", reindex["status"]
+      assert_equal "qmd down", reindex["error"]
+    end
+  end
+
+  it "rolls back to the snapshot and reports partial_failure when a state write fails mid-apply" do
+    Dir.mktmpdir do |vault|
+      store = Xbookmark::State::Store.new(":memory:")
+      original = File.join(vault, "bookmarks", "2026", "01", "01", "123.md")
+      write_note(original, { "tweet_id" => "123", "author" => "alice", "summary" => "Great topic" }, "body")
+      store.stubs(:update_bookmark_path!).raises("db boom")
+
+      report = Xbookmark::Taxonomy::Rebuilder.new(
+        config: config_for(vault), store: store, clock: -> { Time.utc(2026, 1, 2, 3, 4, 5) }
+      ).call(apply: true)
+
+      assert_equal "partial_failure", report.state
+      assert report.snapshot_path
+      assert_includes report.skipped.first, "db boom"
+      assert File.exist?(report.manifest_path)
+      # Snapshot restore: the original numeric note is back, the rename undone.
+      assert File.exist?(original)
+      refute File.exist?(File.join(vault, "bookmarks", "2026", "01", "01", "alice-great-topic-123.md"))
     end
   end
 

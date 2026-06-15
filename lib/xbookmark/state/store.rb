@@ -240,7 +240,7 @@ module Xbookmark
             aliases_json = excluded.aliases_json,
             broader_json = excluded.broader_json,
             facets_json = excluded.facets_json,
-            evidence_count = excluded.evidence_count,
+            evidence_count = concepts.evidence_count + excluded.evidence_count,
             confidence = excluded.confidence,
             curator_outcome = excluded.curator_outcome,
             updated_at = excluded.updated_at
@@ -258,6 +258,10 @@ module Xbookmark
 
       def rewrite_page_path!(kind:, slug:, path:)
         @db.execute("UPDATE pages SET path = ? WHERE kind = ? AND slug = ?", [path.to_s, kind.to_s, slug.to_s])
+      end
+
+      def delete_page!(kind:, slug:)
+        @db.execute("DELETE FROM pages WHERE kind = ? AND slug = ?", [kind.to_s, slug.to_s])
       end
 
       private

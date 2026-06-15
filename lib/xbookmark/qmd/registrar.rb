@@ -47,15 +47,19 @@ module Xbookmark
         :failed
       end
 
+      # Returns :indexed on success or :failed on failure so callers (e.g. the
+      # rebuilder manifest) can record whether search was actually refreshed
+      # rather than assuming success.
       def index!
         _out, err, status = capture(@config.qmd_bin, "index", "--collection", COLLECTION_NAME)
-        return if status_success?(status)
+        return :indexed if status_success?(status)
 
         _update_out, update_err, update_status = capture(@config.qmd_bin, "update")
-        return if status_success?(update_status)
+        return :indexed if status_success?(update_status)
 
         err = [err, update_err].reject { |message| message.to_s.empty? }.join("\n")
         warn "[xbookmark] qmd index failed: #{err}"
+        :failed
       end
 
       private

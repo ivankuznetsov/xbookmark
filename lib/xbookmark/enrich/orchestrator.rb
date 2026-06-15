@@ -83,6 +83,7 @@ module Xbookmark
             partial = true
             final["tags"] ||= []
             final["concepts"] ||= []
+            warn "[xbookmark] enrichment for tweet #{bookmark.tweet_id} returned no tags/concepts after retry; recording partial result"
           end
         end
 
@@ -168,10 +169,11 @@ module Xbookmark
                        "Return JSON only with the same schema."
         @codex.run(prompt: build_retry_prompt(bookmark, **args, extra: prompt_extra), images: args[:image_paths],
                    json_schema: FINAL_SCHEMA, timeout: timeout_for_images(args[:image_paths]))
-      rescue Xbookmark::CodexError, Xbookmark::PermanentError
+      rescue Xbookmark::CodexError, Xbookmark::PermanentError => e
         # Best-effort second pass — fall back to the first call's partial
         # result. A schema mismatch on the retry still leaves the original
-        # response usable.
+        # response usable, but make the failure visible rather than silent.
+        warn "[xbookmark] enrichment retry failed for tweet #{bookmark.tweet_id}: #{e.class}: #{e.message}"
         nil
       end
 

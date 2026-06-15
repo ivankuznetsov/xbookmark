@@ -19,8 +19,13 @@ describe Xbookmark::Sync::ThreadIndex do
     second = bookmark(id: "2", conversation: "c1")
     thread = described_class.new(bookmarks: [first, second]).thread_for(first)
 
-    assert_equal "threads/alice-c1-thread", thread[:target]
+    assert_equal "threads/thread-c1", thread[:target]
     assert described_class.new(bookmarks: [first, second]).real_thread?(second)
+
+    # Cross-author replies in the same conversation resolve to one thread page.
+    third = bookmark(id: "3", conversation: "c1", author: "bob")
+    cross = described_class.new(bookmarks: [first, third])
+    assert_equal cross.thread_for(first)[:target], cross.thread_for(third)[:target]
   end
 
   it "derives counts from store payloads, corrupt payloads, and existing thread pages" do

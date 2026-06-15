@@ -116,6 +116,31 @@ describe Xbookmark::Sync::Pipeline do
     end
   end
 
+  it "reuses a persisted readable path so a re-sync never recreates the numeric file" do
+    Dir.mktmpdir do |vault|
+      config = config_for(vault)
+      store = Xbookmark::State::Store.new(":memory:")
+      readable = "bookmarks/2026/01/01/alice-summary-1001.md"
+      store.upsert_pending(tweet_id: "1001", author_handle: "alice", bookmarked_at: "2026-01-01T00:00:00Z")
+      store.record_success(tweet_id: "1001", markdown_path: readable, digest: "old")
+      orch = stub(enrich: enrichment)
+      orch.stubs(:existing_slugs=)
+      orch.stubs(:concept_registry=)
+      pipeline = described_class.new(
+        config: config,
+        store: store,
+        orchestrator: orch,
+        renderer: Xbookmark::Render::BookmarkRenderer.new(vault_path: vault),
+        downloader: stub(download: [])
+      )
+
+      outcome = pipeline.process(bookmark)
+
+      assert_equal File.join(vault, readable), outcome.markdown_path
+      refute File.exist?(File.join(vault, "bookmarks", "2026", "01", "01", "1001.md"))
+    end
+  end
+
   it "writes a readable thread page when local state proves a real thread" do
     Dir.mktmpdir do |vault|
       config = config_for(vault)
@@ -142,8 +167,8 @@ describe Xbookmark::Sync::Pipeline do
       outcome = pipeline.process(threaded)
 
       assert_equal :done, outcome.status
-      assert File.exist?(File.join(vault, "threads", "alice-thread-1-thread.md"))
-      assert_includes File.read(outcome.markdown_path), "[[threads/alice-thread-1-thread|thread alice-thread-1-thread]]"
+      assert File.exist?(File.join(vault, "threads", "thread-1.md"))
+      assert_includes File.read(outcome.markdown_path), "[[threads/thread-1|thread thread-1]]"
     end
   end
 

@@ -85,8 +85,8 @@ describe Xbookmark::Taxonomy::Curator do
 
     decisions = curator.curate(["brand-new-concept"])
 
-    assert_equal "blocked_conflict", decisions.first["curation_state"]
-    assert_equal "blocked_conflict", store.concepts.first[:curator_outcome]
+    assert_equal "blocked_conflicts", decisions.first["curation_state"]
+    assert_equal "blocked_conflicts", store.concepts.first[:curator_outcome]
     assert_includes curator.prompt_for([{ "label" => "brand-new-concept" }]), "sanitized registry context"
     refute Xbookmark::Taxonomy::Concept.new(slug: "old", outcome: "alias").canonical?
   end

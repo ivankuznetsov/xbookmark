@@ -20,7 +20,9 @@ module Xbookmark
 
       def render(concepts, conflicts: 0)
         roots = concepts.select { |concept| concept.broader.empty? }.sort_by(&:slug)
-        orphans = concepts.select { |concept| concept.broader.empty? && concept.evidence_count < 2 }
+        # "Orphan" means no broader link — the same definition the Auditor and
+        # GraphHealthReport use, so the index and the health report agree.
+        orphans = concepts.select { |concept| concept.broader.empty? }
         lines = ["# Concepts", "", "## Root Concepts"]
         lines += roots.map { |concept| "- #{Wikilinks.link("concepts/#{concept.slug}", concept.label)}" }
         lines << ""

@@ -17,11 +17,14 @@ module Xbookmark
         @slug = Xbookmark::Render::Wikilinks.slug(slug)
         @label = Xbookmark::Render::MarkdownSafety.frontmatter_string(label || titleize(@slug)) || @slug
         @kind = Xbookmark::Render::MarkdownSafety.frontmatter_string(kind) || DEFAULT_KIND
-        @aliases = Xbookmark::Render::MarkdownSafety.alias_list(aliases)
-        @broader = Array(broader).map { |parent| Xbookmark::Render::Wikilinks.slug(parent) }.reject(&:empty?).uniq
-        @facets = Xbookmark::Render::MarkdownSafety.tags(facets)
+        @aliases = Xbookmark::Render::MarkdownSafety.alias_list(aliases).freeze
+        @broader = Array(broader).map { |parent| Xbookmark::Render::Wikilinks.slug(parent) }.reject(&:empty?).uniq.freeze
+        @facets = Xbookmark::Render::MarkdownSafety.tags(facets).freeze
         @evidence_count = evidence_count.to_i
-        @confidence = confidence.nil? ? confidence_from_evidence(@evidence_count) : confidence.to_f
+        # Clamp on both branches so an explicit out-of-range confidence
+        # (e.g. a corrupt frontmatter value) can never leak into the registry
+        # or the confidence gate.
+        @confidence = (confidence.nil? ? confidence_from_evidence(@evidence_count) : confidence.to_f).clamp(0.0, 1.0)
         @outcome = Xbookmark::Render::MarkdownSafety.frontmatter_string(outcome) || DEFAULT_OUTCOME
       end
 

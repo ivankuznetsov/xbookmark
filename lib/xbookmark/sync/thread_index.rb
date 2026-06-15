@@ -18,7 +18,7 @@ module Xbookmark
         return nil if conversation.empty?
         return nil if singleton?(bookmark)
 
-        slug = readable_slug(bookmark, conversation)
+        slug = readable_slug(conversation)
         { slug: slug, target: "threads/#{slug}", label: "thread #{slug}" }
       end
 
@@ -47,9 +47,14 @@ module Xbookmark
         @conversation_counts[conversation] < 2 && conversation == bookmark.tweet_id.to_s
       end
 
-      def readable_slug(bookmark, conversation)
-        base = Xbookmark::Render::Wikilinks.slug([bookmark.author_handle, conversation].compact.join(" "))
-        base == conversation ? "thread-#{conversation}" : "#{base}-thread"
+      # Thread page names are derived from the conversation id alone, so every
+      # bookmark in a conversation (even across different authors) resolves to
+      # the same thread page. The "thread" prefix also guarantees a
+      # non-numeric basename, so a real thread is never mistaken for a legacy
+      # numeric singleton during a rebuild prune.
+      def readable_slug(conversation)
+        name = Xbookmark::Render::Wikilinks.slug(conversation)
+        name.start_with?("thread") ? name : "thread-#{name}"
       end
     end
   end

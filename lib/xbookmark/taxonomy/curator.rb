@@ -2,9 +2,16 @@
 
 require_relative "normalizer"
 require_relative "prompt_context"
+require_relative "states"
 
 module Xbookmark
   module Taxonomy
+    # Deterministic taxonomy curation layer. `curate` normalizes candidates,
+    # gates low-confidence concepts as blocked conflicts, and (when a store is
+    # given) persists both the concept row and an audit entry in
+    # `curator_decisions`. This is the entry point reserved for the LLM-driven
+    # scheduled curation step; the per-bookmark sync path uses Normalizer
+    # directly. It is not yet wired into the live run.
     class Curator
       MIN_CONFIDENCE = 0.3
 
@@ -31,12 +38,17 @@ module Xbookmark
       private
 
       def decision_for(concept)
-        state = concept.confidence < MIN_CONFIDENCE ? "blocked_conflict" : concept.outcome
+        state = concept.confidence < MIN_CONFIDENCE ? States::BLOCKED_CONFLICTS : concept.outcome
         concept.to_h.merge("curation_state" => state)
       end
 
+      # Persistence is optional: `curate` always returns the decisions, and the
+      # store write only runs when a store was provided. The audit log entry
+      # keeps blocked-conflict decisions inspectable rather than discarding them.
       def persist(decision)
-        @store&.upsert_concept(
+        return unless @store
+
+        @store.upsert_concept(
           slug: decision["slug"],
           label: decision["label"],
           kind: decision["kind"],
@@ -47,6 +59,7 @@ module Xbookmark
           confidence: decision["confidence"],
           curator_outcome: decision["curation_state"]
         )
+        @store.record_curator_decision(slug: decision["slug"], decision: decision)
       end
     end
   end
