@@ -421,7 +421,7 @@ module Xbookmark
       end
 
       def all_concepts_from_store
-        @all_concepts_from_store ||= Array(@store.concepts).map { |row| materialized_concept(Registry.concept_from_row(row)) }.uniq(&:slug)
+        @all_concepts_from_store ||= Array(@store.concepts).map { |row| Registry.concept_from_row(row) }.uniq(&:slug)
       end
 
       def concept_referenced?(concept)
@@ -537,22 +537,6 @@ module Xbookmark
       def clear_reference_caches!
         @post_references_by_slug = nil
         @concept_pages_from_store = nil
-      end
-
-      def materialized_concept(concept)
-        root = legacy_root_slug(concept.kind)
-        return concept unless root && concept.broader.empty?
-
-        Concept.new(slug: concept.slug, label: concept.label, kind: concept.kind, aliases: concept.aliases,
-                    broader: [root], facets: concept.facets, evidence_count: concept.evidence_count,
-                    confidence: concept.confidence, outcome: concept.outcome)
-      end
-
-      def legacy_root_slug(kind)
-        case kind.to_s
-        when "topic" then "topics"
-        when "entity" then "entities"
-        end
       end
 
       def snapshot!(stamp)
