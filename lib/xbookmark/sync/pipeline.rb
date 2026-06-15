@@ -45,6 +45,10 @@ module Xbookmark
         @thread_index = Xbookmark::Sync::ThreadIndex.new(store: @store)
         @concept_index_dirty = false
         @recurrence_counts = recurrence_counts_from_registry(@registry)
+        @concept_references = Xbookmark::Render::ConceptPage.references_by_concept(
+          vault_path: @config.vault_path,
+          concepts: @registry.all
+        )
       end
 
       def index_thread_bookmarks(bookmarks)
@@ -80,6 +84,7 @@ module Xbookmark
                                     link_blobs: Array(enrichment.link_blobs), thread: thread)
         markdown_path = @renderer.write(bookmark, markdown, enrichment: enrichment, existing_path: existing_path)
         digest = @renderer.digest(enrichment, bookmark)
+        refresh_concept_references(markdown_path)
 
         ensure_aux_pages(bookmark, enrichment, thread: thread)
 
@@ -154,7 +159,8 @@ module Xbookmark
         snippet = bookmark.text.to_s
         author_page.ensure!(slug: author, label: "@#{bookmark.author_handle}", inputs: [snippet])
 
-        concept_page = Xbookmark::Render::ConceptPage.new(vault_path: @config.vault_path, store: @store)
+        concept_page = Xbookmark::Render::ConceptPage.new(vault_path: @config.vault_path, store: @store,
+                                                          references: concept_references)
         Array(enrichment.concepts).each do |concept|
           # Each bookmark contributes one unit of evidence; the store
           # accumulates across bookmarks (see Store#upsert_concept).
@@ -178,6 +184,21 @@ module Xbookmark
         @registry ||= Xbookmark::Taxonomy::Registry.from_vault(@config.vault_path, store: @store).tap do |registry|
           @recurrence_counts ||= recurrence_counts_from_registry(registry)
         end
+      end
+
+      def concept_references
+        @concept_references ||= Xbookmark::Render::ConceptPage.references_by_concept(
+          vault_path: @config.vault_path,
+          concepts: current_registry.all
+        )
+      end
+
+      def refresh_concept_references(markdown_path)
+        Xbookmark::Render::ConceptPage.add_note_references!(
+          concept_references,
+          markdown_path,
+          vault_path: @config.vault_path
+        )
       end
 
       def current_thread_index

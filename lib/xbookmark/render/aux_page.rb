@@ -13,10 +13,11 @@ module Xbookmark
     class AuxPage
       KIND = nil # subclasses override
 
-      def initialize(vault_path:, store:, orchestrator: nil)
+      def initialize(vault_path:, store:, orchestrator: nil, references: nil)
         @vault_path = vault_path
         @store = store
         @orch = orchestrator
+        @references = references || {}
       end
 
       PLACEHOLDER_SUMMARY = "(no summary yet)"
@@ -34,7 +35,7 @@ module Xbookmark
           if regenerate && @orch && !inputs.empty?
             generate_summary(slug: slug, label: label, inputs: inputs)
           else
-            existing && File.exist?(path) ? extract_existing_summary(path) : nil
+            File.exist?(path) ? extract_existing_summary(path) : nil
           end
 
         # Don't let the placeholder string become the persisted summary —
@@ -88,7 +89,11 @@ module Xbookmark
           "xbookmark_schema" => SCHEMA_VERSION
         }
         front_yaml = front.to_yaml(line_width: -1).sub(/^---\n?/, "")
-        body = "# #{label || slug}\n\n## Summary\n\n#{summary || PLACEHOLDER_SUMMARY}\n\n## References\n\n_Use Obsidian's Backlinks panel to see every bookmark referencing this page._\n"
+        sections = ["# #{label || slug}", "## Summary\n\n#{summary || PLACEHOLDER_SUMMARY}"]
+        posts = post_items(@references[slug])
+        sections << "## Posts\n\n#{posts.join("\n")}" unless posts.empty?
+        sections << "## References\n\n_Use Obsidian's Backlinks panel to see every bookmark referencing this page._"
+        body = "#{sections.join("\n\n")}\n"
         "---\n#{front_yaml}---\n\n#{body}"
       end
 
@@ -104,6 +109,14 @@ module Xbookmark
         m ? m[1] : nil
       rescue StandardError
         nil
+      end
+
+      def post_items(references)
+        Array(references).map do |reference|
+          meta = [reference[:author], reference[:bookmarked_at].to_s[0, 10]].compact.reject(&:empty?).join(", ")
+          suffix = meta.empty? ? "" : " — #{meta}"
+          "- #{Wikilinks.link(reference[:target], reference[:label])}#{suffix}"
+        end
       end
     end
 

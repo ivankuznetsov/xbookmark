@@ -6,6 +6,7 @@ require "ostruct"
 require "set"
 require "time"
 require "yaml"
+require_relative "../render/aux_page"
 require_relative "../render/concept_index"
 require_relative "../render/concept_page"
 require_relative "../render/path_builder"
@@ -53,7 +54,7 @@ module Xbookmark
       end
 
       def needs_rebuild?(counts)
-        actionable?(counts) || missing_concept_pages? || placeholder_thread_pages?
+        actionable?(counts) || missing_concept_pages? || placeholder_thread_pages? || missing_post_lists?
       end
 
       def actionable?(counts)
@@ -73,6 +74,16 @@ module Xbookmark
         placeholder_thread_slugs.any? do |slug|
           conversation = slug.delete_prefix("thread-")
           !representative_thread_text(conversation).to_s.strip.empty?
+        end
+      end
+
+      def missing_post_lists?
+        post_references_by_slug.any? do |slug, references|
+          next false if references.empty?
+
+          post_list_paths_for(slug).any? do |path|
+            File.exist?(path) && !File.read(path).include?("## Posts")
+          end
         end
       end
 
@@ -96,6 +107,7 @@ module Xbookmark
 
         commit_state!(path_updates, singleton_thread_ids, thread_moves)
         materialize_concepts(manifest)
+        materialize_legacy_aux_posts(manifest)
 
         after = Auditor.new(vault_path: @config.vault_path).metrics
         graph_path = File.join(@config.vault_path, ".xbookmark", "taxonomy-#{stamp}.graph-health.json")
@@ -368,7 +380,8 @@ module Xbookmark
         concepts = concept_pages_from_store
         return if concepts.empty?
 
-        page = Xbookmark::Render::ConceptPage.new(vault_path: @config.vault_path, store: @store)
+        page = Xbookmark::Render::ConceptPage.new(vault_path: @config.vault_path, store: @store,
+                                                  references: post_references_by_slug)
         concepts.each { |concept| page.ensure!(concept) }
         conflicts = concepts.count { |concept| !concept.canonical? }
         index_path = Xbookmark::Render::ConceptIndex.new(vault_path: @config.vault_path).write(concepts, conflicts: conflicts)
@@ -376,9 +389,53 @@ module Xbookmark
       end
 
       def concept_pages_from_store
-        concepts = Array(@store.concepts).map { |row| materialized_concept(Registry.concept_from_row(row)) }
-        roots = concepts.filter_map { |concept| legacy_root_concept(concept.broader.first) if legacy_root?(concept) }
-        (roots + concepts).uniq(&:slug).sort_by(&:slug)
+        @concept_pages_from_store ||= begin
+          concepts = Array(@store.concepts).map { |row| materialized_concept(Registry.concept_from_row(row)) }
+          roots = concepts.filter_map { |concept| legacy_root_concept(concept.broader.first) if legacy_root?(concept) }
+          (roots + concepts).uniq(&:slug).sort_by(&:slug)
+        end
+      end
+
+      def materialize_legacy_aux_posts(manifest)
+        count = 0
+        count += materialize_legacy_aux_dir(kind: "topic", klass: Xbookmark::Render::TopicPage, dir: "topics")
+        count += materialize_legacy_aux_dir(kind: "entity", klass: Xbookmark::Render::EntityPage, dir: "entities")
+        manifest.add(:legacy_aux_posts_materialize, "count" => count) if count.positive?
+      end
+
+      def materialize_legacy_aux_dir(kind:, klass:, dir:)
+        page = klass.new(vault_path: @config.vault_path, store: @store, references: legacy_post_references_by_slug)
+        Dir.glob(File.join(@config.vault_path, dir, "*.md")).sum do |path|
+          front, = parse_note(path)
+          next 0 unless front
+
+          slug = (front["slug"] || File.basename(path, ".md")).to_s
+          next 0 if Array(legacy_post_references_by_slug[slug]).empty?
+
+          label = (front["label"] || slug).to_s
+          page.ensure!(slug: slug, label: label, inputs: [])
+          @store.upsert_page(kind: kind, slug: slug, path: relativize(path)) if @store
+          1
+        end
+      end
+
+      def post_references_by_slug
+        @post_references_by_slug ||= Xbookmark::Render::ConceptPage.references_by_concept(
+          vault_path: @config.vault_path,
+          concepts: concept_pages_from_store
+        )
+      end
+
+      def legacy_post_references_by_slug
+        @legacy_post_references_by_slug ||= Xbookmark::Render::ConceptPage.references_by_concept(vault_path: @config.vault_path)
+      end
+
+      def post_list_paths_for(slug)
+        [
+          File.join(@config.vault_path, "concepts", "#{slug}.md"),
+          File.join(@config.vault_path, "topics", "#{slug}.md"),
+          File.join(@config.vault_path, "entities", "#{slug}.md")
+        ]
       end
 
       def materialized_concept(concept)
