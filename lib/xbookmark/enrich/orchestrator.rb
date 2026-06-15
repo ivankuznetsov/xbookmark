@@ -5,13 +5,14 @@ require "uri"
 require_relative "codex"
 require_relative "link_fetcher"
 require_relative "prompt_context"
+require_relative "../render/markdown_safety"
 
 module Xbookmark
   module Enrich
     EnrichmentResult = Struct.new(
       :summary, :tags, :concepts, :links,
       :image_captions, :image_ocr, :transcript_summaries,
-      :formatted_transcripts, :partial, :link_blobs,
+      :formatted_transcripts, :partial, :link_blobs, :title,
       keyword_init: true
     ) do
       def partial?
@@ -27,6 +28,7 @@ module Xbookmark
         "type" => "object",
         "required" => %w[tags concepts],
         "properties" => {
+          "title" => { "type" => %w[string null] },
           "summary" => { "type" => %w[string null] },
           "tags" => { "type" => "array", "items" => { "type" => "string" } },
           "concepts" => {
@@ -88,6 +90,7 @@ module Xbookmark
         end
 
         EnrichmentResult.new(
+          title: title_from(final),
           summary: final["summary"],
           tags: Array(final["tags"]).map(&:to_s),
           concepts: concept_candidates(final["concepts"]),
@@ -114,6 +117,23 @@ module Xbookmark
       end
 
       private
+
+      # A concise human title for filenames and node labels. Prefers the
+      # model's `title`; falls back to the first clause of the summary so old
+      # payloads (and offline re-renders) still get a usable title. Sanitized
+      # through MarkdownSafety so untrusted text never corrupts a filename or
+      # frontmatter value.
+      def title_from(final)
+        raw = final["title"].to_s.strip
+        raw = first_clause(final["summary"]) if raw.empty?
+        return nil if raw.empty?
+
+        Xbookmark::Render::MarkdownSafety.wikilink_label(raw)
+      end
+
+      def first_clause(summary)
+        summary.to_s.split(/[.!?\n]/).first.to_s.strip
+      end
 
       def vision_call(image_paths)
         prompt = render_template("vision.txt", {})

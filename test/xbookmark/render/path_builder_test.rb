@@ -16,6 +16,17 @@ describe Xbookmark::Render::PathBuilder do
     )
   end
 
+  it "derives the filename from the enrichment title when present" do
+    Dir.mktmpdir do |vault|
+      builder = described_class.new(vault_path: vault)
+      bm = bookmark(id: "42", text: "raw verbose tweet text", author: "alice")
+      enrichment = OpenStruct.new(title: "Retatrutide Phase 3 Results",
+                                  summary: "a long verbose summary that should not drive the filename")
+
+      assert_equal "alice-retatrutide-phase-3-results-42.md", builder.filename_for(bm, enrichment: enrichment)
+    end
+  end
+
   it "honors persisted absolute and relative paths" do
     builder = described_class.new(vault_path: "/vault")
 

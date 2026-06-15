@@ -46,6 +46,7 @@ module Xbookmark
       def digest(enrichment, bookmark)
         canonical = {
           tweet_id: bookmark.tweet_id,
+          title: title_value(enrichment),
           summary: enrichment.summary,
           tags: (enrichment.tags || []).sort,
           concepts: concepts_for(enrichment).map(&:slug).sort,
@@ -60,6 +61,7 @@ module Xbookmark
         concepts = concepts_for(enrichment)
         {
           "xbookmark_schema" => SCHEMA_VERSION,
+          "title" => title_value(enrichment),
           "tweet_id" => bookmark.tweet_id.to_s,
           "author" => bookmark.author_handle.to_s,
           "author_id" => bookmark.author_id.to_s,
@@ -184,7 +186,17 @@ module Xbookmark
         end
       end
 
+      # The concise enrichment title (already sanitized upstream), or nil when
+      # absent. Drives the frontmatter `title` Property, the digest, and the
+      # heading fallback so all three agree.
+      def title_value(enrichment)
+        enrichment.respond_to?(:title) ? enrichment.title : nil
+      end
+
       def title_for(bookmark, enrichment)
+        title = title_value(enrichment)
+        return title if title && !title.to_s.strip.empty?
+
         [bookmark.author_handle && "@#{bookmark.author_handle}", enrichment.summary || bookmark.text || bookmark.tweet_id].compact.join(": ")
       end
 
