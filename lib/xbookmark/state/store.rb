@@ -216,6 +216,11 @@ module Xbookmark
         @db.execute("SELECT * FROM concepts ORDER BY slug").map { |r| symbolize_keys(r) }
       end
 
+      def find_concept(slug)
+        row = @db.get_first_row("SELECT * FROM concepts WHERE slug = ?", [slug.to_s])
+        row && symbolize_keys(row)
+      end
+
       def upsert_concept(slug:, label:, kind:, aliases: [], broader: [], facets: [],
                          evidence_count: 0, confidence: 0.0, curator_outcome: "canonical", time: Time.now.utc)
         params = [
@@ -262,6 +267,22 @@ module Xbookmark
 
       def delete_page!(kind:, slug:)
         @db.execute("DELETE FROM pages WHERE kind = ? AND slug = ?", [kind.to_s, slug.to_s])
+      end
+
+      def rename_page!(kind:, old_slug:, new_slug:, path:)
+        @db.execute(<<~SQL, [new_slug.to_s, path.to_s, kind.to_s, old_slug.to_s])
+          UPDATE pages SET slug = ?, path = ? WHERE kind = ? AND slug = ?
+        SQL
+      end
+
+      def commit_taxonomy_rebuild!(path_updates:, pruned_ids:, thread_moves: [])
+        @db.transaction do
+          path_updates.each { |tweet_id, relative| update_bookmark_path!(tweet_id: tweet_id, markdown_path: relative) }
+          thread_moves.each do |old_slug, new_slug, relative|
+            rename_page!(kind: "thread", old_slug: old_slug, new_slug: new_slug, path: relative)
+          end
+          pruned_ids.each { |id| delete_page!(kind: "thread", slug: id) }
+        end
       end
 
       private

@@ -13,9 +13,13 @@ require "xbookmark/x/auth"
 require "xbookmark/x/client"
 
 describe Xbookmark::CLI do
-  FakeReport = Struct.new(:failed, :permanent_errors, :source_errors, :message, keyword_init: true) do
+  FakeReport = Struct.new(:failed, :permanent_errors, :source_errors, :maintenance_errors, :message, keyword_init: true) do
     def source_errors
       self[:source_errors] || 0
+    end
+
+    def maintenance_errors
+      self[:maintenance_errors] || 0
     end
 
     def to_s
@@ -156,7 +160,7 @@ describe Xbookmark::CLI do
         state_db_path: File.join(vault, ".xbookmark", "state.db"),
         taxonomy_maintenance: false
       )
-      Xbookmark::Config.stubs(:load).returns(config)
+      Xbookmark::Config.stubs(:load_offline).returns(config)
 
       clean = capture_stdout { Xbookmark::CLI::Taxonomy.start(%w[audit]) }
       assert_includes clean, "taxonomy: clean"
@@ -188,7 +192,7 @@ describe Xbookmark::CLI do
         state_db_path: File.join(vault, ".xbookmark", "state.db"),
         taxonomy_maintenance: false
       )
-      Xbookmark::Config.stubs(:load).returns(config)
+      Xbookmark::Config.stubs(:load_offline).returns(config)
 
       out = capture_stdout { Xbookmark::CLI::Taxonomy.start(%w[rebuild --apply]) }
 
@@ -446,6 +450,19 @@ describe Xbookmark::CLI do
     Xbookmark::Config.stubs(:load).returns(test_config)
     Xbookmark::Sync::Runner.stubs(:new).returns(
       stub(run: FakeReport.new(failed: 1, permanent_errors: 0, source_errors: 1, message: "failed and source blocked"))
+    )
+
+    error = assert_raises(SystemExit) do
+      capture_stdout { Xbookmark::CLI::Sync.new([], { "from-scheduler": true }).sync_run }
+    end
+    assert_equal 1, error.status
+  end
+
+  it "fails scheduled sync when local maintenance fails" do
+    Xbookmark::Config.stubs(:load).returns(test_config)
+    Xbookmark::Sync::Runner.stubs(:new).returns(
+      stub(run: FakeReport.new(failed: 0, permanent_errors: 0, source_errors: 0, maintenance_errors: 1,
+                               message: "maintenance errors 1"))
     )
 
     error = assert_raises(SystemExit) do

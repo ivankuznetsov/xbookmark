@@ -46,16 +46,31 @@ class MissingTweetClient
 end
 
 class FakePipeline
-  attr_reader :calls
+  attr_reader :calls, :indexed_pages
 
   def initialize(behavior)
     @behavior = behavior
     @calls = []
+    @indexed_pages = []
+    @prepared = false
+    @finalized = false
+  end
+
+  def prepare_run!
+    @prepared = true
+  end
+
+  def index_thread_bookmarks(bookmarks)
+    @indexed_pages << Array(bookmarks).map(&:tweet_id)
   end
 
   def process(bookmark)
     @calls << bookmark.tweet_id
     @behavior.call(bookmark)
+  end
+
+  def finalize_run!
+    @finalized = true
   end
 end
 
@@ -117,7 +132,7 @@ describe Xbookmark::Sync::Runner do
     err = capture_stderr { runner.send(:run_maintenance, force: true) }
 
     assert_match(/taxonomy: applied/, err)
-    assert_operator registrar.index_calls, :>=, 1
+    assert_equal 1, registrar.index_calls
   end
 
   it "logs taxonomy maintenance failures without raising" do
@@ -139,10 +154,63 @@ describe Xbookmark::Sync::Runner do
     partial = Xbookmark::Taxonomy::Report.new(state: "partial_failure", counts: {}, snapshot_path: "/snap", skipped: ["boom"])
     Xbookmark::Taxonomy::Rebuilder.any_instance.stubs(:call).returns(partial)
 
-    err = capture_stderr { runner.send(:run_maintenance, force: true) }
+    sync_report = Xbookmark::Sync::Report.new
+    err = capture_stderr { runner.send(:run_maintenance, force: true, report: sync_report) }
 
     assert_match(/PARTIAL FAILURE/, err)
     assert_includes store.get_meta("last_taxonomy_error"), "partial_failure"
+    assert_equal 1, sync_report.maintenance_errors
+    assert_includes sync_report.to_s, "maintenance errors 1"
+  end
+
+  it "runs LLM taxonomy curation during local maintenance" do
+    config.taxonomy_maintenance = true
+    store.upsert_concept(slug: "venezuela-economy", label: "Venezuela Economy", kind: "subtopic",
+                         aliases: [], broader: ["venezuela"], facets: ["area/venezuela"],
+                         evidence_count: 3, confidence: 0.3)
+    codex = mock("codex")
+    codex.expects(:run).returns(
+      "decisions" => [
+        {
+          "slug" => "venezuela-economy",
+          "label" => "Venezuela Economy",
+          "kind" => "subtopic",
+          "aliases" => ["Venezuelan economy"],
+          "broader" => ["venezuela"],
+          "evidence_count" => 3,
+          "confidence" => 0.9,
+          "curation_state" => "canonical"
+        }
+      ]
+    )
+    Xbookmark::Enrich::Codex.stubs(:new).returns(codex)
+    Xbookmark::Taxonomy::Rebuilder.any_instance.stubs(:call)
+      .returns(Xbookmark::Taxonomy::Report.new(state: "clean", counts: {}))
+    runner = described_class.new(config: config, store: store, x_client: FakeXClient.new(pages: []),
+                                 pipeline: FakePipeline.new(->(_) { raise "unused" }), registrar: registrar)
+
+    runner.send(:run_maintenance, force: true, report: Xbookmark::Sync::Report.new)
+
+    row = store.find_concept("venezuela-economy")
+    assert_equal ["Venezuelan economy"], JSON.parse(row[:aliases_json])
+    assert_equal 3, row[:evidence_count]
+    assert_equal "canonical", row[:curator_outcome]
+  end
+
+  it "counts taxonomy curation failures as maintenance errors" do
+    config.taxonomy_maintenance = true
+    store.upsert_concept(slug: "adhd", label: "ADHD", kind: "idea", evidence_count: 3, confidence: 0.3)
+    Xbookmark::Taxonomy::Rebuilder.any_instance.stubs(:call)
+      .returns(Xbookmark::Taxonomy::Report.new(state: "clean", counts: {}))
+    Xbookmark::Taxonomy::Curator.any_instance.stubs(:curate).raises("curator down")
+    runner = described_class.new(config: config, store: store, x_client: FakeXClient.new(pages: []),
+                                 pipeline: FakePipeline.new(->(_) { raise "unused" }), registrar: registrar)
+    sync_report = Xbookmark::Sync::Report.new
+
+    err = capture_stderr { runner.send(:run_maintenance, force: true, report: sync_report) }
+
+    assert_match(/taxonomy curation failed: RuntimeError: curator down/, err)
+    assert_equal 1, sync_report.maintenance_errors
   end
 
   it "counts and warns on partial enrichment for a synced bookmark" do
@@ -195,6 +263,7 @@ describe Xbookmark::Sync::Runner do
     assert_equal "t0", store.payload_for("t0")["data"].first["id"]
     assert_equal Xbookmark::State::Store::MODE_TEST_BACKFILLED, store.mode
     assert_equal 1, registrar.index_calls
+    assert_equal (0...150).map { |i| "t#{i}" }, pipeline.indexed_pages.first
   end
 
   it "caches only the includes referenced by each bookmark" do

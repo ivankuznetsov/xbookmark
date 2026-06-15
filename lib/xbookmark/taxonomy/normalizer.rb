@@ -29,14 +29,14 @@ module Xbookmark
       end
 
       def normalize(candidate)
-        label, kind = candidate_fields(candidate)
-        slug = canonical_slug(label)
+        attrs = candidate_attrs(candidate)
+        slug = canonical_slug(attrs[:label])
         stored = @registry.find(slug)
         return [stored] if stored
         return split_conjunction(slug) if one_off_conjunction?(slug)
         return split_low_recurrence_compound(slug) if low_recurrence_child?(slug)
 
-        [concept_for(slug, kind: kind)]
+        [concept_for(slug, kind: attrs[:kind], aliases: attrs[:aliases], broader: attrs[:broader])]
       end
 
       def canonical_slug(value)
@@ -48,11 +48,15 @@ module Xbookmark
 
       private
 
-      def candidate_fields(candidate)
-        return [candidate, "idea"] unless candidate.is_a?(Hash)
+      def candidate_attrs(candidate)
+        return { label: candidate, kind: "idea", aliases: [], broader: [] } unless candidate.is_a?(Hash)
 
-        [candidate["label"] || candidate[:label] || candidate["slug"] || candidate[:slug],
-         candidate["kind"] || candidate[:kind] || "idea"]
+        {
+          label: candidate["label"] || candidate[:label] || candidate["slug"] || candidate[:slug],
+          kind: candidate["kind"] || candidate[:kind] || "idea",
+          aliases: Array(candidate["aliases"] || candidate[:aliases]),
+          broader: Array(candidate["broader"] || candidate[:broader])
+        }
       end
 
       def one_off_conjunction?(slug)
@@ -73,11 +77,16 @@ module Xbookmark
         [concept_for(root, kind: "place"), concept_for(FACET_PARENTS[child] || child, kind: "area")]
       end
 
-      def concept_for(slug, kind:)
+      def concept_for(slug, kind:, aliases: [], broader: [])
         root, child = split_parent_child(slug)
-        broader = root && child ? [root, FACET_PARENTS[child] || child] : []
+        explicit_broader = Array(broader).map { |parent| canonical_slug(parent) }.reject(&:empty?)
+        broader = if explicit_broader.empty? && root && child
+                    [root, FACET_PARENTS[child] || child]
+                  else
+                    explicit_broader
+                  end
         facets = facets_for(slug, root, child)
-        Concept.new(slug: slug, label: label_for(slug), kind: kind, broader: broader, facets: facets,
+        Concept.new(slug: slug, label: label_for(slug), kind: kind, aliases: aliases, broader: broader, facets: facets,
                     evidence_count: recurrence_for(slug))
       end
 

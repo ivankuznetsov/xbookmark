@@ -39,4 +39,14 @@ describe Xbookmark::Sync::ThreadIndex do
 
     assert_equal "threads/thread-1", thread[:target]
   end
+
+  it "can add a fetched page before the first bookmark is processed" do
+    first = bookmark(id: "1", conversation: "c1")
+    second = bookmark(id: "2", conversation: "c1")
+    index = described_class.new
+
+    index.add_bookmarks([first, second])
+
+    assert_equal "threads/thread-c1", index.thread_for(first)[:target]
+  end
 end

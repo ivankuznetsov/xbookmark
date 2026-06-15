@@ -26,12 +26,16 @@ module Xbookmark
         !thread_for(bookmark).nil?
       end
 
-      private
-
       def add_bookmark(bookmark)
         conversation = bookmark.conversation_id.to_s
         @conversation_counts[conversation] += 1 unless conversation.empty?
       end
+
+      def add_bookmarks(bookmarks)
+        Array(bookmarks).each { |bookmark| add_bookmark(bookmark) }
+      end
+
+      private
 
       def add_row(row)
         payload = row[:payload_json].to_s.empty? ? nil : JSON.parse(row[:payload_json])

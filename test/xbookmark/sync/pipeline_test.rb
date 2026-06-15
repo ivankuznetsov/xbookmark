@@ -47,6 +47,14 @@ describe Xbookmark::Sync::Pipeline do
     )
   end
 
+  def bookmark_with(id:, conversation: id, text: "tweet text")
+    bm = bookmark
+    bm.tweet_id = id
+    bm.conversation_id = conversation
+    bm.text = text
+    bm
+  end
+
   def enrichment
     Xbookmark::Enrich::EnrichmentResult.new(
       summary: "summary",
@@ -169,6 +177,91 @@ describe Xbookmark::Sync::Pipeline do
       assert_equal :done, outcome.status
       assert File.exist?(File.join(vault, "threads", "thread-1.md"))
       assert_includes File.read(outcome.markdown_path), "[[threads/thread-1|thread thread-1]]"
+    end
+  end
+
+  it "defers concept index writes until run finalization when requested" do
+    Dir.mktmpdir do |vault|
+      config = config_for(vault)
+      store = Xbookmark::State::Store.new(":memory:")
+      orch = stub(enrich: enrichment)
+      orch.stubs(:existing_slugs=)
+      orch.stubs(:concept_registry=)
+      pipeline = described_class.new(
+        config: config,
+        store: store,
+        orchestrator: orch,
+        renderer: Xbookmark::Render::BookmarkRenderer.new(vault_path: vault),
+        downloader: stub(download: []),
+        defer_concept_index: true
+      )
+      pipeline.prepare_run!
+
+      outcome = pipeline.process(bookmark)
+
+      assert_equal :done, outcome.status
+      refute File.exist?(File.join(vault, "concepts", "index.md"))
+      pipeline.finalize_run!
+      assert File.exist?(File.join(vault, "concepts", "index.md"))
+    end
+  end
+
+  it "graduates recurring compound concepts using per-run recurrence counts" do
+    Dir.mktmpdir do |vault|
+      config = config_for(vault)
+      store = Xbookmark::State::Store.new(":memory:")
+      orch = Class.new do
+        attr_writer :existing_slugs, :concept_registry
+
+        def enrich(_bookmark, transcripts:, image_paths:)
+          Xbookmark::Enrich::EnrichmentResult.new(
+            summary: "summary",
+            tags: ["tag"],
+            concepts: [{ "label" => "venezuelan-economy", "kind" => "subtopic" }],
+            links: [],
+            image_captions: {},
+            image_ocr: {},
+            partial: false,
+            link_blobs: []
+          )
+        end
+      end.new
+      pipeline = described_class.new(
+        config: config,
+        store: store,
+        orchestrator: orch,
+        renderer: Xbookmark::Render::BookmarkRenderer.new(vault_path: vault),
+        downloader: stub(download: []),
+        defer_concept_index: true
+      )
+      pipeline.prepare_run!
+
+      3.times do |i|
+        pipeline.process(bookmark_with(id: "100#{i}", text: "venezuela economy #{i}"))
+      end
+
+      assert File.exist?(File.join(vault, "concepts", "venezuela-economy.md"))
+      assert_includes File.read(File.join(vault, "concepts", "venezuela-economy.md")), "broader:"
+    end
+  end
+
+  it "counts existing registry evidence and plain string candidates for recurrence" do
+    Dir.mktmpdir do |vault|
+      pipeline = described_class.new(
+        config: config_for(vault),
+        store: Xbookmark::State::Store.new(":memory:"),
+        orchestrator: stub,
+        renderer: Xbookmark::Render::BookmarkRenderer.new(vault_path: vault),
+        downloader: stub(download: [])
+      )
+      registry = Xbookmark::Taxonomy::Registry.new([
+        Xbookmark::Taxonomy::Concept.new(slug: "existing", evidence_count: 2)
+      ])
+
+      counts = pipeline.send(:recurrence_counts_for, ["plain-topic"], registry: registry)
+
+      assert_equal 2, counts["existing"]
+      assert_equal 1, counts["plain-topic"]
     end
   end
 

@@ -46,7 +46,8 @@ module Xbookmark
       def load_config
         require_relative "../config"
 
-        Xbookmark::Config.load(wiki_override: options[:wiki], vault_override: options[:vault], verbose: options[:verbose])
+        Xbookmark::Config.load_offline(wiki_override: options[:wiki], vault_override: options[:vault],
+                                       verbose: options[:verbose])
       end
 
       def load_store(config)

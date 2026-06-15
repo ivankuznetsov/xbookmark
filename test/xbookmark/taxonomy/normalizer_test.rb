@@ -29,12 +29,22 @@ describe Xbookmark::Taxonomy::Normalizer do
 
   it "keeps recurring child concepts with broader links and facets" do
     normalizer = described_class.new(recurrence_counts: { "venezuelan-economy" => 3 })
-    concept = normalizer.normalize({ "label" => "venezuelan-economy", "kind" => "subtopic" }).first
+    concept = normalizer.normalize(
+      { "label" => "venezuelan-economy", "kind" => "subtopic", "aliases" => ["Venezuelan economy"], "broader" => ["Venezuela"] }
+    ).first
 
     assert_equal "venezuela-economy", concept.slug
-    assert_equal %w[venezuela economics], concept.broader
+    assert_equal %w[venezuela], concept.broader
+    assert_equal ["Venezuelan economy"], concept.aliases
     assert_includes concept.facets, "area/venezuela"
     assert_includes concept.facets, "facet/economics"
+  end
+
+  it "derives broader links for recurring child concepts when enrichment omits parents" do
+    normalizer = described_class.new(recurrence_counts: { "venezuelan-economy" => 3 })
+    concept = normalizer.normalize({ "label" => "venezuelan-economy", "kind" => "subtopic" }).first
+
+    assert_equal %w[venezuela economics], concept.broader
   end
 end
 
@@ -89,5 +99,46 @@ describe Xbookmark::Taxonomy::Curator do
     assert_equal "blocked_conflicts", store.concepts.first[:curator_outcome]
     assert_includes curator.prompt_for([{ "label" => "brand-new-concept" }]), "sanitized registry context"
     refute Xbookmark::Taxonomy::Concept.new(slug: "old", outcome: "alias").canonical?
+  end
+
+  it "uses codex curation decisions when available and persists sanitized parents" do
+    store = Xbookmark::State::Store.new(":memory:")
+    codex = mock("codex")
+    codex.expects(:run).with do |prompt:, json_schema:|
+      prompt.include?("Sanitized registry context") && json_schema["required"] == %w[decisions]
+    end.returns(
+      "decisions" => [
+        {
+          "slug" => "Venezuelan Economy",
+          "label" => "Venezuelan Economy",
+          "kind" => "subtopic",
+          "aliases" => ["VE\n"],
+          "broader" => ["Venezuela"],
+          "evidence_count" => 5,
+          "confidence" => 0.9,
+          "curation_state" => "canonical"
+        }
+      ]
+    )
+
+    decisions = described_class.new(codex: codex, store: store).curate([{ "label" => "venezuelan-economy" }])
+
+    assert_equal "venezuela-economy", decisions.first["slug"]
+    assert_equal %w[venezuela], decisions.first["broader"]
+    assert_equal ["VE"], decisions.first["aliases"]
+    assert_equal "canonical", store.concepts.first[:curator_outcome]
+  end
+
+  it "falls back to deterministic curation when codex fails" do
+    store = Xbookmark::State::Store.new(":memory:")
+    codex = mock("codex")
+    codex.stubs(:run).raises(Xbookmark::CodexError, "down")
+    curator = described_class.new(codex: codex, store: store)
+
+    err = capture_stderr { @decisions = curator.curate(["brand-new-concept"]) }
+
+    assert_match(/taxonomy curator fell back/, err)
+    assert_equal "brand-new-concept", @decisions.first["slug"]
+    assert_equal "blocked_conflicts", store.concepts.first[:curator_outcome]
   end
 end

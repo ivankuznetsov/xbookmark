@@ -1,7 +1,9 @@
 # frozen_string_literal: true
 
 require "fileutils"
+require "json"
 require "ostruct"
+require "set"
 require "time"
 require "yaml"
 require_relative "../render/path_builder"
@@ -54,16 +56,19 @@ module Xbookmark
         snapshot_path = snapshot!(stamp)
         manifest = Manifest.new(path: File.join(@config.vault_path, ".xbookmark", "taxonomy-#{stamp}.manifest.json"))
 
-        # Run every destructive *file* operation first, collecting the state
-        # mutations they imply. The SQLite writes are applied only after all
-        # file ops succeed, so a mid-apply failure rolls back to the snapshot
-        # with the DB untouched — files and state never diverge.
+        # Run file operations first, collecting the state mutations they imply.
+        # The snapshot is backup/audit evidence for manual recovery; rebuilds
+        # are forward-only so successful repairs remain visible if a later
+        # operation fails and the report marks the run partial.
         path_updates = rename_numeric_bookmarks(manifest)
-        pruned_ids = numeric_thread_ids
-        rewrite_thread_links(manifest, pruned_ids)
-        prune_numeric_threads(manifest, pruned_ids)
+        thread_ids = numeric_thread_ids
+        real_thread_ids = real_numeric_thread_ids(thread_ids)
+        singleton_thread_ids = thread_ids - real_thread_ids
+        thread_moves = move_numeric_threads(manifest, real_thread_ids)
+        rewrite_thread_links(manifest, singleton_thread_ids, thread_moves)
+        prune_numeric_threads(manifest, singleton_thread_ids)
 
-        commit_state!(path_updates, pruned_ids)
+        commit_state!(path_updates, singleton_thread_ids, thread_moves)
 
         after = Auditor.new(vault_path: @config.vault_path).metrics
         graph_path = File.join(@config.vault_path, ".xbookmark", "taxonomy-#{stamp}.graph-health.json")
@@ -74,12 +79,12 @@ module Xbookmark
         Report.new(state: "applied", counts: after, manifest_path: manifest.path,
                    graph_health_path: graph_path, snapshot_path: snapshot_path)
       rescue StandardError => e
-        # Roll the wiki back to the pre-apply snapshot and record what completed
-        # before the failure. State writes are deferred to commit_state!, so the
-        # files and SQLite never diverge on a partial apply.
-        restore_snapshot!(snapshot_path)
-        manifest.write(snapshot_path: snapshot_path)
-        Report.new(state: "partial_failure", counts: before, manifest_path: manifest.path,
+        # Keep successful forward repairs in place and record the failure next
+        # to the pre-apply snapshot. The snapshot is intentionally not restored
+        # automatically because SQLite and file operations cannot be rolled
+        # back as one atomic unit.
+        manifest&.write(snapshot_path: snapshot_path)
+        Report.new(state: "partial_failure", counts: before, manifest_path: manifest&.path,
                    snapshot_path: snapshot_path, skipped: ["#{e.class}: #{e.message}"])
       end
 
@@ -124,29 +129,110 @@ module Xbookmark
         end
       end
 
-      # Strip references to soon-to-be-pruned numeric thread pages from every
-      # generated note BEFORE the pages are deleted, so the rebuild never
-      # leaves dangling `[[threads/<id>]]` wikilinks behind.
-      def rewrite_thread_links(manifest, pruned_ids)
-        return if pruned_ids.empty?
+      def real_numeric_thread_ids(thread_ids)
+        wanted = thread_ids.to_set
+        return [] if wanted.empty?
 
+        counts = Hash.new(0)
+        count_thread_references(wanted, counts)
+        count_store_conversations(wanted, counts)
+        thread_ids.select { |id| counts[id] >= 2 }
+      end
+
+      def count_thread_references(wanted, counts)
         @safety.allowed_markdown_files.each do |path|
-          original = File.read(path)
-          rewritten = strip_thread_references(original, pruned_ids)
-          next if rewritten == original
+          next if path.include?("/threads/")
 
-          File.write(path, rewritten)
-          manifest.add(:link_rewrite, "path" => relativize(path), "reason" => "pruned_numeric_thread")
+          content = File.read(path)
+          wanted.each do |id|
+            counts[id] += 1 if content.include?("threads/#{id}")
+          end
         end
       end
 
-      def strip_thread_references(content, pruned_ids)
-        pruned_ids.reduce(content) do |text, id|
-          quoted = Regexp.escape(id)
-          text
-            .gsub(/\n\n## Thread\n\n\[\[threads\/#{quoted}(?:\|[^\]]*)?\]\]/, "")
-            .gsub(/^thread: ["']?threads\/#{quoted}["']?[ \t]*$/, "thread:")
+      def count_store_conversations(wanted, counts)
+        Array(@store.bookmarks).each do |row|
+          conversation = conversation_id_from_row(row)
+          counts[conversation] += 1 if wanted.include?(conversation)
         end
+      end
+
+      def conversation_id_from_row(row)
+        return nil if row[:payload_json].to_s.empty?
+
+        payload = JSON.parse(row[:payload_json])
+        data = Array(payload && payload["data"]).first || {}
+        data["conversation_id"].to_s unless data["conversation_id"].to_s.empty?
+      rescue JSON::ParserError
+        nil
+      end
+
+      def move_numeric_threads(manifest, thread_ids)
+        thread_ids.map do |id|
+          old_path = File.join(@config.vault_path, "threads", "#{id}.md")
+          new_slug = "thread-#{id}"
+          new_path = File.join(@config.vault_path, "threads", "#{new_slug}.md")
+          @safety.validate_write_path!(new_path)
+          raise "rename collision: #{relativize(new_path)} already exists" if File.exist?(new_path)
+
+          FileUtils.mv(old_path, new_path)
+          rewrite_thread_page_frontmatter(new_path, slug: new_slug, label: "thread #{new_slug}")
+          relative = relativize(new_path)
+          manifest.add(:rename_thread, "old_path" => relativize(old_path), "new_path" => relative,
+                                       "old_slug" => id, "new_slug" => new_slug)
+          [id, new_slug, relative]
+        end
+      end
+
+      def rewrite_thread_page_frontmatter(path, slug:, label:)
+        front, body = parse_note(path)
+        return unless front
+
+        front["kind"] ||= "thread"
+        front["slug"] = slug
+        front["label"] = label
+        File.write(path, "---\n#{front.to_yaml(line_width: -1).sub(/^---\n?/, "")}---\n\n#{body.to_s.sub(/\A\n+/, "")}")
+      end
+
+      # Rewrite references to legacy numeric thread pages in one pass over the
+      # generated notes: singleton references are stripped, while real
+      # multi-bookmark thread pages move to non-numeric names.
+      def rewrite_thread_links(manifest, pruned_ids, thread_moves)
+        return if pruned_ids.empty? && thread_moves.empty?
+
+        moved = thread_moves.to_h { |old_slug, new_slug, _relative| [old_slug, new_slug] }
+        @safety.allowed_markdown_files.each do |path|
+          original = File.read(path)
+          rewritten = rewrite_thread_references(original, pruned_ids: pruned_ids, moved: moved)
+          next if rewritten == original
+
+          File.write(path, rewritten)
+          manifest.add(:link_rewrite, "path" => relativize(path), "reason" => "numeric_thread_targets")
+        end
+      end
+
+      def rewrite_thread_references(content, pruned_ids:, moved:)
+        text = strip_pruned_thread_references(content, pruned_ids)
+        return text if moved.empty?
+
+        pattern = moved.keys.map { |id| Regexp.escape(id) }.join("|")
+        text
+          .gsub(/\[\[threads\/(#{pattern})(?:\|[^\]]*)?\]\]/) do
+            new_slug = moved.fetch(Regexp.last_match(1))
+            "[[threads/#{new_slug}|thread #{new_slug}]]"
+          end
+          .gsub(/^thread: ["']?threads\/(#{pattern})["']?[ \t]*$/) do
+            "thread: threads/#{moved.fetch(Regexp.last_match(1))}"
+          end
+      end
+
+      def strip_pruned_thread_references(content, pruned_ids)
+        return content if pruned_ids.empty?
+
+        pattern = pruned_ids.map { |id| Regexp.escape(id) }.join("|")
+        content
+          .gsub(/\n\n## Thread\n\n\[\[threads\/(?:#{pattern})(?:\|[^\]]*)?\]\]/, "")
+          .gsub(/^thread: ["']?threads\/(?:#{pattern})["']?[ \t]*$/, "thread:")
       end
 
       def prune_numeric_threads(manifest, pruned_ids)
@@ -158,9 +244,8 @@ module Xbookmark
       end
 
       # Apply the deferred SQLite mutations once every file op has succeeded.
-      def commit_state!(path_updates, pruned_ids)
-        path_updates.each { |tweet_id, relative| @store.update_bookmark_path!(tweet_id: tweet_id, markdown_path: relative) }
-        pruned_ids.each { |id| @store.delete_page!(kind: "thread", slug: id) }
+      def commit_state!(path_updates, pruned_ids, thread_moves)
+        @store.commit_taxonomy_rebuild!(path_updates: path_updates, pruned_ids: pruned_ids, thread_moves: thread_moves)
       end
 
       def snapshot!(stamp)
@@ -171,19 +256,6 @@ module Xbookmark
           FileUtils.cp_r(source, File.join(root, dir)) if File.directory?(source)
         end
         root
-      end
-
-      def restore_snapshot!(snapshot_path)
-        return unless snapshot_path && File.directory?(snapshot_path)
-
-        SNAPSHOT_DIRS.each do |dir|
-          backup = File.join(snapshot_path, dir)
-          target = File.join(@config.vault_path, dir)
-          next unless File.directory?(backup)
-
-          FileUtils.rm_rf(target)
-          FileUtils.cp_r(backup, target)
-        end
       end
 
       def with_lock(&block)

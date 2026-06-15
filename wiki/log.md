@@ -273,3 +273,10 @@ Append-only log of meaningful wiki updates.
 **Pages updated:** wiki/index.md, wiki/architecture.md, wiki/active-areas.md, wiki/commands.md, wiki/api.md, wiki/gaps.md, wiki/log.md
 **Decision:** Document `doctor --fix`, correct QMD registration to the bookmark wiki root, record taxonomy/sync reindex behavior, and align coverage wording with the current Minitest suite. No `qmd update` or `qmd embed` was run during this refresh.
 **Source:** `origin/main..origin/feat/wiki-graph-taxonomy` at `c83d53c`, `bin/xbookmark`, `lib/xbookmark/cli.rb`, `lib/xbookmark/cli/doctor.rb`, `lib/xbookmark/cli/taxonomy.rb`, `lib/xbookmark/qmd/registrar.rb`, `lib/xbookmark/taxonomy/rebuilder.rb`, `README.md`, and `test/readme_contract_test.rb`.
+
+## [2026-06-15T17:31:57Z] taxonomy maintenance review fixes
+
+**Action:** Hardened taxonomy maintenance after PR review by making rebuilds forward-only, migrating real numeric thread pages, preserving enrichment aliases/parents, using run-level registry/thread caches, wiring scheduled curator maintenance, and allowing offline taxonomy config without X credentials.
+**Pages updated:** README.md, wiki/architecture.md, wiki/commands.md, wiki/data-model.md, wiki/decisions.md, wiki/log.md
+**Decision:** Snapshots are manual recovery/audit evidence rather than automatic rollback; local cleanup, curator fallback, QMD maintenance, and cached enrichment should keep running when live X or Codex is unavailable.
+**Source:** PR #57 code review findings, `lib/xbookmark/taxonomy/rebuilder.rb`, `lib/xbookmark/taxonomy/curator.rb`, `lib/xbookmark/sync/pipeline.rb`, `lib/xbookmark/sync/runner.rb`, `lib/xbookmark/config.rb`, `lib/xbookmark/state/store.rb`, and related tests.

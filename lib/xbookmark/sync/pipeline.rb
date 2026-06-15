@@ -25,13 +25,37 @@ module Xbookmark
     class Pipeline
       Outcome = Struct.new(:status, :error, :markdown_path, :digest, :partial, keyword_init: true)
 
-      def initialize(config:, store:, orchestrator:, renderer:, downloader: nil, whisper: nil)
+      def initialize(config:, store:, orchestrator:, renderer:, downloader: nil, whisper: nil,
+                     registry: nil, thread_index: nil, defer_concept_index: false)
         @config = config
         @store = store
         @orch = orchestrator
         @renderer = renderer
         @downloader = downloader || Xbookmark::Media::Downloader.new
         @whisper = whisper || Xbookmark::Transcribe::Whisper.new(binary: config.whisper_bin, model: config.whisper_model)
+        @registry = registry
+        @thread_index = thread_index
+        @defer_concept_index = defer_concept_index
+        @concept_index_dirty = false
+        @recurrence_counts = nil
+      end
+
+      def prepare_run!
+        @registry = Xbookmark::Taxonomy::Registry.from_vault(@config.vault_path, store: @store)
+        @thread_index = Xbookmark::Sync::ThreadIndex.new(store: @store)
+        @concept_index_dirty = false
+        @recurrence_counts = recurrence_counts_from_registry(@registry)
+      end
+
+      def index_thread_bookmarks(bookmarks)
+        current_thread_index.add_bookmarks(bookmarks)
+      end
+
+      def finalize_run!
+        return unless @concept_index_dirty
+
+        write_concept_index(current_registry.all)
+        @concept_index_dirty = false
       end
 
       def process(bookmark)
@@ -41,16 +65,16 @@ module Xbookmark
 
         media_records = bookmark.media.empty? ? [] : @downloader.download(bookmark.media, media_scratch)
         transcripts = transcribe_videos(media_records)
-        registry = Xbookmark::Taxonomy::Registry.from_vault(@config.vault_path, store: @store)
+        registry = current_registry
         @orch.concept_registry = registry if @orch.respond_to?(:concept_registry=)
-        @orch.existing_slugs = @store.concept_slugs if @orch.respond_to?(:existing_slugs=)
+        @orch.existing_slugs = registry.all.map(&:slug) if @orch.respond_to?(:existing_slugs=)
         enrichment = @orch.enrich(bookmark, transcripts: transcripts, image_paths: image_paths(media_records))
         enrichment.concepts = normalize_concepts(enrichment.concepts, registry: registry)
 
         # Move scratch media into the final bookmark wiki location.
         media_records = move_media_into_wiki(bookmark, media_records)
 
-        thread = Xbookmark::Sync::ThreadIndex.new(store: @store).thread_for(bookmark)
+        thread = current_thread_index.thread_for(bookmark)
         existing_path = @store.find_bookmark(bookmark.tweet_id)&.dig(:markdown_path)
         markdown = @renderer.render(bookmark, enrichment, media_records: media_records, transcripts: transcripts,
                                     link_blobs: Array(enrichment.link_blobs), thread: thread)
@@ -116,7 +140,11 @@ module Xbookmark
       end
 
       def normalize_concepts(candidates, registry:)
-        Xbookmark::Taxonomy::Normalizer.new(registry: registry).normalize_candidates(candidates)
+        normalizer = Xbookmark::Taxonomy::Normalizer.new(
+          registry: registry,
+          recurrence_counts: recurrence_counts_for(candidates, registry: registry)
+        )
+        normalizer.normalize_candidates(candidates)
       end
 
       def ensure_aux_pages(bookmark, enrichment, thread:)
@@ -133,18 +161,54 @@ module Xbookmark
           attrs = concept.to_h.transform_keys(&:to_sym)
           attrs[:evidence_count] = 1
           @store.upsert_concept(**attrs)
-          concept_page.ensure!(concept)
+          persisted = Xbookmark::Taxonomy::Registry.concept_from_row(@store.find_concept(concept.slug))
+          concept_page.ensure!(persisted)
+          current_registry.add(persisted)
+          @concept_index_dirty = true
         end
-        # Rebuild the index from the full concept set so it reflects the whole
-        # taxonomy, not just this bookmark's concepts.
-        all_concepts = @store.concepts.map { |row| Xbookmark::Taxonomy::Registry.concept_from_row(row) }
-        conflicts = all_concepts.count { |concept| !concept.canonical? }
-        Xbookmark::Render::ConceptIndex.new(vault_path: @config.vault_path).write(all_concepts, conflicts: conflicts)
+        write_concept_index(current_registry.all) unless @defer_concept_index || !@concept_index_dirty
 
         if thread
           thread_page = Xbookmark::Render::ThreadPage.new(vault_path: @config.vault_path, store: @store, orchestrator: @orch)
           thread_page.ensure!(slug: thread[:slug], label: thread[:label], inputs: [snippet])
         end
+      end
+
+      def current_registry
+        @registry ||= Xbookmark::Taxonomy::Registry.from_vault(@config.vault_path, store: @store).tap do |registry|
+          @recurrence_counts ||= recurrence_counts_from_registry(registry)
+        end
+      end
+
+      def current_thread_index
+        @thread_index ||= Xbookmark::Sync::ThreadIndex.new(store: @store)
+      end
+
+      def recurrence_counts_for(candidates, registry:)
+        normalizer = Xbookmark::Taxonomy::Normalizer.new(registry: registry)
+        counts = @recurrence_counts ||= recurrence_counts_from_registry(registry)
+        Array(candidates).each do |candidate|
+          label =
+            if candidate.is_a?(Hash)
+              candidate["label"] || candidate[:label] || candidate["slug"] || candidate[:slug]
+            else
+              candidate
+            end
+          counts[normalizer.canonical_slug(label)] += 1
+        end
+        counts.dup
+      end
+
+      def recurrence_counts_from_registry(registry)
+        registry.all.each_with_object(Hash.new(0)) do |concept, counts|
+          counts[concept.slug] += concept.evidence_count.to_i
+        end
+      end
+
+      def write_concept_index(concepts)
+        conflicts = concepts.count { |concept| !concept.canonical? }
+        Xbookmark::Render::ConceptIndex.new(vault_path: @config.vault_path).write(concepts, conflicts: conflicts)
+        @concept_index_dirty = false
       end
     end
   end

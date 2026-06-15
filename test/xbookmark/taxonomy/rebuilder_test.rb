@@ -48,6 +48,22 @@ describe "taxonomy audit and rebuild" do
     end
   end
 
+  it "reports alias and compound metrics without proposing unsupported rebuild actions" do
+    Dir.mktmpdir do |vault|
+      write_note(File.join(vault, "topics", "venezuela-oil-politics.md"), "kind" => "topic")
+      write_note(File.join(vault, "concepts", "a.md"), "aliases" => ["dup"], "broader" => ["root"])
+      write_note(File.join(vault, "concepts", "b.md"), "aliases" => ["dup"], "broader" => ["root"])
+
+      audit = Xbookmark::Taxonomy::Auditor.new(vault_path: vault).call
+      rebuild = Xbookmark::Taxonomy::Rebuilder.new(config: config_for(vault), store: Xbookmark::State::Store.new(":memory:")).call
+
+      assert_equal "clean", audit.state
+      assert_equal "clean", rebuild.state
+      assert_equal 1, audit.counts[:one_off_compound_topics]
+      assert_equal 1, audit.counts[:duplicate_alias_clusters]
+    end
+  end
+
   it "validates path allowlists and graph-health thresholds" do
     Dir.mktmpdir do |vault|
       FileUtils.mkdir_p(File.join(vault, "bookmarks"))
@@ -123,6 +139,57 @@ describe "taxonomy audit and rebuild" do
     end
   end
 
+  it "migrates real numeric thread pages instead of pruning them" do
+    Dir.mktmpdir do |vault|
+      store = Xbookmark::State::Store.new(":memory:")
+      %w[201 202].each do |id|
+        store.upsert_pending(
+          tweet_id: id,
+          author_handle: "alice",
+          bookmarked_at: "2026-01-01T00:00:00Z",
+          payload: { "data" => [{ "id" => id, "conversation_id" => "123" }], "includes" => {}, "meta" => {} }
+        )
+      end
+      store.upsert_page(kind: "thread", slug: "123", path: "threads/123.md")
+      write_note(File.join(vault, "bookmarks", "2026", "01", "01", "first.md"),
+                 { "tweet_id" => "201", "thread" => "threads/123" },
+                 "first\n\n## Thread\n\n[[threads/123|thread 123]]")
+      write_note(File.join(vault, "bookmarks", "2026", "01", "01", "second.md"),
+                 { "tweet_id" => "202", "thread" => "threads/123" },
+                 "second\n\n## Thread\n\n[[threads/123|thread 123]]")
+      write_note(File.join(vault, "threads", "123.md"), { "kind" => "thread", "slug" => "123", "label" => "thread 123" })
+
+      report = Xbookmark::Taxonomy::Rebuilder.new(
+        config: config_for(vault), store: store, clock: -> { Time.utc(2026, 1, 2, 3, 4, 5) }
+      ).call(apply: true)
+
+      assert_equal "applied", report.state
+      refute File.exist?(File.join(vault, "threads", "123.md"))
+      moved_path = File.join(vault, "threads", "thread-123.md")
+      assert File.exist?(moved_path)
+      assert_includes File.read(moved_path), "slug: thread-123"
+      assert_includes File.read(File.join(vault, "bookmarks", "2026", "01", "01", "first.md")),
+                      "[[threads/thread-123|thread thread-123]]"
+      assert_equal "threads/thread-123.md", store.find_page("thread", "thread-123")[:path]
+      assert_nil store.find_page("thread", "123")
+      manifest = JSON.parse(File.read(report.manifest_path))
+      assert manifest["operations"].any? { |op| op["type"] == "rename_thread" }
+      refute manifest["operations"].any? { |op| op["type"] == "prune_thread" }
+    end
+  end
+
+  it "ignores corrupt cached payloads when classifying numeric thread pages" do
+    Dir.mktmpdir do |vault|
+      store = Xbookmark::State::Store.new(":memory:")
+      store.upsert_pending(tweet_id: "201", author_handle: "alice", bookmarked_at: "2026-01-01T00:00:00Z",
+                           payload: { "data" => [{ "id" => "201", "conversation_id" => "123" }] })
+      store.instance_variable_get(:@db).execute("UPDATE bookmarks SET payload_json = ? WHERE tweet_id = ?", ["{bad", "201"])
+      rebuilder = Xbookmark::Taxonomy::Rebuilder.new(config: config_for(vault), store: store)
+
+      assert_nil rebuilder.send(:conversation_id_from_row, store.bookmarks.first)
+    end
+  end
+
   it "records a failed qmd reindex without aborting the apply" do
     Dir.mktmpdir do |vault|
       store = Xbookmark::State::Store.new(":memory:")
@@ -143,12 +210,13 @@ describe "taxonomy audit and rebuild" do
     end
   end
 
-  it "rolls back to the snapshot and reports partial_failure when a state write fails mid-apply" do
+  it "keeps forward file repairs and reports partial_failure when a state write fails mid-apply" do
     Dir.mktmpdir do |vault|
       store = Xbookmark::State::Store.new(":memory:")
       original = File.join(vault, "bookmarks", "2026", "01", "01", "123.md")
-      write_note(original, { "tweet_id" => "123", "author" => "alice", "summary" => "Great topic" }, "body")
-      store.stubs(:update_bookmark_path!).raises("db boom")
+      write_note(original, { "tweet_id" => "123", "author" => "alice", "summary" => "Great topic",
+                             "bookmarked_at" => "2026-01-01T00:00:00Z" }, "body")
+      store.stubs(:commit_taxonomy_rebuild!).raises("db boom")
 
       report = Xbookmark::Taxonomy::Rebuilder.new(
         config: config_for(vault), store: store, clock: -> { Time.utc(2026, 1, 2, 3, 4, 5) }
@@ -158,9 +226,10 @@ describe "taxonomy audit and rebuild" do
       assert report.snapshot_path
       assert_includes report.skipped.first, "db boom"
       assert File.exist?(report.manifest_path)
-      # Snapshot restore: the original numeric note is back, the rename undone.
-      assert File.exist?(original)
-      refute File.exist?(File.join(vault, "bookmarks", "2026", "01", "01", "alice-great-topic-123.md"))
+      # Forward-only rebuild: completed file repairs stay in place, while the
+      # pre-apply snapshot is available for manual recovery.
+      refute File.exist?(original)
+      assert File.exist?(File.join(vault, "bookmarks", "2026", "01", "01", "alice-great-topic-123.md"))
     end
   end
 

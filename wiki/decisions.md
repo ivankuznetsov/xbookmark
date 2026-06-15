@@ -35,6 +35,8 @@ tags: [decisions]
 - Use readable bookmark filenames with mandatory tweet ID suffixes. The raw ID remains in frontmatter and filenames for stability, while Obsidian graph labels become human-readable.
 - Suppress singleton thread pages. Only local evidence of a real multi-bookmark conversation creates a readable thread page.
 - Use concept wikilinks for graph hierarchy and nested tags only as facets.
+- Treat taxonomy rebuild snapshots as manual recovery/audit evidence, not automatic rollback. Rebuilds are forward-only and report `partial_failure` if a later operation fails after earlier repairs completed.
+- Run scheduled taxonomy curation from local concept state. Codex-driven curator output is sanitized through the concept model and falls back to deterministic rules when Codex is unavailable, so local maintenance does not depend on live X access or a successful LLM call.
 - Register and query a QMD collection named `bookmarks` at the bookmark wiki root; current QMD `collection list`/`collection add` commands are preferred, with legacy `list`/`register`/`index` fallbacks.
 - Use systemd user timers on Linux and launchd on macOS for daily sync, make scheduler installation part of the default setup flow, and enable Linux systemd linger when possible so daily timers can run after logout.
 - Scheduled sync should tolerate X source-only failures. It should continue local taxonomy cleanup, QMD maintenance, and cached retry/enrichment work, report `source blocked`, exit successfully when no local bookmark work failed, and avoid stamping `last_sync_finished_at` so the next timer can fetch new bookmarks after reauth.
