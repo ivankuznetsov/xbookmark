@@ -301,3 +301,10 @@ Append-only log of meaningful wiki updates.
 **Pages updated:** wiki/architecture.md, wiki/log.md
 **Decision:** Future thread pages and taxonomy rebuild migrations derive their leading slug and wikilink label from cached local tweet text, falling back to rendered bookmark summaries, while retaining the conversation ID suffix for stable mapping; rebuilds repair existing placeholder thread pages without live X access.
 **Source:** Local vault spot-check after PR #59 merge, `lib/xbookmark/sync/thread_index.rb`, `lib/xbookmark/taxonomy/rebuilder.rb`, and related tests.
+
+## [2026-06-15T18:20:00Z] scheduled curation timeout
+
+**Action:** Fixed forced scheduler verification still spending minutes inside a single Codex taxonomy-curation call.
+**Pages updated:** wiki/architecture.md, wiki/log.md
+**Decision:** Scheduled taxonomy curation is both batch-bounded and LLM-time-bounded; if Codex is too slow, the curator falls back to deterministic local rules so the daemon exits cleanly.
+**Source:** Forced `XBOOKMARK_MIN_RUN_INTERVAL_HOURS=0 bin/xbookmark sync --from-scheduler` run, `lib/xbookmark/sync/runner.rb`, `lib/xbookmark/taxonomy/curator.rb`, and `test/xbookmark/sync/runner_test.rb`.

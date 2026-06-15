@@ -169,7 +169,9 @@ describe Xbookmark::Sync::Runner do
                          aliases: [], broader: ["venezuela"], facets: ["area/venezuela"],
                          evidence_count: 3, confidence: 0.3)
     codex = mock("codex")
-    codex.expects(:run).returns(
+    codex.expects(:run).with do |args|
+      args[:timeout] == Xbookmark::Sync::Runner::TAXONOMY_CURATION_TIMEOUT_SECONDS
+    end.returns(
       "decisions" => [
         {
           "slug" => "venezuela-economy",
