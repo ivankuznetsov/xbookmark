@@ -91,6 +91,23 @@ describe "taxonomy audit and rebuild" do
     end
   end
 
+  it "caps an offline-derived title to a concise placeholder when the summary's first sentence is long" do
+    Dir.mktmpdir do |vault|
+      store = Xbookmark::State::Store.new(":memory:")
+      path = File.join(vault, "bookmarks", "2026", "05", "22", "alice-long-1.md")
+      long = "Samo Burja argues that tech philanthropy is a durable form of elite influence with deep historical precedents"
+      write_note(path, { "xbookmark_schema" => 1, "tweet_id" => "1", "author" => "alice", "summary" => "#{long}." })
+
+      Xbookmark::Taxonomy::Rebuilder.new(
+        config: config_for(vault), store: store, clock: -> { Time.utc(2026, 6, 1) }
+      ).call(apply: true)
+
+      front = YAML.safe_load(File.read(path).split("---\n", 3)[1], permitted_classes: [Date, Time])
+      assert_equal "Samo Burja argues that tech philanthropy is a durable form of elite", front["title"]
+      assert_equal Xbookmark::Taxonomy::Rebuilder::TITLE_MAX_WORDS, front["title"].split(/\s+/).length
+    end
+  end
+
   it "prunes old snapshots beyond the retention limit after a successful apply" do
     Dir.mktmpdir do |vault|
       store = Xbookmark::State::Store.new(":memory:")

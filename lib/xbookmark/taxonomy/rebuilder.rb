@@ -32,6 +32,14 @@ module Xbookmark
       # kept).
       SNAPSHOT_RETENTION = 3
 
+      # Word cap for titles derived offline from an existing note's summary.
+      # The new enrichment contract emits concise 3-7 word titles, but notes
+      # enriched under schema 1 have no stored title, so the migration falls
+      # back to the summary's first sentence. Unbounded, that sentence can run
+      # 200+ chars; cap it to a short, human-readable placeholder until the note
+      # is re-enriched.
+      TITLE_MAX_WORDS = 12
+
       def initialize(config:, store:, registrar: nil, clock: -> { Time.now.utc })
         @config = config
         @store = store
@@ -581,7 +589,16 @@ module Xbookmark
         source = front["summary"].to_s
         source = front["title"].to_s if source.strip.empty?
         clause = source.split(/[.!?\n]/).first.to_s.strip
-        Xbookmark::Render::MarkdownSafety.wikilink_label(clause)
+        Xbookmark::Render::MarkdownSafety.wikilink_label(truncate_words(clause, TITLE_MAX_WORDS))
+      end
+
+      # Keep the first `limit` whitespace-separated words, dropping any trailing
+      # punctuation left dangling by the cut so the placeholder reads cleanly.
+      def truncate_words(text, limit)
+        words = text.split(/\s+/)
+        return text if words.length <= limit
+
+        words.first(limit).join(" ").sub(/[\p{P}\p{S}]+\z/, "")
       end
 
       def schema_date(value)
