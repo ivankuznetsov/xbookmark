@@ -8,6 +8,7 @@ require_relative "../enrich/codex"
 require_relative "../enrich/orchestrator"
 require_relative "../enrich/note_source"
 require_relative "../render/bookmark_renderer"
+require_relative "../taxonomy/lock"
 
 module Xbookmark
   module Sync
@@ -48,6 +49,24 @@ module Xbookmark
       end
 
       def call(limit: nil, reset_evidence: :auto)
+        # Hold the taxonomy lock for the whole run so a scheduled sync or a
+        # manual `taxonomy rebuild --apply` can't mutate the same files midway.
+        lock = Xbookmark::Taxonomy::Lock.acquire(@config.vault_path)
+        unless lock
+          @logger.call("[reenrich] another xbookmark run holds the taxonomy lock; skipping")
+          return Report.new(total: 0, processed: 0, done: 0, partial: 0, failed: 0, skipped: 0)
+        end
+
+        begin
+          run(limit: limit, reset_evidence: reset_evidence)
+        ensure
+          Xbookmark::Taxonomy::Lock.release(lock)
+        end
+      end
+
+      private
+
+      def run(limit:, reset_evidence:)
         pending = pending_notes
         report = Report.new(total: pending.size, processed: 0, done: 0, partial: 0, failed: 0, skipped: 0)
         batch = limit ? pending.first(limit) : pending
@@ -60,8 +79,6 @@ module Xbookmark
         @logger.call(report.to_s)
         report
       end
-
-      private
 
       def reset?(reset_evidence, limit, pending)
         case reset_evidence

@@ -179,6 +179,23 @@ describe Xbookmark::Sync::Reenricher do
     end
   end
 
+  it "skips when another run already holds the taxonomy lock" do
+    Dir.mktmpdir do |vault|
+      write_note(vault, "old-1.md", schema: 1, tweet_id: "1")
+      store = Xbookmark::State::Store.new(":memory:")
+      held = Xbookmark::Taxonomy::Lock.acquire(vault)
+      pipeline = fake_pipeline
+
+      report = described_class.new(config: OpenStruct.new(vault_path: vault), store: store, pipeline: pipeline,
+                                   logger: ->(_) { }).call
+
+      assert_equal 0, report.total
+      assert_empty pipeline.processed
+    ensure
+      Xbookmark::Taxonomy::Lock.release(held)
+    end
+  end
+
   it "never fetches links offline" do
     assert_nil Xbookmark::Sync::Reenricher::NullLinkFetcher.fetch("https://example.com")
   end
