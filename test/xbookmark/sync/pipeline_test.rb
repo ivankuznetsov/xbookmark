@@ -96,9 +96,10 @@ describe Xbookmark::Sync::Pipeline do
           @existing_slugs = value
         end
 
-        def enrich(_bookmark, transcripts:, image_paths:)
+        def enrich(_bookmark, transcripts:, image_paths:, vision: nil)
           @transcripts = transcripts
           @image_paths = image_paths
+          @vision = vision
           @result
         end
 
@@ -121,6 +122,53 @@ describe Xbookmark::Sync::Pipeline do
       assert File.exist?(File.join(vault, "authors", "alice.md"))
       assert File.exist?(File.join(vault, "concepts", "topic.md"))
       refute File.exist?(File.join(vault, "threads", "1001.md"))
+    end
+  end
+
+  it "re-renders offline in place without downloading, transcribing, or moving media" do
+    Dir.mktmpdir do |vault|
+      config = config_for(vault)
+      store = Xbookmark::State::Store.new(":memory:")
+      existing = File.join(vault, "bookmarks", "2021", "05", "18", "alice-old-1001.md")
+      FileUtils.mkdir_p(File.dirname(existing))
+      File.write(existing, "old content")
+
+      downloader = mock("downloader")
+      downloader.expects(:download).never
+      whisper = mock("whisper")
+      whisper.expects(:transcribe).never
+      orch = Class.new do
+        attr_accessor :existing_slugs, :concept_registry
+        attr_reader :captured
+
+        def initialize(result)
+          @result = result
+        end
+
+        def enrich(_bookmark, transcripts:, image_paths:, vision: nil)
+          @captured = { transcripts: transcripts, image_paths: image_paths, vision: vision }
+          @result
+        end
+      end.new(enrichment)
+      renderer = Xbookmark::Render::BookmarkRenderer.new(vault_path: vault)
+      pipeline = described_class.new(config: config, store: store, orchestrator: orch,
+                                     renderer: renderer, downloader: downloader, whisper: whisper)
+
+      outcome = pipeline.process_offline(
+        bookmark,
+        transcripts: { "clip.mp4" => "spoken" },
+        image_paths: [],
+        media_records: [{ path: File.join(vault, "media", "1001", "p.jpg"), kind: "photo", alt_text: nil }],
+        vision: { "captions" => { "p.jpg" => "a cat" }, "ocr" => {} },
+        existing_path: existing
+      )
+
+      assert_equal :done, outcome.status
+      assert_equal existing, outcome.markdown_path, "must rewrite the note in place, not rename"
+      content = File.read(existing)
+      assert_includes content, "xbookmark_schema: 2"
+      refute_equal "old content", content
+      assert_equal({ "captions" => { "p.jpg" => "a cat" }, "ocr" => {} }, orch.captured[:vision])
     end
   end
 
@@ -255,7 +303,7 @@ describe Xbookmark::Sync::Pipeline do
       orch = Class.new do
         attr_writer :existing_slugs, :concept_registry
 
-        def enrich(_bookmark, transcripts:, image_paths:)
+        def enrich(_bookmark, transcripts:, image_paths:, vision: nil)
           Xbookmark::Enrich::EnrichmentResult.new(
             summary: "summary",
             tags: ["tag"],

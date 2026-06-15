@@ -61,9 +61,12 @@ module Xbookmark
         @concept_registry = concept_registry
       end
 
-      def enrich(bookmark, transcripts: {}, image_paths: [])
+      # vision: optional pre-computed { "captions" => {...}, "ocr" => {...} }.
+      # Offline re-enrichment passes the captions a prior run already produced so
+      # the model gets image context as text without a fresh (paid) vision pass.
+      def enrich(bookmark, transcripts: {}, image_paths: [], vision: nil)
         link_blobs = fetch_link_blobs(bookmark)
-        vision = { "captions" => {}, "ocr" => {} }
+        vision ||= { "captions" => {}, "ocr" => {} }
 
         partial = false
         final_image_paths = image_paths

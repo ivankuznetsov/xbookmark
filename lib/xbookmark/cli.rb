@@ -57,6 +57,12 @@ module Xbookmark
       Xbookmark::CLI::Sync.new([], options).resync_run(tweet_id)
     end
 
+    desc "reenrich", "Offline re-enrichment of existing notes under the current contract (no X fetch)"
+    method_option :limit, type: :numeric, desc: "Re-enrich at most N notes (resumable; omit for all)"
+    def reenrich
+      Xbookmark::CLI::Sync.new([], options).reenrich_run
+    end
+
     desc "find QUERY", "Search the bookmark wiki via QMD"
     method_option :limit, type: :numeric, default: 20
     def find(*query)

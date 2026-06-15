@@ -64,6 +64,20 @@ module Xbookmark
         exit_with(report)
       end
 
+      # Offline: re-runs the current enrichment contract over notes already in
+      # the wiki (no X fetch). Reads config without X auth.
+      def reenrich_run
+        require_relative "../config"
+        require_relative "../sync/reenricher"
+        require_relative "../state/store"
+
+        config = Xbookmark::Config.load_offline(wiki_override: options[:wiki], vault_override: options[:vault], verbose: options[:verbose])
+        store  = Xbookmark::State::Store.new(config.state_db_path)
+
+        report = Xbookmark::Sync::Reenricher.new(config: config, store: store).call(limit: options[:limit])
+        exit(report.exit_code) unless report.exit_code.zero?
+      end
+
       private
 
       def exit_with(report)

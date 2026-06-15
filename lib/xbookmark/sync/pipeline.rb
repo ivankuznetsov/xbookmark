@@ -65,22 +65,43 @@ module Xbookmark
       def process(bookmark)
         scratch = scratch_dir_for(bookmark)
         FileUtils.mkdir_p(scratch)
-        media_scratch = File.join(scratch, "media")
+        guard(bookmark, scratch: scratch) do
+          media_scratch = File.join(scratch, "media")
+          media_records = bookmark.media.empty? ? [] : @downloader.download(bookmark.media, media_scratch)
+          transcripts = transcribe_videos(media_records)
+          # Move scratch media into the final bookmark wiki location.
+          media_records = move_media_into_wiki(bookmark, media_records)
+          enrich_render_persist(bookmark, transcripts: transcripts, image_paths: image_paths(media_records),
+                                          media_records: media_records)
+        end
+      end
 
-        media_records = bookmark.media.empty? ? [] : @downloader.download(bookmark.media, media_scratch)
-        transcripts = transcribe_videos(media_records)
+      # Re-render a bookmark from already-resolved inputs (NoteSource), skipping
+      # media download, whisper, and the scratch→wiki media move. Writes in
+      # place via existing_path so the note keeps its filename. vision carries
+      # the captions a prior run produced so no fresh vision pass is needed.
+      def process_offline(bookmark, transcripts:, image_paths:, media_records:, vision:, existing_path:)
+        guard(bookmark, scratch: nil) do
+          enrich_render_persist(bookmark, transcripts: transcripts, image_paths: image_paths,
+                                          media_records: media_records, vision: vision, existing_path: existing_path)
+        end
+      end
+
+      private
+
+      # Shared enrich → normalize → render → persist tail for both the online
+      # (process) and offline (process_offline) paths. existing_path, when
+      # given, forces an in-place rewrite instead of a path lookup.
+      def enrich_render_persist(bookmark, transcripts:, image_paths:, media_records:, vision: nil, existing_path: :lookup)
         registry = current_registry
         @orch.concept_registry = registry if @orch.respond_to?(:concept_registry=)
         @orch.existing_slugs = registry.all.map(&:slug) if @orch.respond_to?(:existing_slugs=)
-        enrichment = @orch.enrich(bookmark, transcripts: transcripts, image_paths: image_paths(media_records))
+        enrichment = @orch.enrich(bookmark, transcripts: transcripts, image_paths: image_paths, vision: vision)
         enrichment.concepts = normalize_concepts(enrichment.concepts, registry: registry)
         enrichment.concepts = reject_author_self_concepts(enrichment.concepts, bookmark)
 
-        # Move scratch media into the final bookmark wiki location.
-        media_records = move_media_into_wiki(bookmark, media_records)
-
         thread = current_thread_index.thread_for(bookmark)
-        existing_path = @store.find_bookmark(bookmark.tweet_id)&.dig(:markdown_path)
+        existing_path = @store.find_bookmark(bookmark.tweet_id)&.dig(:markdown_path) if existing_path == :lookup
         markdown = @renderer.render(bookmark, enrichment, media_records: media_records, transcripts: transcripts,
                                     link_blobs: Array(enrichment.link_blobs), thread: thread)
         markdown_path = @renderer.write(bookmark, markdown, enrichment: enrichment, existing_path: existing_path)
@@ -88,9 +109,15 @@ module Xbookmark
         refresh_concept_references(markdown_path)
 
         ensure_aux_pages(bookmark, enrichment, thread: thread)
-
-        FileUtils.rm_rf(scratch)
         Outcome.new(status: :done, markdown_path: markdown_path, digest: digest, partial: enrichment.partial?)
+      end
+
+      # Wrap an enrichment attempt with the shared error policy: transient
+      # errors retry, everything else (including coding bugs) becomes permanent
+      # rather than being silently retried against live APIs. Always clears the
+      # scratch dir when one was allocated.
+      def guard(bookmark, scratch:)
+        yield.tap { FileUtils.rm_rf(scratch) if scratch }
       rescue Xbookmark::TransientError, Xbookmark::RateLimited => e
         # WhisperUnavailable, MediaError, and CodexError already inherit
         # from TransientError — the rescue list above covers all of them.
@@ -100,17 +127,11 @@ module Xbookmark
         FileUtils.rm_rf(scratch) if scratch
         Outcome.new(status: :permanent_error, error: e)
       rescue StandardError => e
-        # Coding bugs (NoMethodError, TypeError, SQLite3::Exception, ...)
-        # are NOT transient — log the class and backtrace so they aren't
-        # silently retried 3× against live X/codex APIs, then promote
-        # straight to a permanent error.
         FileUtils.rm_rf(scratch) if scratch
         warn "[xbookmark] pipeline crashed for tweet #{bookmark.tweet_id}: #{e.class}: #{e.message}"
         warn e.backtrace.first(20).join("\n") if e.backtrace
         Outcome.new(status: :permanent_error, error: e)
       end
-
-      private
 
       def scratch_dir_for(bookmark)
         File.join(@config.scratch_dir, bookmark.tweet_id.to_s)

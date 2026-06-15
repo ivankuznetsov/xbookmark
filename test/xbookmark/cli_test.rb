@@ -8,6 +8,7 @@ require "xbookmark/qmd/searcher"
 require "xbookmark/scheduler/base"
 require "xbookmark/scheduler/factory"
 require "xbookmark/sync/runner"
+require "xbookmark/sync/reenricher"
 require "xbookmark/transcribe/whisper"
 require "xbookmark/x/auth"
 require "xbookmark/x/client"
@@ -144,6 +145,9 @@ describe Xbookmark::CLI do
 
     Xbookmark::CLI::Sync.expects(:new).with { |args, options| args == [] && options.is_a?(Hash) }.returns(stub(resync_run: nil))
     capture_stdout { described_class.start(%w[resync 123]) }
+
+    Xbookmark::CLI::Sync.expects(:new).with { |args, options| args == [] && options.is_a?(Hash) }.returns(stub(reenrich_run: nil))
+    capture_stdout { described_class.start(%w[reenrich --limit 3]) }
 
     Xbookmark::CLI::Find.expects(:new).with { |args, options| args == [] && options.is_a?(Hash) }.returns(stub(find_run: nil))
     capture_stdout { described_class.start(%w[find ozempic dose]) }
@@ -419,6 +423,23 @@ describe Xbookmark::CLI do
     assert_includes capture_stdout { Xbookmark::CLI::Sync.new([], { limit: 5 }).backfill_run }, "backfilled"
     assert_includes capture_stdout { Xbookmark::CLI::Sync.new([], { "from-scheduler": true }).sync_run }, "synced"
     assert_includes capture_stdout { Xbookmark::CLI::Sync.new([], {}).resync_run("123") }, "resynced"
+  end
+
+  it "runs offline reenrich through the reenricher and respects the limit option" do
+    Xbookmark::Config.stubs(:load_offline).returns(test_config)
+    reenricher = mock("reenricher")
+    reenricher.expects(:call).with(limit: 5).returns(Struct.new(:exit_code).new(0))
+    Xbookmark::Sync::Reenricher.expects(:new).returns(reenricher)
+
+    Xbookmark::CLI::Sync.new([], { limit: 5 }).reenrich_run
+  end
+
+  it "exits non-zero when offline reenrich reports failures" do
+    Xbookmark::Config.stubs(:load_offline).returns(test_config)
+    Xbookmark::Sync::Reenricher.stubs(:new).returns(stub(call: Struct.new(:exit_code).new(1)))
+
+    error = assert_raises(SystemExit) { Xbookmark::CLI::Sync.new([], {}).reenrich_run }
+    assert_equal 1, error.status
   end
 
   it "exits with a non-zero status when sync reports failures" do
