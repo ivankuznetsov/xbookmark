@@ -9,6 +9,7 @@ require "yaml"
 require_relative "../render/concept_index"
 require_relative "../render/concept_page"
 require_relative "../render/path_builder"
+require_relative "../sync/thread_index"
 require_relative "auditor"
 require_relative "concept"
 require_relative "graph_health_report"
@@ -37,7 +38,7 @@ module Xbookmark
       def call(apply: false, locked: false)
         before = Auditor.new(vault_path: @config.vault_path).metrics
         return dry_run(before) unless apply
-        return Report.new(state: "clean", counts: before) unless actionable?(before) || missing_concept_pages?
+        return Report.new(state: "clean", counts: before) unless needs_rebuild?(before)
 
         locked ? apply_changes(before) : with_lock { apply_changes(before) }
       rescue StandardError => e
@@ -47,8 +48,12 @@ module Xbookmark
       private
 
       def dry_run(before)
-        state = actionable?(before) ? "proposed_changes" : "clean"
+        state = needs_rebuild?(before) ? "proposed_changes" : "clean"
         Report.new(state: state, counts: before)
+      end
+
+      def needs_rebuild?(counts)
+        actionable?(counts) || missing_concept_pages? || placeholder_thread_pages?
       end
 
       def actionable?(counts)
@@ -61,6 +66,13 @@ module Xbookmark
 
         concepts.any? do |row|
           !File.exist?(File.join(@config.vault_path, "concepts", "#{row[:slug]}.md"))
+        end
+      end
+
+      def placeholder_thread_pages?
+        placeholder_thread_slugs.any? do |slug|
+          conversation = slug.delete_prefix("thread-")
+          !representative_thread_text(conversation).to_s.strip.empty?
         end
       end
 
@@ -78,6 +90,7 @@ module Xbookmark
         real_thread_ids = real_numeric_thread_ids(thread_ids)
         singleton_thread_ids = thread_ids - real_thread_ids
         thread_moves = move_numeric_threads(manifest, real_thread_ids)
+        thread_moves.concat(rename_placeholder_threads(manifest))
         rewrite_thread_links(manifest, singleton_thread_ids, thread_moves)
         prune_numeric_threads(manifest, singleton_thread_ids)
 
@@ -184,28 +197,88 @@ module Xbookmark
       def move_numeric_threads(manifest, thread_ids)
         thread_ids.map do |id|
           old_path = File.join(@config.vault_path, "threads", "#{id}.md")
-          new_slug = "thread-#{id}"
+          new_slug, label = thread_name_for(id)
           new_path = File.join(@config.vault_path, "threads", "#{new_slug}.md")
           @safety.validate_write_path!(new_path)
           raise "rename collision: #{relativize(new_path)} already exists" if File.exist?(new_path)
 
           FileUtils.mv(old_path, new_path)
-          rewrite_thread_page_frontmatter(new_path, slug: new_slug, label: "thread #{new_slug}")
+          rewrite_thread_page(new_path, slug: new_slug, label: label)
           relative = relativize(new_path)
           manifest.add(:rename_thread, "old_path" => relativize(old_path), "new_path" => relative,
                                        "old_slug" => id, "new_slug" => new_slug)
-          [id, new_slug, relative]
+          [id, new_slug, relative, label]
         end
       end
 
-      def rewrite_thread_page_frontmatter(path, slug:, label:)
+      def rename_placeholder_threads(manifest)
+        placeholder_thread_slugs.filter_map do |old_slug|
+          conversation = old_slug.delete_prefix("thread-")
+          next if representative_thread_text(conversation).to_s.strip.empty?
+
+          new_slug, label = thread_name_for(conversation)
+          next if new_slug == old_slug
+
+          old_path = File.join(@config.vault_path, "threads", "#{old_slug}.md")
+          new_path = File.join(@config.vault_path, "threads", "#{new_slug}.md")
+          @safety.validate_write_path!(new_path)
+          raise "rename collision: #{relativize(new_path)} already exists" if File.exist?(new_path)
+
+          FileUtils.mv(old_path, new_path)
+          rewrite_thread_page(new_path, slug: new_slug, label: label)
+          relative = relativize(new_path)
+          manifest.add(:rename_thread, "old_path" => relativize(old_path), "new_path" => relative,
+                                       "old_slug" => old_slug, "new_slug" => new_slug,
+                                       "reason" => "placeholder_thread_label")
+          [old_slug, new_slug, relative, label]
+        end
+      end
+
+      def placeholder_thread_slugs
+        Dir.glob(File.join(@config.vault_path, "threads", "*.md")).sort.filter_map do |path|
+          slug = File.basename(path, ".md")
+          slug if slug.match?(/\Athread-\d+\z/)
+        end
+      end
+
+      def thread_name_for(conversation)
+        text = representative_thread_text(conversation)
+        slug = Xbookmark::Sync::ThreadIndex.slug_for(conversation: conversation, text: text)
+        label = Xbookmark::Sync::ThreadIndex.label_for(text: text, fallback_slug: slug)
+        [slug, label]
+      end
+
+      def representative_thread_text(conversation)
+        thread_texts[conversation.to_s]
+      end
+
+      def thread_texts
+        @thread_texts ||= Array(@store.bookmarks).each_with_object({}) do |row, texts|
+          payload = row[:payload_json].to_s.empty? ? nil : JSON.parse(row[:payload_json])
+          data = Array(payload && payload["data"]).first || {}
+          conversation = data["conversation_id"].to_s
+          text = data["text"].to_s
+          texts[conversation] ||= text if !conversation.empty? && !text.strip.empty?
+        rescue JSON::ParserError
+          next
+        end
+      end
+
+      def rewrite_thread_page(path, slug:, label:)
         front, body = parse_note(path)
         return unless front
 
         front["kind"] ||= "thread"
         front["slug"] = slug
         front["label"] = label
-        File.write(path, "---\n#{front.to_yaml(line_width: -1).sub(/^---\n?/, "")}---\n\n#{body.to_s.sub(/\A\n+/, "")}")
+        body = body.to_s.sub(/\A\n+/, "")
+        body =
+          if body.start_with?("# ")
+            body.sub(/\A# .*/, "# #{label}")
+          else
+            "# #{label}\n\n#{body}"
+          end
+        File.write(path, "---\n#{front.to_yaml(line_width: -1).sub(/^---\n?/, "")}---\n\n#{body}")
       end
 
       # Rewrite references to legacy numeric thread pages in one pass over the
@@ -214,7 +287,9 @@ module Xbookmark
       def rewrite_thread_links(manifest, pruned_ids, thread_moves)
         return if pruned_ids.empty? && thread_moves.empty?
 
-        moved = thread_moves.to_h { |old_slug, new_slug, _relative| [old_slug, new_slug] }
+        moved = thread_moves.to_h do |old_slug, new_slug, _relative, label|
+          [old_slug, { slug: new_slug, label: label || "thread #{new_slug}" }]
+        end
         @safety.allowed_markdown_files.each do |path|
           original = File.read(path)
           rewritten = rewrite_thread_references(original, pruned_ids: pruned_ids, moved: moved)
@@ -232,11 +307,11 @@ module Xbookmark
         pattern = moved.keys.map { |id| Regexp.escape(id) }.join("|")
         text
           .gsub(/\[\[threads\/(#{pattern})(?:\|[^\]]*)?\]\]/) do
-            new_slug = moved.fetch(Regexp.last_match(1))
-            "[[threads/#{new_slug}|thread #{new_slug}]]"
+            thread = moved.fetch(Regexp.last_match(1))
+            "[[threads/#{thread[:slug]}|#{thread[:label]}]]"
           end
           .gsub(/^thread: ["']?threads\/(#{pattern})["']?[ \t]*$/) do
-            "thread: threads/#{moved.fetch(Regexp.last_match(1))}"
+            "thread: threads/#{moved.fetch(Regexp.last_match(1))[:slug]}"
           end
       end
 

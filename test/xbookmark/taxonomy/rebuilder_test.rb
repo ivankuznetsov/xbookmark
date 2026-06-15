@@ -147,7 +147,8 @@ describe "taxonomy audit and rebuild" do
           tweet_id: id,
           author_handle: "alice",
           bookmarked_at: "2026-01-01T00:00:00Z",
-          payload: { "data" => [{ "id" => id, "conversation_id" => "123" }], "includes" => {}, "meta" => {} }
+          payload: { "data" => [{ "id" => id, "conversation_id" => "123",
+                                   "text" => "Venezuela oil politics thread" }], "includes" => {}, "meta" => {} }
         )
       end
       store.upsert_page(kind: "thread", slug: "123", path: "threads/123.md")
@@ -165,16 +166,55 @@ describe "taxonomy audit and rebuild" do
 
       assert_equal "applied", report.state
       refute File.exist?(File.join(vault, "threads", "123.md"))
-      moved_path = File.join(vault, "threads", "thread-123.md")
+      moved_path = File.join(vault, "threads", "thread-venezuela-oil-politics-thread-123.md")
       assert File.exist?(moved_path)
-      assert_includes File.read(moved_path), "slug: thread-123"
+      assert_includes File.read(moved_path), "slug: thread-venezuela-oil-politics-thread-123"
       assert_includes File.read(File.join(vault, "bookmarks", "2026", "01", "01", "first.md")),
-                      "[[threads/thread-123|thread thread-123]]"
-      assert_equal "threads/thread-123.md", store.find_page("thread", "thread-123")[:path]
+                      "[[threads/thread-venezuela-oil-politics-thread-123|Thread: Venezuela oil politics thread]]"
+      assert_equal "threads/thread-venezuela-oil-politics-thread-123.md",
+                   store.find_page("thread", "thread-venezuela-oil-politics-thread-123")[:path]
       assert_nil store.find_page("thread", "123")
       manifest = JSON.parse(File.read(report.manifest_path))
       assert manifest["operations"].any? { |op| op["type"] == "rename_thread" }
       refute manifest["operations"].any? { |op| op["type"] == "prune_thread" }
+    end
+  end
+
+  it "renames placeholder thread pages from cached local text" do
+    Dir.mktmpdir do |vault|
+      store = Xbookmark::State::Store.new(":memory:")
+      store.upsert_pending(
+        tweet_id: "201",
+        author_handle: "alice",
+        bookmarked_at: "2026-01-01T00:00:00Z",
+        payload: { "data" => [{ "id" => "201", "conversation_id" => "123",
+                                 "text" => "ADHD medication and sleep schedule" }], "includes" => {}, "meta" => {} }
+      )
+      store.upsert_page(kind: "thread", slug: "thread-123", path: "threads/thread-123.md")
+      write_note(File.join(vault, "bookmarks", "2026", "01", "01", "first.md"),
+                 { "tweet_id" => "201", "thread" => "threads/thread-123" },
+                 "first\n\n## Thread\n\n[[threads/thread-123|thread thread-123]]")
+      write_note(File.join(vault, "threads", "thread-123.md"),
+                 { "kind" => "thread", "slug" => "thread-123", "label" => "thread thread-123" },
+                 "# thread 123\n\n## Summary\n\n(no summary yet)\n\n## References\n\nrefs")
+
+      report = Xbookmark::Taxonomy::Rebuilder.new(
+        config: config_for(vault), store: store, clock: -> { Time.utc(2026, 1, 2, 3, 4, 5) }
+      ).call(apply: true)
+
+      moved_path = File.join(vault, "threads", "thread-adhd-medication-and-sleep-schedule-123.md")
+      assert_equal "applied", report.state
+      refute File.exist?(File.join(vault, "threads", "thread-123.md"))
+      assert File.exist?(moved_path)
+      moved = File.read(moved_path)
+      assert_includes moved, "slug: thread-adhd-medication-and-sleep-schedule-123"
+      assert_includes moved, "label: 'Thread: ADHD medication and sleep schedule'"
+      assert_includes moved, "# Thread: ADHD medication and sleep schedule"
+      assert_includes File.read(File.join(vault, "bookmarks", "2026", "01", "01", "first.md")),
+                      "[[threads/thread-adhd-medication-and-sleep-schedule-123|Thread: ADHD medication and sleep schedule]]"
+      assert_equal "threads/thread-adhd-medication-and-sleep-schedule-123.md",
+                   store.find_page("thread", "thread-adhd-medication-and-sleep-schedule-123")[:path]
+      assert_nil store.find_page("thread", "thread-123")
     end
   end
 
@@ -187,6 +227,7 @@ describe "taxonomy audit and rebuild" do
       rebuilder = Xbookmark::Taxonomy::Rebuilder.new(config: config_for(vault), store: store)
 
       assert_nil rebuilder.send(:conversation_id_from_row, store.bookmarks.first)
+      assert_empty rebuilder.send(:thread_texts)
     end
   end
 
