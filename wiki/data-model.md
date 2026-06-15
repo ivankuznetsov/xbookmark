@@ -26,6 +26,20 @@ The data model is tracked on `main`. The current SQLite schema version is 3.
 
 `Migrations.apply!` creates tables/indexes if missing and stamps `schema_version = 3`. Version 2 adds `bookmarks.payload_json`, which stores a minimized per-bookmark X API payload so pending and retryable rows can be enriched later without re-fetching the tweet first. The v2 migration also repairs databases that were stamped version 2 before the physical column existed. Version 3 adds concept metadata and seeds concept rows from existing legacy topic/entity page rows.
 
+## Bookmark Note Frontmatter (schema 2)
+
+`Render::SCHEMA_VERSION` is `2`. Bookmark notes render YAML frontmatter as queryable Obsidian Properties:
+
+- `title` — a concise human title (drives the filename and graph label; defaults to the summary's first clause).
+- `created_at` / `bookmarked_at` — typed dates (`YYYY-MM-DD`), so Bases/Dataview can sort and filter them; the original string is kept if it cannot be parsed.
+- `tags` — the flat keyword vocabulary (the live filtering signal). The earlier concept-derived `facets` key is dropped because nothing populated it.
+- `concepts` — bare concept slugs (queryable); the body's `## Concepts` section carries the clickable `[[concepts/…]]` graph links.
+- `concept_labels`, `author`, `author_id`, `author_name`, `conversation_id`, `thread`, `links`, `media`, `summary`, `enrichment_status` as before.
+
+Concept pages carry a single semantic `kind` (one of `area`, `subtopic`, `entity`, `technology`, `place`, `organization`, `idea`; legacy/unknown kinds are coerced into this set) and never write synthetic `topics`/`entities` parents into `broader`.
+
+`taxonomy rebuild --apply` migrates existing schema-1 notes to this shape in place — bumping the version, typing the dates, backfilling `title`, and dropping `facets` — offline (no re-enrichment), gated on the schema version so re-runs are no-ops. Existing readable filenames are not renamed during migration; only new notes adopt title-based names.
+
 ## Status and Mode Values
 
 Bookmark status constants in `Xbookmark::State::Store`:

@@ -322,3 +322,10 @@ Append-only log of meaningful wiki updates.
 **Pages updated:** README.md, wiki/architecture.md, wiki/data-model.md, wiki/log.md
 **Decision:** Taxonomy rebuild now rewrites legacy source-note topic/entity frontmatter and wikilinks into canonical concepts, prunes legacy topic/entity landing pages, suppresses author-handle concepts that duplicate author pages, and avoids rendering generic `topics`/`entities` concept roots as graph hubs.
 **Source:** Local Obsidian graph inspection showing repeated `geiger-capital` nodes, `lib/xbookmark/taxonomy/rebuilder.rb`, `lib/xbookmark/render/concept_page.rb`, `lib/xbookmark/sync/pipeline.rb`, and related tests.
+
+## [2026-06-15T21:30:00Z] structured-data: titles, Properties, rollback-safe curation
+
+**Action:** Made generated data more structured and the scheduled curation rollback-safe (plan `docs/plans/2026-06-15-002-feat-structured-wiki-data-plan.md`, units U1–U6 on branch `feat/taxonomy-rollback-safety`).
+**Pages updated:** README.md, CHANGELOG.md, wiki/data-model.md, wiki/log.md
+**Decision:** Enrichment emits a concise `title` (drives filenames/labels). Bookmark frontmatter is schema-2 Obsidian Properties — typed dates, kept `tags`, bare `concepts` slugs; the dead `facets` key is dropped. Concept pages carry one closed semantic `kind` and no synthetic `topics`/`entities` broader (the rebuilder no longer re-seeds them). `taxonomy rebuild --apply` migrates existing notes to schema 2 offline; existing readable filenames are not renamed (only new notes get title-based names — full rename deferred). Scheduled curation writes are atomic, graph-health fails on surviving legacy pages, and snapshots are retained to the most recent few.
+**Source:** `lib/xbookmark/enrich/orchestrator.rb`, `lib/xbookmark/render/{path_builder,bookmark_renderer,concept_page,concept_index}.rb`, `lib/xbookmark/taxonomy/{concept,curator,rebuilder,auditor,graph_health_report}.rb`, `lib/xbookmark/state/store.rb`, and their tests.

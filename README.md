@@ -361,7 +361,9 @@ X API v2 -> Ingest -> Enrich -> Bookmark wiki -> QMD index
 
 ## Obsidian integration
 
-To open the bookmark wiki in Obsidian, choose "Open folder as vault" from the Obsidian launcher and pick the directory you configured as `XBOOKMARK_WIKI_PATH`. Bookmarks land under `bookmarks/YYYY/MM/DD/<readable-slug>-<tweet_id>.md`, partitioned by `bookmarked_at`.
+To open the bookmark wiki in Obsidian, choose "Open folder as vault" from the Obsidian launcher and pick the directory you configured as `XBOOKMARK_WIKI_PATH`. Bookmarks land under `bookmarks/YYYY/MM/DD/<readable-slug>-<tweet_id>.md`, partitioned by `bookmarked_at`. The readable slug comes from a concise `title` the enrichment produces.
+
+Bookmark frontmatter is written as queryable Obsidian Properties: a `title`, typed `created_at`/`bookmarked_at` dates, a `tags` keyword list, and `concepts` slugs — so you can filter and sort with Obsidian Bases or Dataview. `bin/xbookmark taxonomy rebuild --apply` migrates older notes to this shape in place, offline (no re-fetch, no re-enrichment).
 
 The graph view picks up wikilinks between source notes, authors, concepts, and real threads. Concepts live under `concepts/`; broad concepts such as `venezuela` can link to child concepts such as `venezuela-oil` and `venezuela-politics`. Concept pages include `## Posts`, inheriting posts from child concepts, so opening `venezuela` shows source notes tagged with narrower concepts like `venezuela-politics`. Legacy `topics/` and `entities/` links are migrated into canonical concepts and the old landing pages are pruned during taxonomy rebuilds. Nested tags such as `area/venezuela` and `facet/politics` are filter facets, not the primary hierarchy.
 
