@@ -50,11 +50,20 @@ module Xbookmark
         link_blobs = fetch_link_blobs(bookmark)
         vision = { "captions" => {}, "ocr" => {} }
 
-        final = final_call(bookmark, transcripts: transcripts, link_blobs: link_blobs, vision: vision, image_paths: image_paths)
-
         partial = false
+        final_image_paths = image_paths
+        begin
+          final = final_call(bookmark, transcripts: transcripts, link_blobs: link_blobs, vision: vision, image_paths: final_image_paths)
+        rescue Xbookmark::CodexError, Xbookmark::PermanentError
+          raise if Array(image_paths).empty?
+
+          partial = true
+          final_image_paths = []
+          final = final_call(bookmark, transcripts: transcripts, link_blobs: link_blobs, vision: vision, image_paths: final_image_paths)
+        end
+
         if (final["tags"] || []).empty? || (final["entities"] || []).empty?
-          retried = retry_required_fields(bookmark, transcripts: transcripts, link_blobs: link_blobs, vision: vision, image_paths: image_paths)
+          retried = retry_required_fields(bookmark, transcripts: transcripts, link_blobs: link_blobs, vision: vision, image_paths: final_image_paths)
           if retried && (retried["tags"] || []).any? && (retried["entities"] || []).any?
             final = retried
           else

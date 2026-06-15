@@ -3,7 +3,7 @@ title: Architecture
 type: architecture
 source: git ls-files; lib/xbookmark/**/*.rb; README.md; .env.example; .llm-wiki/*
 created: 2026-05-14
-updated: 2026-06-14
+updated: 2026-06-15
 tags: [architecture]
 ---
 
@@ -45,7 +45,7 @@ X API bookmarks or cached source payload
   -> QMD indexing for search
 ```
 
-Per-bookmark work uses a scratch directory and atomic writes before updating state, so a failed bookmark should be retried rather than leaving partial final output. Scheduled runs tolerate source-only X auth, rate-limit, and transport failures: they report `source blocked`, keep maintenance and cached local work running, and avoid stamping `last_sync_finished_at` until a source-clean run completes.
+Per-bookmark work uses a scratch directory and atomic writes before updating state, so a failed bookmark should be retried rather than leaving partial final output. Image-based Codex failures degrade to text-only enrichment for that bookmark and mark the result partial, so one flaky vision response does not block the note. Scheduled runs tolerate source-only X auth, rate-limit, and transport failures: they report `source blocked`, keep maintenance and cached local work running, and avoid stamping `last_sync_finished_at` until a source-clean run completes.
 
 ## Cross-Project Wiki Context
 

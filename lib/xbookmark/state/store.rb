@@ -111,6 +111,7 @@ module Xbookmark
       end
 
       def record_failure(tweet_id:, error:, permanent: false)
+        status = nil
         @db.transaction do
           row = @db.get_first_row("SELECT attempts FROM bookmarks WHERE tweet_id = ?", [tweet_id.to_s])
           attempts = ((row && row["attempts"]) || 0).to_i + 1
@@ -123,6 +124,7 @@ module Xbookmark
              WHERE tweet_id = ?
           SQL
         end
+        status
       end
 
       # Work that can be attempted before asking X for new bookmark pages.

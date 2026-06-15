@@ -99,6 +99,7 @@ describe Xbookmark::Sync::Runner do
     assert_match(/backfill --limit 100/, out)
     assert_equal 1, @report.permanent_errors
     assert_equal 0, registrar.index_calls
+    assert_nil store.last_sync_finished_at
   end
 
   it "backfill --limit 100 stops at exactly N items even when API returns more" do
@@ -306,6 +307,26 @@ describe Xbookmark::Sync::Runner do
     assert_equal 1, report.failed
     assert_equal [first.tweet_id], pipeline.calls
     assert_equal 2, store.find_bookmark(first.tweet_id)[:attempts]
+  end
+
+  it "reports retry rows promoted to permanent as permanent errors" do
+    store.mode = Xbookmark::State::Store::MODE_FULLY_BACKFILLED
+    payload = fixture_json("x", "bookmarks_page.json")
+    first = Xbookmark::X::Expansions.new(payload).bookmarks.first
+    store.upsert_pending(tweet_id: first.tweet_id, author_handle: first.author_handle, bookmarked_at: first.bookmarked_at,
+                         payload: { "data" => [first.raw], "includes" => payload["includes"], "meta" => {} })
+    2.times { store.record_failure(tweet_id: first.tweet_id, error: "temporary") }
+    pipeline = FakePipeline.new(->(_) { Xbookmark::Sync::Pipeline::Outcome.new(status: :needs_retry, error: StandardError.new("still down")) })
+    runner = described_class.new(config: config, store: store, x_client: FakeXClient.new(pages: []),
+                                 pipeline: pipeline, registrar: registrar)
+
+    report = runner.run(mode: :sync)
+
+    assert_equal 0, report.failed
+    assert_equal 1, report.permanent_errors
+    assert_equal "permanent_error", store.find_bookmark(first.tweet_id)[:status]
+    assert_equal 1, report.bookmark_attempts
+    refute_nil store.last_sync_finished_at
   end
 
   it "records retry rows whose source tweet is unavailable as permanent" do

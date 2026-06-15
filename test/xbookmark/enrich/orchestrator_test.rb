@@ -84,6 +84,57 @@ describe Xbookmark::Enrich::Orchestrator do
     assert_equal ["e"], result.entities
   end
 
+  it "falls back to text-only enrichment when image codex fails transiently" do
+    fake = FakeCodex.new
+    fake.push(Xbookmark::CodexError.new("empty image response"))
+    fake.push({ "summary" => "x", "tags" => ["t"], "topics" => ["topic"], "entities" => ["entity"] })
+
+    result = described_class.new(codex: Xbookmark::Enrich::Codex.new(bin: "codex", runner: fake), link_fetcher: link_fetcher)
+      .enrich(bookmark, image_paths: ["/tmp/a.jpg"])
+
+    assert result.partial?
+    assert_equal ["t"], result.tags
+    assert_includes fake.calls.first, "--image"
+    refute_includes fake.calls.last, "--image"
+  end
+
+  it "falls back to text-only enrichment when image codex returns only wrapper events" do
+    fake = FakeCodex.new
+    fake.push({ "type" => "turn.started" }.to_json)
+    fake.push({ "summary" => "x", "tags" => ["t"], "topics" => ["topic"], "entities" => ["entity"] })
+
+    result = described_class.new(codex: Xbookmark::Enrich::Codex.new(bin: "codex", runner: fake), link_fetcher: link_fetcher)
+      .enrich(bookmark, image_paths: ["/tmp/a.jpg"])
+
+    assert result.partial?
+    assert_equal ["t"], result.tags
+    assert_includes fake.calls.first, "--image"
+    refute_includes fake.calls.last, "--image"
+  end
+
+  it "propagates image fallback failure when text-only codex also fails" do
+    fake = FakeCodex.new
+    fake.push(Xbookmark::CodexError.new("empty image response"))
+    fake.push(Xbookmark::CodexError.new("empty text response"))
+
+    assert_raises(Xbookmark::CodexError) do
+      described_class.new(codex: Xbookmark::Enrich::Codex.new(bin: "codex", runner: fake), link_fetcher: link_fetcher)
+        .enrich(bookmark, image_paths: ["/tmp/a.jpg"])
+    end
+    assert_equal 2, fake.calls.size
+    assert_includes fake.calls.first, "--image"
+    refute_includes fake.calls.last, "--image"
+  end
+
+  it "propagates codex failures when no image fallback is available" do
+    fake = FakeCodex.new.push(Xbookmark::CodexError.new("empty response"))
+
+    assert_raises(Xbookmark::CodexError) do
+      described_class.new(codex: Xbookmark::Enrich::Codex.new(bin: "codex", runner: fake), link_fetcher: link_fetcher)
+        .enrich(bookmark)
+    end
+  end
+
   it "does not fetch X media/status URLs as article describe" do
     bookmark.urls = [{ url: "https://t.co/v", expanded_url: "https://x.com/alice/status/1/video/1" }]
     fake = FakeCodex.new.push({

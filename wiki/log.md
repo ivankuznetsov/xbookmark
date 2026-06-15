@@ -238,3 +238,24 @@ Append-only log of meaningful wiki updates.
 **Pages updated:** CHANGELOG.md, lib/xbookmark/version.rb, wiki/log.md
 **Decision:** Prepare xbookmark 0.2.3 because the just-tested OAuth login flow still had user-facing failure output that should be in the installable build.
 **Source:** `lib/xbookmark/cli/auth.rb`, `lib/xbookmark/x/auth.rb`, `test/xbookmark/cli_test.rb`, `test/xbookmark/x/auth_test.rb`, and the timed-out production OAuth login attempt.
+
+## [2026-06-15T09:36:00Z] exhausted retry report accounting
+
+**Action:** Fixed sync report accounting after a live production sync imported 79 bookmarks but printed `failed 1, retrying next run` even though the only failed row had crossed into `permanent_error`.
+**Pages updated:** wiki/data-model.md, wiki/log.md
+**Decision:** Have `Store.record_failure` return the final stored status and let `Sync::Runner` count an exhausted retry as a permanent error immediately, keeping CLI output aligned with SQLite state.
+**Source:** Production sync ending at `2026-06-15T09:23:28Z`, `lib/xbookmark/state/store.rb`, `lib/xbookmark/sync/runner.rb`, `test/xbookmark/state/store_test.rb`, and `test/xbookmark/sync/runner_test.rb`.
+
+## [2026-06-15T09:58:00Z] image enrichment fallback
+
+**Action:** Added a text-only fallback after a production image bookmark repeatedly made `codex exec --json` return only wrapper events and no model payload.
+**Pages updated:** wiki/architecture.md, wiki/log.md
+**Decision:** Treat transient image-Codex failures as degraded bookmark enrichment: rerun the final prompt without images, mark the result partial, and only keep failing when text-only Codex also fails.
+**Source:** Production resync of tweet `2013285563386704077`, `lib/xbookmark/enrich/orchestrator.rb`, and `test/xbookmark/enrich/orchestrator_test.rb`.
+
+## [2026-06-15T10:07:00Z] release metadata 0.2.4
+
+**Action:** Prepared patch release metadata for xbookmark 0.2.4 after the exhausted-retry accounting and image-enrichment fallback fixes.
+**Pages updated:** CHANGELOG.md, lib/xbookmark/version.rb, Gemfile.lock, wiki/log.md
+**Decision:** Use a patch release because the installable changes improve daemon reliability and bookmark-enrichment recovery without changing the data model.
+**Source:** Code review findings on branch `fix/sync-enrichment-resilience`, `lib/xbookmark/version.rb`, `CHANGELOG.md`, and `Gemfile.lock`.

@@ -56,7 +56,8 @@ module Xbookmark
       end
 
       def real_run?(report)
-        report.source_errors.zero? && (report.synced.positive? || report.permanent_errors.zero?)
+        report.source_errors.zero? &&
+          (report.bookmark_attempts.positive? || report.synced.positive? || report.permanent_errors.zero?)
       end
 
       private
@@ -167,6 +168,7 @@ module Xbookmark
           run_one(bm, report)
         rescue Xbookmark::SourceUnavailable => e
           attempted[row[:tweet_id].to_s] = true
+          report.bookmark_attempts += 1
           @store.record_failure(tweet_id: row[:tweet_id], error: e.message, permanent: true)
           report.permanent_errors += 1
         end
@@ -209,14 +211,19 @@ module Xbookmark
       end
 
       def run_one(bookmark, report)
+        report.bookmark_attempts += 1
         outcome = @pipeline.process(bookmark)
         case outcome.status
         when :done
           @store.record_success(tweet_id: bookmark.tweet_id, markdown_path: outcome.markdown_path, digest: outcome.digest)
           report.synced += 1
         when :needs_retry
-          @store.record_failure(tweet_id: bookmark.tweet_id, error: outcome.error&.message || "unknown")
-          report.failed += 1
+          status = @store.record_failure(tweet_id: bookmark.tweet_id, error: outcome.error&.message || "unknown")
+          if status == Xbookmark::State::Store::STATUS_PERMANENT
+            report.permanent_errors += 1
+          else
+            report.failed += 1
+          end
         when :permanent_error
           @store.record_failure(tweet_id: bookmark.tweet_id, error: outcome.error&.message || "permanent", permanent: true)
           report.permanent_errors += 1
