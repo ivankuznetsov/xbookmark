@@ -19,6 +19,8 @@ require_relative "../taxonomy/rebuilder"
 module Xbookmark
   module Sync
     class Runner
+      TAXONOMY_CURATION_BATCH_SIZE = 50
+
       def initialize(config:, store:, x_client:, orchestrator: nil, renderer: nil, pipeline: nil, registrar: nil)
         @config = config
         @store = store
@@ -118,7 +120,7 @@ module Xbookmark
       end
 
       def run_taxonomy_curation
-        candidates = @store.concepts.map { |row| Xbookmark::Taxonomy::Registry.concept_from_row(row).to_h }
+        candidates = taxonomy_curation_candidates
         return true if candidates.empty?
 
         registry = Xbookmark::Taxonomy::Registry.from_vault(@config.vault_path, store: @store)
@@ -129,6 +131,13 @@ module Xbookmark
         @store.set_meta("last_taxonomy_error", "#{e.class}: #{e.message}")
         warn "[xbookmark] taxonomy curation failed: #{e.class}: #{e.message}"
         false
+      end
+
+      def taxonomy_curation_candidates
+        @store.concepts
+          .sort_by { |row| [row[:confidence].to_f, row[:updated_at].to_s, row[:slug].to_s] }
+          .first(TAXONOMY_CURATION_BATCH_SIZE)
+          .map { |row| Xbookmark::Taxonomy::Registry.concept_from_row(row).to_h }
       end
 
       def reindex_qmd

@@ -197,6 +197,23 @@ describe Xbookmark::Sync::Runner do
     assert_equal "canonical", row[:curator_outcome]
   end
 
+  it "limits scheduled taxonomy curation to a bounded batch" do
+    config.taxonomy_maintenance = true
+    60.times do |i|
+      store.upsert_concept(slug: "concept-#{i}", label: "Concept #{i}", kind: "entity",
+                           evidence_count: 1, confidence: 0.1)
+    end
+    Xbookmark::Taxonomy::Rebuilder.any_instance.stubs(:call)
+      .returns(Xbookmark::Taxonomy::Report.new(state: "clean", counts: {}))
+    Xbookmark::Taxonomy::Curator.any_instance.expects(:curate).with do |candidates|
+      candidates.size == Xbookmark::Sync::Runner::TAXONOMY_CURATION_BATCH_SIZE
+    end.returns([])
+    runner = described_class.new(config: config, store: store, x_client: FakeXClient.new(pages: []),
+                                 pipeline: FakePipeline.new(->(_) { raise "unused" }), registrar: registrar)
+
+    runner.send(:run_maintenance, force: true, report: Xbookmark::Sync::Report.new)
+  end
+
   it "counts taxonomy curation failures as maintenance errors" do
     config.taxonomy_maintenance = true
     store.upsert_concept(slug: "adhd", label: "ADHD", kind: "idea", evidence_count: 3, confidence: 0.3)
