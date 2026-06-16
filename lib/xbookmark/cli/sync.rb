@@ -84,7 +84,12 @@ module Xbookmark
       def exit_with(report)
         maintenance_errors = report.respond_to?(:maintenance_errors) ? report.maintenance_errors : 0
         return if report.failed.zero? && report.permanent_errors.zero? && report.source_errors.zero? && maintenance_errors.zero?
-        return if options[:"from-scheduler"] && report.failed.zero? && report.permanent_errors.zero? && maintenance_errors.zero?
+        # An unattended scheduled run is best-effort: tolerate retryable trouble
+        # (X source outages AND transient enrichment failures, both of which
+        # auto-retry next run) so the timer doesn't report "failed" for things
+        # that heal themselves. Only genuine dead-ends — permanent errors and
+        # destructive maintenance failures — fail a scheduled run.
+        return if options[:"from-scheduler"] && report.permanent_errors.zero? && maintenance_errors.zero?
 
         # Permanent errors → user error (1); transient retry → transient (2).
         exit(report.permanent_errors.positive? || report.source_errors.positive? || maintenance_errors.positive? ? 1 : 2)
