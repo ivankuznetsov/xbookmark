@@ -27,6 +27,21 @@ describe Xbookmark::Enrich::Codex do
     refute_includes without_model.calls.first, "--model"
   end
 
+  it "injects model_reasoning_effort config only when an override is set" do
+    with_effort = FakeCodex.new.push({ "tags" => ["a"] })
+    described_class.new(bin: "codex", runner: with_effort, reasoning_effort: "low")
+      .run(prompt: "x", json_schema: { "type" => "object", "required" => %w[tags] })
+    argv = with_effort.calls.first
+    idx = argv.index("-c")
+    assert idx, "expected a -c config flag"
+    assert_equal 'model_reasoning_effort="low"', argv[idx + 1]
+
+    without_effort = FakeCodex.new.push({ "tags" => ["a"] })
+    described_class.new(bin: "codex", runner: without_effort)
+      .run(prompt: "x", json_schema: { "type" => "object", "required" => %w[tags] })
+    refute_includes without_effort.calls.first, "-c"
+  end
+
   it "passes prompts over stdin instead of argv" do
     prompt = "x" * 200_000
     fake = FakeCodex.new.push({ "tags" => ["a"] })
