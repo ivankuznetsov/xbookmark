@@ -23,6 +23,16 @@ module Xbookmark
       # URL fragments X redirects to when the session is not authenticated.
       UNAUTHENTICATED_MARKERS = ["/login", "/i/flow", "/account/access"].freeze
 
+      # True when a navigated URL is a login / checkpoint interstitial rather
+      # than the page we asked for. Shared by the bookmarks probe and the
+      # source's per-navigation guard.
+      def self.login_redirect?(url)
+        normalized = url.to_s
+        return true if normalized.empty?
+
+        UNAUTHENTICATED_MARKERS.any? { |marker| normalized.include?(marker) }
+      end
+
       def initialize(config:, headless: true, browser_class: nil, chromium_path: nil)
         @config = config
         @headless = headless
@@ -73,11 +83,9 @@ module Xbookmark
       private
 
       def authenticated_url?(url)
-        normalized = url.to_s
-        return false if normalized.empty?
-        return false if UNAUTHENTICATED_MARKERS.any? { |marker| normalized.include?(marker) }
+        return false if self.class.login_redirect?(url)
 
-        normalized.include?("/i/bookmarks")
+        url.to_s.include?("/i/bookmarks")
       end
 
       def build_browser

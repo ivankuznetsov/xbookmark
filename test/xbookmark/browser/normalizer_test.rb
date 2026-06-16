@@ -1,0 +1,299 @@
+# frozen_string_literal: true
+
+require "test_helper"
+require "xbookmark/browser/normalizer"
+require "xbookmark/x/expansions"
+require "xbookmark/media/variant_picker"
+
+describe Xbookmark::Browser::Normalizer do
+  let(:page) { fixture_json("browser", "bookmarks_page.json") }
+
+  def envelope(payload = page)
+    described_class.new(payload).envelope
+  end
+
+  def bookmarks(payload = page)
+    Xbookmark::X::Expansions.new(envelope(payload)).bookmarks
+  end
+
+  it "extracts the bottom cursor as meta.next_token" do
+    assert_equal "cursor-bottom-value-1", envelope["meta"]["next_token"]
+  end
+
+  it "normalizes every TimelineTweet entry and dedupes includes" do
+    env = envelope
+    assert_equal %w[1001 1002 1003 1004 1005], env["data"].map { |t| t["id"] }
+    assert_equal %w[alice bob], env["includes"]["users"].map { |u| u["username"] }
+    assert_equal %w[m1 v1 g1], env["includes"]["media"].map { |m| m["media_key"] }
+    assert_equal %w[9999], env["includes"]["tweets"].map { |t| t["id"] }
+  end
+
+  it "maps author handle, name, and profile image through Expansions" do
+    alice = bookmarks.find { |b| b.tweet_id == "1001" }
+    assert_equal "alice", alice.author_handle
+    assert_equal "Alice", alice.author_name
+    assert_equal "https://x/p1.jpg", alice.author_profile_image
+  end
+
+  it "carries conversation_id and entity urls" do
+    alice = bookmarks.find { |b| b.tweet_id == "1001" }
+    assert_equal "1001", alice.conversation_id
+    assert_equal ["https://example.com/a"], alice.urls.map { |u| u[:expanded_url] }
+  end
+
+  it "normalizes a photo into a downloadable media object" do
+    photo = bookmarks.find { |b| b.tweet_id == "1001" }.media.first
+    assert_equal "photo", photo.type
+    assert_equal "https://x/img.jpg", photo.url
+    assert_equal 800, photo.width
+    assert_equal 600, photo.height
+    assert_equal "a chart", photo.alt_text
+  end
+
+  it "normalizes video variants so VariantPicker selects the best mp4" do
+    video = bookmarks.find { |b| b.tweet_id == "1002" }.media.first
+    assert_equal "video", video.type
+    assert_equal "https://x/preview.jpg", video.preview_image_url
+    assert_equal 12_000, video.duration_ms
+    assert_equal "https://x/hi.mp4", Xbookmark::Media::VariantPicker.best_video_url(video)
+  end
+
+  it "normalizes an animated_gif" do
+    gif = bookmarks.find { |b| b.tweet_id == "1004" }.media.first
+    assert_equal "animated_gif", gif.type
+    assert gif.video?
+  end
+
+  it "wires a quoted tweet's id and object" do
+    quote = bookmarks.find { |b| b.tweet_id == "1003" }
+    assert_equal "9999", quote.quoted_tweet_id
+    assert_equal "the quoted tweet", quote.quoted_tweet["text"]
+  end
+
+  it "marks a reply with replied_to and prefers longform note_tweet text" do
+    reply = bookmarks.find { |b| b.tweet_id == "1005" }
+    assert_equal "8888", reply.in_reply_to_tweet_id
+    assert_match(/long-form reply that exceeds/, reply.text)
+  end
+
+  # ---- AC4 parity: a browser-sourced bookmark matches the API-path fixture ----
+
+  it "produces Bookmarks structurally identical to the equivalent API-path fixture" do
+    api_fixture = fixture_json("x", "bookmarks_page.json")
+    api = Xbookmark::X::Expansions.new(api_fixture).bookmarks
+    browser = bookmarks
+
+    %w[1001 1002 1003].each do |id|
+      a = api.find { |b| b.tweet_id == id }
+      b = browser.find { |bm| bm.tweet_id == id }
+
+      assert_equal a.url, b.url, "url parity for #{id}"
+      assert_equal a.author_handle, b.author_handle, "author parity for #{id}"
+      assert_equal a.media.map(&:type), b.media.map(&:type), "media kinds parity for #{id}"
+      assert_equal a.quoted_tweet_id.to_s, b.quoted_tweet_id.to_s, "quoted id parity for #{id}"
+    end
+
+    # Quoted-tweet object resolves on both paths.
+    assert_equal(
+      api.find { |b| b.tweet_id == "1003" }.quoted_tweet["text"],
+      browser.find { |b| b.tweet_id == "1003" }.quoted_tweet["text"]
+    )
+  end
+
+  # ---- pagination / cursor edge cases ----
+
+  it "returns no next_token when the page has no bottom cursor" do
+    page["data"]["bookmark_timeline_v2"]["timeline"]["instructions"][1]["entries"].reject! do |e|
+      e.dig("content", "cursorType") == "Bottom"
+    end
+    refute envelope.fetch("meta").key?("next_token")
+  end
+
+  it "falls back to the legacy bookmark_timeline key" do
+    timeline = page["data"]["bookmark_timeline_v2"]["timeline"]
+    payload = { "data" => { "bookmark_timeline" => { "timeline" => timeline } } }
+    assert_equal %w[1001 1002 1003 1004 1005], envelope(payload)["data"].map { |t| t["id"] }
+  end
+
+  it "returns an empty envelope for an unrecognized payload" do
+    env = envelope({})
+    assert_empty env["data"]
+    assert_empty env["includes"]["users"]
+    refute env["meta"].key?("next_token")
+  end
+
+  # ---- result-shape edge cases (inline payloads) ----
+
+  def single_entry_envelope(result)
+    payload = {
+      "data" => { "bookmark_timeline_v2" => { "timeline" => { "instructions" => [
+        { "type" => "TimelineAddEntries", "entries" => [
+          { "content" => { "entryType" => "TimelineTimelineItem",
+                           "itemContent" => { "itemType" => "TimelineTweet",
+                                             "tweet_results" => { "result" => result } } } }
+        ] }
+      ] } } }
+    }
+    described_class.new(payload).envelope
+  end
+
+  it "skips non-tweet timeline items (tombstones)" do
+    payload = {
+      "data" => { "bookmark_timeline_v2" => { "timeline" => { "instructions" => [
+        { "type" => "TimelineAddEntries", "entries" => [
+          { "content" => { "entryType" => "TimelineTimelineItem",
+                           "itemContent" => { "itemType" => "TimelineTombstone" } } },
+          { "content" => { "entryType" => "TimelineTimelineModule" } }
+        ] }
+      ] } } }
+    }
+    assert_empty described_class.new(payload).envelope["data"]
+  end
+
+  it "reads the newer core.screen_name/name user shape and avatar fallback" do
+    result = {
+      "__typename" => "Tweet",
+      "rest_id" => "2001",
+      "core" => { "user_results" => { "result" => {
+        "rest_id" => "u9",
+        "core" => { "screen_name" => "carol", "name" => "Carol" },
+        "avatar" => { "image_url" => "https://x/avatar.jpg" }
+      } } },
+      "legacy" => { "id_str" => "2001", "full_text" => "hi", "created_at" => "Thu Jan 01 00:00:00 +0000 2026" }
+    }
+    user = single_entry_envelope(result)["includes"]["users"].first
+    assert_equal "carol", user["username"]
+    assert_equal "Carol", user["name"]
+    assert_equal "https://x/avatar.jpg", user["profile_image_url"]
+  end
+
+  it "unwraps TweetWithVisibilityResults and uses legacy text fallback" do
+    result = {
+      "__typename" => "TweetWithVisibilityResults",
+      "tweet" => {
+        "rest_id" => "2002",
+        "legacy" => { "id_str" => "2002", "text" => "limited visibility",
+                      "created_at" => "Thu Jan 01 00:00:00 +0000 2026", "user_id_str" => "u1" }
+      }
+    }
+    env = single_entry_envelope(result)
+    assert_equal "limited visibility", env["data"].first["text"]
+    assert_equal "u1", env["data"].first["author_id"]
+  end
+
+  it "drops a visibility wrapper with no inner tweet" do
+    result = { "__typename" => "TweetWithVisibilityResults" }
+    assert_empty single_entry_envelope(result)["data"]
+  end
+
+  it "drops a tweet result with no id" do
+    result = { "__typename" => "Tweet", "legacy" => {} }
+    assert_empty single_entry_envelope(result)["data"]
+  end
+
+  it "drops a tweet whose author has no rest_id and skips media without a key" do
+    result = {
+      "__typename" => "Tweet",
+      "rest_id" => "2003",
+      "core" => { "user_results" => { "result" => { "legacy" => { "screen_name" => "x" } } } },
+      "legacy" => {
+        "id_str" => "2003", "full_text" => "t", "created_at" => "Thu Jan 01 00:00:00 +0000 2026",
+        "extended_entities" => { "media" => [{ "type" => "photo", "media_url_https" => "https://x/n.jpg" }] }
+      }
+    }
+    env = single_entry_envelope(result)
+    assert_empty env["includes"]["users"]
+    assert_empty env["includes"]["media"]
+    assert_equal [], env["data"].first["attachments"]["media_keys"]
+  end
+
+  it "falls back to entities.media when extended_entities is absent" do
+    result = {
+      "__typename" => "Tweet",
+      "rest_id" => "2004",
+      "legacy" => {
+        "id_str" => "2004", "full_text" => "t", "created_at" => "Thu Jan 01 00:00:00 +0000 2026",
+        "entities" => { "media" => [{ "media_key" => "p9", "type" => "photo", "media_url_https" => "https://x/e.jpg" }] }
+      }
+    }
+    env = single_entry_envelope(result)
+    assert_equal %w[p9], env["includes"]["media"].map { |m| m["media_key"] }
+  end
+
+  it "references a quoted id without an object and derives the id from the quoted result" do
+    no_object = {
+      "__typename" => "Tweet", "rest_id" => "3001",
+      "legacy" => { "id_str" => "3001", "full_text" => "q", "created_at" => "Thu Jan 01 00:00:00 +0000 2026",
+                    "quoted_status_id_str" => "7777" }
+    }
+    env = single_entry_envelope(no_object)
+    assert_equal [{ "type" => "quoted", "id" => "7777" }], env["data"].first["referenced_tweets"]
+    assert_empty env["includes"]["tweets"]
+
+    derived = {
+      "__typename" => "Tweet", "rest_id" => "3002",
+      "legacy" => { "id_str" => "3002", "full_text" => "q", "created_at" => "Thu Jan 01 00:00:00 +0000 2026" },
+      "quoted_status_result" => { "result" => {
+        "__typename" => "Tweet", "rest_id" => "6666",
+        "legacy" => { "id_str" => "6666", "full_text" => "quoted body", "created_at" => "Thu Jan 01 00:00:00 +0000 2026" }
+      } }
+    }
+    env2 = single_entry_envelope(derived)
+    assert_equal "6666", env2["data"].first["referenced_tweets"].first["id"]
+    assert_equal %w[6666], env2["includes"]["tweets"].map { |t| t["id"] }
+  end
+
+  it "ignores an unresolvable quoted_status_result" do
+    result = {
+      "__typename" => "Tweet", "rest_id" => "3003",
+      "legacy" => { "id_str" => "3003", "full_text" => "q", "created_at" => "Thu Jan 01 00:00:00 +0000 2026" },
+      "quoted_status_result" => { "result" => { "__typename" => "Tweet", "legacy" => {} } }
+    }
+    env = single_entry_envelope(result)
+    assert_empty env["data"].first["referenced_tweets"]
+    assert_empty env["includes"]["tweets"]
+  end
+
+  it "leaves an unparseable created_at untouched" do
+    result = {
+      "__typename" => "Tweet", "rest_id" => "4001",
+      "legacy" => { "id_str" => "4001", "full_text" => "t", "created_at" => "not-a-date" }
+    }
+    assert_equal "not-a-date", single_entry_envelope(result)["data"].first["created_at"]
+  end
+
+  it "omits created_at when the source has none" do
+    result = { "__typename" => "Tweet", "rest_id" => "4002", "legacy" => { "id_str" => "4002", "full_text" => "t" } }
+    refute single_entry_envelope(result)["data"].first.key?("created_at")
+  end
+
+  # ---- single-tweet envelope (get_tweet parity) ----
+
+  it "normalizes a TweetResultByRestId payload into a single-tweet envelope" do
+    detail = fixture_json("browser", "tweet_detail.json")
+    env = described_class.new(detail).single_tweet_envelope
+    assert_equal %w[1001], env["data"].map { |t| t["id"] }
+    assert_equal({}, env["meta"])
+    bm = Xbookmark::X::Expansions.new(env).bookmarks.first
+    assert_equal "alice", bm.author_handle
+    assert_equal "photo", bm.media.first.type
+  end
+
+  it "normalizes a TweetDetail threaded-conversation payload" do
+    result = {
+      "__typename" => "Tweet", "rest_id" => "5001",
+      "legacy" => { "id_str" => "5001", "full_text" => "threaded", "created_at" => "Thu Jan 01 00:00:00 +0000 2026" }
+    }
+    entry = { "content" => { "itemContent" => { "itemType" => "TimelineTweet", "tweet_results" => { "result" => result } } } }
+    instructions = [{ "type" => "TimelineAddEntries", "entries" => [entry] }]
+    payload = { "data" => { "threaded_conversation_with_injections_v2" => { "instructions" => instructions } } }
+    env = described_class.new(payload).single_tweet_envelope
+    assert_equal(%w[5001], env["data"].map { |t| t["id"] })
+  end
+
+  it "returns an empty single-tweet envelope when no tweet is present" do
+    env = described_class.new({}).single_tweet_envelope
+    assert_empty env["data"]
+    assert_equal({}, env["meta"])
+  end
+end
