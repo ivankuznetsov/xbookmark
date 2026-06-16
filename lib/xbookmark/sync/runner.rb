@@ -7,6 +7,7 @@ require_relative "report"
 require_relative "pipeline"
 require_relative "../x/client"
 require_relative "../x/expansions"
+require_relative "../browser/errors"
 require_relative "../enrich/codex"
 require_relative "../enrich/orchestrator"
 require_relative "../render/bookmark_renderer"
@@ -410,6 +411,13 @@ module Xbookmark
       def source_blocked(report, error, context:, tolerate:)
         warn "[xbookmark] source blocked during #{context}: #{error.message}"
         report.source_errors += 1
+        # A browser session expiry is the one source block that needs a human:
+        # flag it so the CLI fires a notification and exits non-zero even under
+        # --from-scheduler. A generic API token block stays exit-0 + degraded.
+        if error.is_a?(Xbookmark::Browser::SessionExpired)
+          report.session_expired = true
+          report.expired_source ||= "browser"
+        end
       end
     end
   end

@@ -82,6 +82,14 @@ module Xbookmark
       private
 
       def exit_with(report)
+        # Browser session expiry is the one source-block case that is
+        # intentionally noisy: notify a human and exit non-zero even under
+        # --from-scheduler, distinct from the API-token-block degrade-to-0 path.
+        if report.respond_to?(:session_expired) && report.session_expired
+          notify_session_expired(report)
+          exit 1
+        end
+
         maintenance_errors = report.respond_to?(:maintenance_errors) ? report.maintenance_errors : 0
         return if report.failed.zero? && report.permanent_errors.zero? && report.source_errors.zero? && maintenance_errors.zero?
         # An unattended scheduled run is best-effort: tolerate retryable trouble
@@ -93,6 +101,16 @@ module Xbookmark
 
         # Permanent errors → user error (1); transient retry → transient (2).
         exit(report.permanent_errors.positive? || report.source_errors.positive? || maintenance_errors.positive? ? 1 : 2)
+      end
+
+      def notify_session_expired(report)
+        require_relative "../notify"
+        source = report.respond_to?(:expired_source) && report.expired_source ? report.expired_source : "browser"
+        warn "[xbookmark] #{source} session expired; re-run `xbookmark auth login --browser` to restore sync."
+        Xbookmark::Notify.send(
+          "xbookmark: #{source} session expired",
+          "Re-run `xbookmark auth login --browser` to restore bookmark sync."
+        )
       end
     end
   end

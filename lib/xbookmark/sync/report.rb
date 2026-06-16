@@ -4,7 +4,7 @@ module Xbookmark
   module Sync
     class Report
       attr_accessor :synced, :skipped, :failed, :permanent_errors, :source_errors, :pages, :elapsed, :api_pages,
-                    :bookmark_attempts, :partial, :maintenance_errors
+                    :bookmark_attempts, :partial, :maintenance_errors, :session_expired, :expired_source
 
       def initialize
         @synced = 0
@@ -18,6 +18,10 @@ module Xbookmark
         @partial = 0
         @maintenance_errors = 0
         @elapsed = 0.0
+        # Set when a source raises Browser::SessionExpired — the one source-block
+        # case that genuinely needs a human and a notification.
+        @session_expired = false
+        @expired_source = nil
       end
 
       def to_s
@@ -28,6 +32,7 @@ module Xbookmark
         parts << "permanent errors #{permanent_errors}" if permanent_errors.positive?
         parts << "maintenance errors #{maintenance_errors}" if maintenance_errors.positive?
         parts << "source blocked #{source_errors}" if source_errors.positive?
+        parts << "#{expired_source || "browser"} session expired (re-login)" if session_expired
         parts << "elapsed #{format("%.1f", elapsed)}s"
         parts << "api pages #{api_pages}" if api_pages.positive?
         parts.join(", ")

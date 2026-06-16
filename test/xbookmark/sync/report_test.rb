@@ -18,4 +18,18 @@ describe Xbookmark::Sync::Report do
     assert_equal "synced 2, skipped 1, failed 3, retrying next run, permanent errors 4, source blocked 6, elapsed 1.2s, api pages 5",
                  report.to_s
   end
+
+  it "defaults session_expired to false and omits it from the summary" do
+    report = described_class.new
+    refute report.session_expired
+    assert_nil report.expired_source
+    refute_includes report.to_s, "session expired"
+  end
+
+  it "summarizes a browser session expiry" do
+    report = described_class.new
+    report.session_expired = true
+    report.expired_source = "browser"
+    assert_includes report.to_s, "browser session expired (re-login)"
+  end
 end

@@ -9,6 +9,8 @@ require "xbookmark/scheduler/base"
 require "xbookmark/scheduler/factory"
 require "xbookmark/sync/runner"
 require "xbookmark/sync/reenricher"
+require "xbookmark/sync/report"
+require "xbookmark/notify"
 require "xbookmark/transcribe/whisper"
 require "xbookmark/x/auth"
 require "xbookmark/x/client"
@@ -464,6 +466,23 @@ describe Xbookmark::CLI do
     error = assert_raises(SystemExit) do
       capture_stdout { Xbookmark::CLI::Sync.new([], {}).sync_run }
     end
+    assert_equal 1, error.status
+  end
+
+  it "notifies and exits non-zero on browser session expiry even from the scheduler" do
+    Xbookmark::Config.stubs(:load).returns(test_config)
+    report = Xbookmark::Sync::Report.new
+    report.synced = 3
+    report.source_errors = 1
+    report.session_expired = true
+    report.expired_source = "browser"
+    Xbookmark::Sync::Runner.stubs(:new).returns(stub(run: report))
+    Xbookmark::Notify.expects(:send).once.returns(true)
+
+    error = assert_raises(SystemExit) do
+      capture_stderr { capture_stdout { Xbookmark::CLI::Sync.new([], { "from-scheduler": true }).sync_run } }
+    end
+
     assert_equal 1, error.status
   end
 

@@ -45,6 +45,16 @@ class MissingTweetClient
   end
 end
 
+class ExpiredBrowserSource
+  def bookmarks(user_id: nil, max_results: 50)
+    raise Xbookmark::Browser::SessionExpired, "browser session expired; re-login"
+  end
+
+  def get_tweet(_id)
+    raise Xbookmark::Browser::SessionExpired, "browser session expired; re-login"
+  end
+end
+
 class FakePipeline
   attr_reader :calls, :indexed_pages
 
@@ -793,5 +803,50 @@ describe Xbookmark::Sync::Runner do
 
     error = assert_raises(Xbookmark::SourceUnavailable) { runner.run(mode: :resync, tweet_id: "999") }
     assert_match(/unavailable from all sources/, error.message)
+  end
+
+  # ---- U5: browser session-expiry signaling ----
+
+  it "flags session_expired when a source raises Browser::SessionExpired" do
+    store.mode = Xbookmark::State::Store::MODE_FULLY_BACKFILLED
+    runner = described_class.new(config: config, store: store, sources: [ExpiredBrowserSource.new],
+                                 pipeline: FakePipeline.new(->(_) { }), registrar: registrar)
+
+    capture_stderr { @report = runner.run(mode: :sync, from_scheduler: true) }
+
+    assert @report.session_expired
+    assert_equal "browser", @report.expired_source
+    assert @report.source_errors.positive?
+  end
+
+  it "does not flag session_expired for a generic API source block" do
+    store.mode = Xbookmark::State::Store::MODE_FULLY_BACKFILLED
+    runner = described_class.new(config: config, store: store, sources: [SourceBlockedClient.new],
+                                 pipeline: FakePipeline.new(->(_) { }), registrar: registrar)
+
+    capture_stderr { @report = runner.run(mode: :sync, from_scheduler: true) }
+
+    refute @report.session_expired
+    assert @report.source_errors.positive?
+  end
+
+  it "syncs a healthy API source while flagging the expired browser source (AC3)" do
+    page = {
+      "data" => [{ "id" => "n1", "author_id" => "u1", "text" => "x", "created_at" => "2026-01-01T00:00:00Z", "conversation_id" => "n1" }],
+      "includes" => { "users" => [{ "id" => "u1", "username" => "alice" }] },
+      "meta" => {}
+    }
+    store.mode = Xbookmark::State::Store::MODE_FULLY_BACKFILLED
+    pipeline = FakePipeline.new(->(_) { Xbookmark::Sync::Pipeline::Outcome.new(status: :done, markdown_path: "/x", digest: "d") })
+    runner = described_class.new(config: config, store: store,
+                                 sources: [FakeXClient.new(pages: [page]), ExpiredBrowserSource.new],
+                                 pipeline: pipeline, registrar: registrar)
+
+    capture_stderr { @report = runner.run(mode: :sync, from_scheduler: true) }
+
+    assert_equal 1, @report.synced, "the API source still syncs its bookmarks"
+    assert @report.session_expired, "the expired browser source is flagged for re-login"
+    assert @report.source_errors.positive?
+    assert_equal ["n1"], pipeline.calls
   end
 end
