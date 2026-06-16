@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Make scheduled (`--from-scheduler`) sync runs best-effort: they now tolerate transient enrichment failures (codex glitches that auto-retry next run) in addition to source outages, exiting 0 so the background timer is not marked `failed` for self-healing trouble. Scheduled runs still fail only on permanent errors or destructive maintenance failures; manual sync continues to surface transient failures as a non-zero exit.
 - Reshape generated wiki output around readable source-note filenames, canonical concept pages, concept hierarchy links, and singleton-thread suppression.
 - Add `xbookmark taxonomy audit` and `xbookmark taxonomy rebuild --apply` for offline graph cleanup with snapshots, manifests, graph-health reports, state path updates, and QMD reindexing.
 - Re-root the QMD `bookmarks` collection at the bookmark wiki root so source notes, author pages, and concept pages are searchable.

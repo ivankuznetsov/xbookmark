@@ -467,10 +467,27 @@ describe Xbookmark::CLI do
     assert_equal 1, error.status
   end
 
-  it "still fails scheduled sync when local pipeline work fails" do
+  it "tolerates transient pipeline failures on a scheduled run but still fails manual sync" do
     Xbookmark::Config.stubs(:load).returns(test_config)
     Xbookmark::Sync::Runner.stubs(:new).returns(
-      stub(run: FakeReport.new(failed: 1, permanent_errors: 0, source_errors: 1, message: "failed and source blocked"))
+      stub(run: FakeReport.new(failed: 1, permanent_errors: 0, source_errors: 0, message: "transient retry next run"))
+    )
+
+    # Scheduled: transient `failed` auto-retries next run, so the timer stays green.
+    assert_includes capture_stdout { Xbookmark::CLI::Sync.new([], { "from-scheduler": true }).sync_run },
+                    "transient retry next run"
+
+    # Manual: the same transient failure is surfaced as a non-zero (retryable) exit 2.
+    error = assert_raises(SystemExit) do
+      capture_stdout { Xbookmark::CLI::Sync.new([], {}).sync_run }
+    end
+    assert_equal 2, error.status
+  end
+
+  it "still fails a scheduled run on permanent errors" do
+    Xbookmark::Config.stubs(:load).returns(test_config)
+    Xbookmark::Sync::Runner.stubs(:new).returns(
+      stub(run: FakeReport.new(failed: 0, permanent_errors: 1, source_errors: 1, message: "permanent"))
     )
 
     error = assert_raises(SystemExit) do
