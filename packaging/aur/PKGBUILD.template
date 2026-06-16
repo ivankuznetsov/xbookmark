@@ -21,6 +21,7 @@ optdepends=(
   'whisper-cpp: local transcription of bookmarked clips'
   'qmd: vector search over the bookmark wiki'
   'codex: LLM enrichment of bookmark cards'
+  'chromium: browser bookmark source (XBOOKMARK_SOURCE=browser, no dev API)'
 )
 provides=('xbookmark')
 conflicts=('xbookmark-git' 'xbookmark-bin')

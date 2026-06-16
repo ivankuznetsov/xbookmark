@@ -22,6 +22,7 @@ The project contains:
   - `oauth2` and `webrick` for OAuth 2.0 PKCE login.
   - `nokogiri` for external link text extraction.
   - `down` for media downloads.
+  - `ferrum` for the opt-in browser bookmark source (drives system Chromium over CDP; pulls `websocket-driver`). See [[browser-source]].
   - `json-schema` for validating Codex JSON output.
   - `base64` and `ostruct`.
 - Required Ruby version in the gemspec is `>= 3.1`.
@@ -39,6 +40,7 @@ The runtime shells out to external tools:
   - `ffmpeg` is required to extract audio from downloaded video media before whisper.cpp transcription.
   - `WHISPER_THREADS` optionally controls whisper.cpp CPU threads; blank defaults to up to 8 local CPU threads.
 - System scheduler tools: `systemctl --user` and `loginctl` on Linux, and `launchctl` on macOS.
+- A system Chromium/Chrome (`chromium`, `chromium-browser`, `google-chrome`, `google-chrome-stable`, `chrome`, or the macOS `/Applications` default) — only for `XBOOKMARK_SOURCE=browser`/`both`. Required but **never bundled**; packaged as a Debian `Recommends` and AUR `optdepends`, and reported by `doctor`. Desktop notifications use `notify-send` (Linux) or `osascript` (macOS), best-effort.
 
 ## External Services
 

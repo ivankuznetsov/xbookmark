@@ -181,6 +181,43 @@ secrets.
 4. Copy the Client ID into `X_CLIENT_ID` and your numeric X user ID into `X_USER_ID`. `X_CLIENT_SECRET` is only required if your app type is a confidential client that issues a secret; PKCE public-client apps leave it blank.
 5. Run `bin/xbookmark auth login`. The CLI opens your browser, completes the PKCE handshake, and stores tokens back into the loaded env file with file mode `0600`.
 
+### Browser source (no dev API)
+
+If you would rather not configure the paid X developer API, xbookmark can ingest
+your own bookmarks by logging into X in a real browser once. Set the source in
+your env file:
+
+```bash
+XBOOKMARK_SOURCE=browser   # api (default) | browser | both
+```
+
+In `browser` mode the `X_*` credentials are optional — an otherwise empty `.env`
+is valid. The browser path feeds the exact same pipeline as the API path
+(render → enrich → transcribe → QMD), so the resulting notes are identical.
+
+Requirements and one-time setup:
+
+- **System Chromium is required but never bundled.** Install one (e.g.
+  `sudo pacman -S chromium` or `sudo apt-get install -y chromium`). Run
+  `bin/xbookmark doctor` to confirm it is detected.
+- Run `bin/xbookmark auth login --browser`. The first run shows a one-time
+  consent prompt, then opens a visible browser window. Log in to X there; the
+  command continues automatically once you are signed in. Cookies persist in a
+  **dedicated, isolated profile** under `~/.config/xbookmark/browser-profile` —
+  never your everyday browser profile.
+- Later syncs, backfills, and scheduled runs reuse that profile **headlessly**;
+  no window opens.
+
+Reading your own account through X's web endpoints rather than the official API
+may violate X's Terms of Service and carries a real risk of rate-limiting or
+suspension — the consent prompt makes you accept that risk before the first run.
+
+When a scheduled run finds the browser session expired or checkpointed, it
+fails fast: it logs the reason, fires a desktop notification, and exits
+non-zero. Restore it with the same `bin/xbookmark auth login --browser`. With
+`XBOOKMARK_SOURCE=both`, a configured API source still syncs during that same
+run, so only the browser half needs re-login.
+
 ### What this will cost
 
 xbookmark uses the official paid X API. The README intentionally uses the
@@ -217,9 +254,10 @@ aliases. Prefer `XBOOKMARK_WIKI_PATH` and `--wiki` in new setups.
 Manage X API credentials.
 
 ```bash
-bin/xbookmark auth login   # browser PKCE flow, stores tokens locally
-bin/xbookmark auth status  # show whether the access token is present and still current
-bin/xbookmark auth refresh # test and rotate the saved refresh token now
+bin/xbookmark auth login           # browser PKCE flow, stores tokens locally
+bin/xbookmark auth login --browser # log in via a real browser (no dev API) — see "Browser source"
+bin/xbookmark auth status          # show the active source and whether auth is present and current
+bin/xbookmark auth refresh         # test and rotate the saved refresh token now
 ```
 
 Example output:

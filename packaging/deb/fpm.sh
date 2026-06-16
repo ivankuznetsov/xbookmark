@@ -6,8 +6,9 @@
 # Usage:  packaging/deb/fpm.sh <version> <path-to-tebako-binary>
 #
 # The Tebako binary needs no Ruby on the host because it bundles the
-# interpreter — the only declared dep is `ffmpeg`, matching the
-# detect-and-offer policy.
+# interpreter — the only hard dep is `ffmpeg`. Chromium is a Recommends
+# (used only by the opt-in browser bookmark source; never bundled), matching
+# the detect-and-offer policy.
 set -eu
 
 VERSION="$1"
@@ -39,6 +40,7 @@ fpm \
   --url "https://github.com/ivankuznetsov/xbookmark" \
   --license "MIT" \
   --depends "ffmpeg" \
+  --deb-recommends "chromium" \
   --after-install "$(dirname "$0")/postinst" \
   --before-remove "$(dirname "$0")/prerm" \
   --chdir "$STAGE" \

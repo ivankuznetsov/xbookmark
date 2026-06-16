@@ -42,6 +42,15 @@ tags: [decisions]
 - Scheduled sync should tolerate X source-only failures. It should continue local taxonomy cleanup, QMD maintenance, and cached retry/enrichment work, report `source blocked`, exit successfully when no local bookmark work failed, and avoid stamping `last_sync_finished_at` so the next timer can fetch new bookmarks after reauth.
 - Fail closed for external link fetch safety by rejecting private, loopback, link-local, reserved, multicast, and metadata-address ranges.
 
+## Browser Source Decisions
+
+- Bookmark sources are duck-typed (`bookmarks{|envelope|}` + `get_tweet`) and selected by `XBOOKMARK_SOURCE` (`api` default | `browser` | `both`); the browser path is additive and never replaces the API path. See [[browser-source]].
+- The browser source achieves full fidelity by normalizing X's internal GraphQL into the **exact API v2 envelope** `X::Expansions` already consumes — no pipeline/renderer/media/whisper/enrich/QMD changes. All X-shape knowledge is isolated in `Browser::{GraphqlCapture,Normalizer}` so an endpoint change is a localized fix.
+- System Chromium is **required but never bundled** (Tebako ships no browser): detect via `Browser::Chromium`, fail with a clear `ConfigError`/`doctor` line when absent. A **dedicated, isolated** profile under `~/.config/xbookmark/browser-profile` is used — never the user's everyday browser profile.
+- Headed `auth login --browser` (with a one-time ToS/account-risk consent persisted in the store meta table) logs in once; sync/backfill/scheduler reuse the profile headlessly and never auto-open a window (fail fast instead).
+- Browser session expiry is the one source block that exits **non-zero even under `--from-scheduler`** and fires a desktop notification (`Notify`), because it genuinely needs a human; API-token blocks keep their degrade-to-exit-0 behavior. With `both`, a healthy API source still syncs the same run.
+- The live browser→X path is validated by a documented **local manual acceptance run** (no provisionable X account in CI); deterministic units keep the 100% coverage gate green — a deliberate, documented exception to "no environment-conditional CI tests."
+
 ## README Setup Decisions
 
 - The README agent prompt must only reference commands that exist in the CLI so fresh installs work without manual correction.
