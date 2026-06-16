@@ -27,10 +27,15 @@ module Xbookmark
 
       # model: optional override for the codex `--model` flag. nil keeps the
       # model configured in codex's own config.toml.
-      def initialize(bin: "codex", runner: nil, model: nil)
+      # reasoning_effort: optional override for `model_reasoning_effort`
+      # (minimal|low|medium|high|xhigh). nil keeps codex's configured default.
+      # Bulk extraction does not need the global `xhigh`, which can push heavy
+      # notes past the per-call timeout.
+      def initialize(bin: "codex", runner: nil, model: nil, reasoning_effort: nil)
         @bin = bin
         @runner = runner
         @model = model
+        @reasoning_effort = reasoning_effort
       end
 
       # prompt: String. images: Array of paths. json_schema: optional schema
@@ -61,6 +66,7 @@ module Xbookmark
       def build_argv(prompt:, images:, extra_argv:)
         argv = [@bin, "exec", "--json"]
         argv.push("--model", @model) if @model
+        argv.push("-c", "model_reasoning_effort=\"#{@reasoning_effort}\"") if @reasoning_effort
         Array(images).each { |p| argv.push("--image", p.to_s) }
         argv.concat(extra_argv) if extra_argv && !extra_argv.empty?
         argv.push("--", "-")
