@@ -6,6 +6,12 @@ module Xbookmark
   class Config
     REQUIRED_KEYS = %w[X_CLIENT_ID X_USER_ID].freeze
 
+    # Bookmark ingest sources, selected via XBOOKMARK_SOURCE.
+    SOURCE_API = "api"          # the X developer API (default)
+    SOURCE_BROWSER = "browser"  # a real Chromium reading X's internal GraphQL
+    SOURCE_BOTH = "both"        # API + browser in one run (resilience/migration)
+    VALID_SOURCES = [SOURCE_API, SOURCE_BROWSER, SOURCE_BOTH].freeze
+
     Struct.new(
       "XbookmarkConfig",
       :vault_path,
@@ -27,6 +33,7 @@ module Xbookmark
       :min_run_interval_hours,
       :aux_summaries,
       :taxonomy_maintenance,
+      :source,
       :env_file,
       :verbose,
       keyword_init: true
@@ -36,7 +43,8 @@ module Xbookmark
       def load(wiki_override: nil, vault_override: nil, cwd: Dir.pwd, env: ENV.to_h.dup, verbose: false, keystore: :auto)
         loaded_env_files = load_env_files!(cwd: cwd, env: env)
         hydrate_from_keystore!(env, keystore: keystore)
-        validate_required!(env)
+        source = source_from(env)
+        validate_required!(env, source: source)
 
         build_config(env, loaded_env_files: loaded_env_files, wiki_override: wiki_override,
                           vault_override: vault_override, verbose: verbose)
@@ -76,9 +84,24 @@ module Xbookmark
           min_run_interval_hours: (env["XBOOKMARK_MIN_RUN_INTERVAL_HOURS"] || "20").to_f,
           aux_summaries: truthy?(env["XBOOKMARK_AUX_SUMMARIES"]),
           taxonomy_maintenance: !falsey?(env["XBOOKMARK_TAXONOMY_MAINTENANCE"]),
+          source: source_from(env),
           env_file: loaded_env_files.first,
           verbose: verbose
         )
+      end
+
+      # Resolves XBOOKMARK_SOURCE to one of VALID_SOURCES (default api).
+      def source_from(env)
+        raw = env["XBOOKMARK_SOURCE"].to_s.strip.downcase
+        raw = SOURCE_API if raw.empty?
+        return raw if VALID_SOURCES.include?(raw)
+
+        raise ConfigError, "Invalid XBOOKMARK_SOURCE=#{raw.inspect}; expected one of: #{VALID_SOURCES.join(", ")}."
+      end
+
+      # True when a source that talks to the X developer API is active.
+      def api_source?(source)
+        source == SOURCE_API || source == SOURCE_BOTH
       end
 
       def load_env_files!(cwd:, env:)
@@ -126,7 +149,12 @@ module Xbookmark
         # will surface the real "missing key" message instead.
       end
 
-      def validate_required!(env)
+      # In browser-only mode the X developer API credentials are not needed, so
+      # an empty .env is valid; the keys are only required when an API source
+      # is active (api or both).
+      def validate_required!(env, source: SOURCE_API)
+        return unless api_source?(source)
+
         missing = REQUIRED_KEYS.reject { |k| env[k] && !env[k].to_s.strip.empty? }
         return if missing.empty?
         raise ConfigError, "Missing required env keys: #{missing.join(", ")}. " \

@@ -22,10 +22,13 @@ module Xbookmark
       TAXONOMY_CURATION_BATCH_SIZE = 50
       TAXONOMY_CURATION_TIMEOUT_SECONDS = 60
 
-      def initialize(config:, store:, x_client:, orchestrator: nil, renderer: nil, pipeline: nil, registrar: nil)
+      def initialize(config:, store:, sources: nil, x_client: nil, orchestrator: nil, renderer: nil, pipeline: nil, registrar: nil)
         @config = config
         @store = store
-        @x_client = x_client
+        # Generalized from a single x_client to an ordered list of sources so an
+        # API source keeps syncing in the same run even when the browser session
+        # has expired. `x_client:` stays as a back-compat single-element shim.
+        @sources = sources ? Array(sources) : [x_client].compact
         @renderer = renderer || Xbookmark::Render::BookmarkRenderer.new(vault_path: config.vault_path)
         @orch = orchestrator || default_orchestrator
         @pipeline = pipeline || Xbookmark::Sync::Pipeline.new(config: config, store: store, orchestrator: @orch,
@@ -217,7 +220,8 @@ module Xbookmark
 
       def resync_one(report, tweet_id:)
         raise ArgumentError, "resync requires a tweet_id" if tweet_id.to_s.empty?
-        page = @x_client.get_tweet(tweet_id)
+        page = get_tweet_any(tweet_id)
+        raise Xbookmark::SourceUnavailable, "tweet #{tweet_id} was unavailable from all sources" unless page && page["data"]
         bookmarks = Xbookmark::X::Expansions.new({ "data" => [page["data"]], "includes" => page["includes"] || {}, "meta" => {} }).bookmarks
         bm = bookmarks.first
         @store.upsert_pending(tweet_id: bm.tweet_id, author_handle: bm.author_handle, bookmarked_at: bm.bookmarked_at,
@@ -260,8 +264,21 @@ module Xbookmark
 
       def process_new_pages(report, limit:, only_new: false, tolerate_source_errors:, attempted_ids: {})
         collected = 0
-        @x_client.bookmarks(user_id: @config.x_user_id,
-                            max_results: Xbookmark::X::Client::BOOKMARK_PAGE_SIZE) do |payload|
+        @sources.each do |source|
+          break if limit && collected >= limit
+
+          collected = fetch_new_pages(source, report, limit: limit, only_new: only_new,
+                                      tolerate_source_errors: tolerate_source_errors,
+                                      attempted_ids: attempted_ids, collected: collected)
+        end
+      end
+
+      # Drives one source's pagination. A block on this source is isolated via
+      # source_blocked so any remaining sources still run. Returns the running
+      # `collected` count so `limit` caps total items across sources.
+      def fetch_new_pages(source, report, limit:, only_new:, tolerate_source_errors:, attempted_ids:, collected:)
+        source.bookmarks(user_id: @config.x_user_id,
+                         max_results: Xbookmark::X::Client::BOOKMARK_PAGE_SIZE) do |payload|
           report.api_pages += 1
           page_bookmarks = Xbookmark::X::Expansions.new(payload).bookmarks
           @pipeline.index_thread_bookmarks(page_bookmarks) if @pipeline.respond_to?(:index_thread_bookmarks)
@@ -287,8 +304,10 @@ module Xbookmark
           break if limit && collected >= limit
           break unless next_token
         end
+        collected
       rescue Xbookmark::AuthError, Xbookmark::RateLimited, Xbookmark::TransientError => e
         source_blocked(report, e, context: "new bookmark fetch", tolerate: tolerate_source_errors)
+        collected
       end
 
       def run_one(bookmark, report)
@@ -323,13 +342,34 @@ module Xbookmark
       end
 
       def fetch_bookmark(tweet_id)
-        page = @x_client.get_tweet(tweet_id)
-        raise Xbookmark::SourceUnavailable, "tweet #{tweet_id} was unavailable from X" unless page && page["data"]
+        page = get_tweet_any(tweet_id)
+        raise Xbookmark::SourceUnavailable, "tweet #{tweet_id} was unavailable from any source" unless page && page["data"]
 
         payload = { "data" => [page["data"]], "includes" => page["includes"] || {}, "meta" => {} }
         bookmark = Xbookmark::X::Expansions.new(payload).bookmarks.first
         @store.store_payload!(tweet_id: tweet_id, payload: payload)
         bookmark
+      end
+
+      # Tries each source's get_tweet until one returns the tweet. A source
+      # block (auth/rate-limit/transient) on one source does not abort the
+      # others; if every source is blocked, the last block is re-raised so the
+      # caller's source_blocked path records it.
+      def get_tweet_any(tweet_id)
+        last_block = nil
+        @sources.each do |source|
+          next unless source.respond_to?(:get_tweet)
+
+          begin
+            page = source.get_tweet(tweet_id)
+            return page if page && page["data"]
+          rescue Xbookmark::AuthError, Xbookmark::RateLimited, Xbookmark::TransientError => e
+            last_block = e
+          end
+        end
+        raise last_block if last_block
+
+        nil
       end
 
       def payload_for_bookmark(payload, bookmark)

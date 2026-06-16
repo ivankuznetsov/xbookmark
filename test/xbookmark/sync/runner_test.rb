@@ -711,4 +711,87 @@ describe Xbookmark::Sync::Runner do
     assert_equal 1, @report.source_errors
     assert_equal 0, @report.permanent_errors
   end
+
+  # ---- U1: multi-source Runner ----
+
+  it "keeps syncing a healthy source when an earlier source is blocked" do
+    page = {
+      "data" => [{ "id" => "t1", "author_id" => "u1", "text" => "x", "created_at" => "2026-01-01T00:00:00Z", "conversation_id" => "t1" }],
+      "includes" => { "users" => [{ "id" => "u1", "username" => "alice" }] },
+      "meta" => {}
+    }
+    blocked = SourceBlockedClient.new
+    healthy = FakeXClient.new(pages: [page])
+    pipeline = FakePipeline.new(->(_) { Xbookmark::Sync::Pipeline::Outcome.new(status: :done, markdown_path: "/x", digest: "d") })
+    runner = described_class.new(config: config, store: store, sources: [blocked, healthy],
+                                 pipeline: pipeline, registrar: registrar)
+
+    err = capture_stderr { @report = runner.run(mode: :backfill_limited, limit: 10) }
+
+    assert_equal 1, @report.synced, "the healthy source still syncs"
+    assert_equal 1, @report.source_errors, "the blocked source is recorded once"
+    assert_equal ["t1"], pipeline.calls
+    assert_match(/source blocked during new bookmark fetch/, err)
+  end
+
+  it "caps total items across sources at the requested limit" do
+    page_a = {
+      "data" => Array.new(3) { |i| { "id" => "a#{i}", "author_id" => "u1", "text" => "x", "created_at" => "2026-01-01T00:00:00Z", "conversation_id" => "a#{i}" } },
+      "includes" => { "users" => [{ "id" => "u1", "username" => "alice" }] },
+      "meta" => {}
+    }
+    page_b = {
+      "data" => Array.new(3) { |i| { "id" => "b#{i}", "author_id" => "u1", "text" => "x", "created_at" => "2026-01-01T00:00:00Z", "conversation_id" => "b#{i}" } },
+      "includes" => { "users" => [{ "id" => "u1", "username" => "alice" }] },
+      "meta" => {}
+    }
+    pipeline = FakePipeline.new(->(_) { Xbookmark::Sync::Pipeline::Outcome.new(status: :done, markdown_path: "/x", digest: "d") })
+    runner = described_class.new(config: config, store: store,
+                                 sources: [FakeXClient.new(pages: [page_a]), FakeXClient.new(pages: [page_b])],
+                                 pipeline: pipeline, registrar: registrar)
+
+    report = runner.run(mode: :backfill_limited, limit: 4)
+
+    assert_equal 4, report.synced
+  end
+
+  it "falls back to a second source's get_tweet when the first is blocked (resync)" do
+    single = {
+      "data" => { "id" => "1", "author_id" => "u1", "text" => "x", "created_at" => "2026-01-01T00:00:00Z", "conversation_id" => "1" },
+      "includes" => { "users" => [{ "id" => "u1", "username" => "alice" }] }
+    }
+    pipeline = FakePipeline.new(->(_) { Xbookmark::Sync::Pipeline::Outcome.new(status: :done, markdown_path: "/x", digest: "d") })
+    runner = described_class.new(config: config, store: store,
+                                 sources: [SourceBlockedClient.new, FakeXClient.new(single_tweet: single)],
+                                 pipeline: pipeline, registrar: registrar)
+
+    report = runner.run(mode: :resync, tweet_id: "1")
+
+    assert_equal 1, report.synced
+    assert_equal "1", store.payload_for("1")["data"].first["id"]
+  end
+
+  it "re-raises the last source block when every source's get_tweet is blocked" do
+    store.upsert_pending(tweet_id: "1", author_handle: "alice", bookmarked_at: "2026-01-01T00:00:00Z")
+    store.record_failure(tweet_id: "1", error: "temporary")
+    runner = described_class.new(config: config, store: store,
+                                 sources: [SourceBlockedClient.new, SourceBlockedClient.new],
+                                 pipeline: FakePipeline.new(->(_) { }), registrar: registrar)
+
+    capture_stderr { @report = runner.run(mode: :backfill_limited, limit: 1) }
+
+    # Each blocked source attempt is recorded; the retry row is never lost to a
+    # permanent error just because the sources were blocked.
+    assert @report.source_errors.positive?
+    assert_equal 0, @report.permanent_errors
+    assert_equal "needs_retry", store.find_bookmark("1")[:status]
+  end
+
+  it "raises SourceUnavailable on resync when no source can return the tweet" do
+    runner = described_class.new(config: config, store: store, sources: [MissingTweetClient.new],
+                                 pipeline: FakePipeline.new(->(_) { }), registrar: registrar)
+
+    error = assert_raises(Xbookmark::SourceUnavailable) { runner.run(mode: :resync, tweet_id: "999") }
+    assert_match(/unavailable from all sources/, error.message)
+  end
 end

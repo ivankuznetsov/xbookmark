@@ -19,12 +19,12 @@ module Xbookmark
         require_relative "../sync/runner"
         require_relative "../state/store"
         require_relative "../x/auth"
-        require_relative "../x/client"
+        require_relative "../sources/factory"
 
         config = Xbookmark::Config.load(wiki_override: options[:wiki], vault_override: options[:vault], verbose: options[:verbose])
         store  = Xbookmark::State::Store.new(config.state_db_path)
-        client = Xbookmark::X::Client.new(config: config, store: store)
-        runner = Xbookmark::Sync::Runner.new(config: config, store: store, x_client: client)
+        sources = Xbookmark::Sources::Factory.build(config: config, store: store)
+        runner = Xbookmark::Sync::Runner.new(config: config, store: store, sources: sources)
 
         mode  = options[:limit] ? :backfill_limited : :backfill_full
         report = runner.run(mode: mode, limit: options[:limit])
@@ -36,12 +36,12 @@ module Xbookmark
         require_relative "../config"
         require_relative "../sync/runner"
         require_relative "../state/store"
-        require_relative "../x/client"
+        require_relative "../sources/factory"
 
         config = Xbookmark::Config.load(wiki_override: options[:wiki], vault_override: options[:vault], verbose: options[:verbose])
         store  = Xbookmark::State::Store.new(config.state_db_path)
-        client = Xbookmark::X::Client.new(config: config, store: store)
-        runner = Xbookmark::Sync::Runner.new(config: config, store: store, x_client: client)
+        sources = Xbookmark::Sources::Factory.build(config: config, store: store)
+        runner = Xbookmark::Sync::Runner.new(config: config, store: store, sources: sources)
 
         report = runner.run(mode: :sync, from_scheduler: options[:"from-scheduler"])
         puts report
@@ -52,12 +52,12 @@ module Xbookmark
         require_relative "../config"
         require_relative "../sync/runner"
         require_relative "../state/store"
-        require_relative "../x/client"
+        require_relative "../sources/factory"
 
         config = Xbookmark::Config.load(wiki_override: options[:wiki], vault_override: options[:vault], verbose: options[:verbose])
         store  = Xbookmark::State::Store.new(config.state_db_path)
-        client = Xbookmark::X::Client.new(config: config, store: store)
-        runner = Xbookmark::Sync::Runner.new(config: config, store: store, x_client: client)
+        sources = Xbookmark::Sources::Factory.build(config: config, store: store)
+        runner = Xbookmark::Sync::Runner.new(config: config, store: store, sources: sources)
 
         report = runner.run(mode: :resync, tweet_id: tweet_id)
         puts report
