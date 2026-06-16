@@ -33,6 +33,13 @@ module Xbookmark
         UNAUTHENTICATED_MARKERS.any? { |marker| normalized.include?(marker) }
       end
 
+      # Cheap, browser-free check that a session has ever been persisted: the
+      # isolated profile dir exists and holds Chromium state. Used by `doctor`
+      # and `auth status` so they never have to launch Chromium to report.
+      def self.profile_saved?(dir = Xbookmark::Paths.browser_profile_dir)
+        File.directory?(dir) && !Dir.empty?(dir)
+      end
+
       def initialize(config:, headless: true, browser_class: nil, chromium_path: nil)
         @config = config
         @headless = headless
@@ -68,6 +75,15 @@ module Xbookmark
         yield page
       ensure
         page&.close
+      end
+
+      # Opens a persistent page at `url` and returns it (not closed) so a human
+      # can interact with it during a headed login. The browser stays alive
+      # until `quit`.
+      def open_page(url)
+        page = start.create_page
+        page.go_to(url)
+        page
       end
 
       # True when the dedicated profile still has a valid X session: navigating

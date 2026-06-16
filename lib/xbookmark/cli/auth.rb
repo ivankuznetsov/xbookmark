@@ -10,8 +10,12 @@ module Xbookmark
       class_option :vault, type: :string
       class_option :verbose, type: :boolean, default: false
 
-      desc "login", "Run the OAuth 2.0 PKCE flow against X"
+      desc "login", "Run the OAuth 2.0 PKCE flow against X (or --browser for the no-dev-API browser source)"
+      method_option :browser, type: :boolean, default: false,
+                              desc: "Log in via a real browser instead of the dev API (no X_* credentials needed)"
       def login
+        return browser_login if options[:browser]
+
         require_relative "../config"
         require_relative "../x/auth"
         config = Xbookmark::Config.load(wiki_override: options[:wiki], vault_override: options[:vault], verbose: options[:verbose])
@@ -31,6 +35,11 @@ module Xbookmark
       def status
         require_relative "../config"
         config = Xbookmark::Config.load(wiki_override: options[:wiki], vault_override: options[:vault], verbose: options[:verbose])
+        source = (config.respond_to?(:source) && config.source) || Xbookmark::Config::SOURCE_API
+        puts "source: #{source}"
+        browser_status if Xbookmark::Config.browser_source?(source)
+        return unless api_active?(source)
+
         unless config.x_access_token && !config.x_access_token.empty?
           puts "Not logged in. Run: xbookmark auth login"
           exit 1
@@ -69,6 +78,33 @@ module Xbookmark
       end
 
       private
+
+      def browser_login
+        require_relative "../config"
+        require_relative "../state/store"
+        require_relative "../browser/login"
+        # Browser login never needs the dev-API credentials, so load offline
+        # (no required-key validation) regardless of the configured source.
+        config = Xbookmark::Config.load_offline(wiki_override: options[:wiki], vault_override: options[:vault], verbose: options[:verbose])
+        store = Xbookmark::State::Store.new(config.state_db_path)
+        exit 1 unless Xbookmark::Browser::Login.new(config: config, store: store).call
+      rescue Xbookmark::ConfigError => e
+        warn "[xbookmark] #{e.message}"
+        exit 1
+      end
+
+      def browser_status
+        require_relative "../browser/session"
+        if Xbookmark::Browser::Session.profile_saved?
+          puts "browser session: present (#{Xbookmark::Paths.browser_profile_dir})"
+        else
+          puts "browser session: none — run `xbookmark auth login --browser`"
+        end
+      end
+
+      def api_active?(source)
+        source != Xbookmark::Config::SOURCE_BROWSER
+      end
 
       SECRET_LIKE_VALUE = /[A-Za-z0-9_\-.~+\/=]{32,}/
       SECRET_FIELD = /

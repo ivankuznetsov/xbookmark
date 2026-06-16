@@ -47,6 +47,8 @@ module Xbookmark
           say "X auth: token present (expires_at=#{config.x_token_expires_at || "unknown"})"
         end
 
+        report_browser(config)
+
         if missing.any?
           render_fixes(missing)
         end
@@ -57,6 +59,32 @@ module Xbookmark
       end
 
       private
+
+      # Browser bookmark source readiness. Chromium is required-but-not-bundled,
+      # so this is the runtime check that it is present; nothing here launches a
+      # browser. The session's true validity is verified on the next sync.
+      def report_browser(config)
+        require_relative "../browser/chromium"
+        require_relative "../browser/session"
+
+        say ""
+        say "source: #{config.source || Xbookmark::Config::SOURCE_API}"
+
+        chromium = Xbookmark::Browser::Chromium.detect
+        if chromium
+          say "chromium: ok (#{chromium})"
+        else
+          say "chromium: NOT FOUND (the browser source needs a system Chromium; e.g. install chromium/google-chrome)"
+        end
+
+        profile = Xbookmark::Paths.browser_profile_dir
+        say "browser profile: #{profile}"
+        if Xbookmark::Browser::Session.profile_saved?(profile)
+          say "browser session: saved"
+        else
+          say "browser session: not set up (run: xbookmark auth login --browser)"
+        end
+      end
 
       def safe_keystore_backend
         Xbookmark::Keystore.default.backend_name

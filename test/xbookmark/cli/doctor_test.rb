@@ -7,6 +7,8 @@ require "xbookmark/cli"
 require "xbookmark/system/runtime"
 require "xbookmark/system/package_manager"
 require "xbookmark/transcribe/whisper"
+require "xbookmark/browser/chromium"
+require "xbookmark/browser/session"
 
 describe Xbookmark::CLI::Doctor do
   before do
@@ -94,6 +96,28 @@ describe Xbookmark::CLI::Doctor do
     Xbookmark::Transcribe::Whisper.stubs(:detect).returns("/usr/bin/whisper")
     out = run_doctor
     refute_match(/Missing tools:/, out)
+  end
+
+  it "reports browser source readiness: chromium, profile, session, source" do
+    Xbookmark::Browser::Chromium.stubs(:detect).returns("/usr/bin/chromium")
+    Xbookmark::Browser::Session.stubs(:profile_saved?).returns(true)
+
+    out = run_doctor
+
+    assert_match(/^source: api/, out)
+    assert_match(%r{chromium: ok \(/usr/bin/chromium\)}, out)
+    assert_match(/browser profile: /, out)
+    assert_match(/browser session: saved/, out)
+  end
+
+  it "reports a missing Chromium and an unconfigured browser session" do
+    Xbookmark::Browser::Chromium.stubs(:detect).returns(nil)
+    Xbookmark::Browser::Session.stubs(:profile_saved?).returns(false)
+
+    out = run_doctor
+
+    assert_match(/chromium: NOT FOUND/, out)
+    assert_match(/browser session: not set up/, out)
   end
 end
 

@@ -159,6 +159,29 @@ describe Xbookmark::Browser::Session do
     end
   end
 
+  it "opens a persistent page at a url and leaves it open for the user" do
+    with_tmp_home do
+      session = build_session
+      page = FakePage.new
+      FakeFerrumBrowser.any_instance.stubs(:create_page).returns(page)
+
+      returned = session.open_page("https://x.com/i/flow/login")
+
+      assert_same page, returned
+      assert_equal ["https://x.com/i/flow/login"], page.visited
+      refute page.closed, "open_page must not close the page (the user interacts with it)"
+    end
+  end
+
+  it "reports a saved profile only when the dir exists and is non-empty" do
+    Dir.mktmpdir do |dir|
+      refute described_class.profile_saved?(dir), "empty dir is not a saved session"
+      File.write(File.join(dir, "Cookies"), "x")
+      assert described_class.profile_saved?(dir)
+      refute described_class.profile_saved?(File.join(dir, "nope"))
+    end
+  end
+
   it "closes the page even when the block raises" do
     with_tmp_home do
       session = build_session

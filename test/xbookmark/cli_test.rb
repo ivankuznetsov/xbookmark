@@ -11,6 +11,8 @@ require "xbookmark/sync/runner"
 require "xbookmark/sync/reenricher"
 require "xbookmark/sync/report"
 require "xbookmark/notify"
+require "xbookmark/browser/login"
+require "xbookmark/browser/session"
 require "xbookmark/transcribe/whisper"
 require "xbookmark/x/auth"
 require "xbookmark/x/client"
@@ -276,6 +278,72 @@ describe Xbookmark::CLI do
     refute_includes $stderr.string, "Run: xbookmark auth login"
   ensure
     $stderr = old_stderr
+  end
+
+  it "routes auth login --browser to the browser login flow instead of OAuth" do
+    Xbookmark::Config.stubs(:load_offline).returns(test_config(source: "browser"))
+    Xbookmark::State::Store.stubs(:new).returns(stub)
+    browser_login = mock("browser login")
+    browser_login.expects(:call).returns(true)
+    Xbookmark::Browser::Login.expects(:new).returns(browser_login)
+    Xbookmark::X::Auth.expects(:new).never
+
+    Xbookmark::CLI::Auth.start(%w[login --browser])
+  end
+
+  it "exits non-zero when browser login is not completed" do
+    Xbookmark::Config.stubs(:load_offline).returns(test_config(source: "browser"))
+    Xbookmark::State::Store.stubs(:new).returns(stub)
+    Xbookmark::Browser::Login.stubs(:new).returns(stub(call: false))
+
+    error = assert_raises(SystemExit) { Xbookmark::CLI::Auth.start(%w[login --browser]) }
+    assert_equal 1, error.status
+  end
+
+  it "reports a clear error when browser login finds no Chromium" do
+    Xbookmark::Config.stubs(:load_offline).returns(test_config(source: "browser"))
+    Xbookmark::State::Store.stubs(:new).returns(stub)
+    Xbookmark::Browser::Login.stubs(:new).raises(Xbookmark::ConfigError, "No Chromium/Chrome found")
+
+    old_stderr = $stderr
+    $stderr = StringIO.new
+    error = assert_raises(SystemExit) { Xbookmark::CLI::Auth.start(%w[login --browser]) }
+    assert_equal 1, error.status
+    assert_includes $stderr.string, "No Chromium"
+  ensure
+    $stderr = old_stderr
+  end
+
+  it "reports a present browser session in browser mode without requiring a token" do
+    Xbookmark::Config.stubs(:load).returns(test_config(source: "browser", x_access_token: ""))
+    Xbookmark::Browser::Session.stubs(:profile_saved?).returns(true)
+
+    out = capture_stdout { Xbookmark::CLI::Auth.start(%w[status]) }
+
+    assert_includes out, "source: browser"
+    assert_includes out, "browser session: present"
+    refute_includes out, "Not logged in"
+  end
+
+  it "points an unconfigured browser session at the browser login command" do
+    Xbookmark::Config.stubs(:load).returns(test_config(source: "browser"))
+    Xbookmark::Browser::Session.stubs(:profile_saved?).returns(false)
+
+    out = capture_stdout { Xbookmark::CLI::Auth.start(%w[status]) }
+
+    assert_includes out, "auth login --browser"
+  end
+
+  it "still reports the API token status in both mode" do
+    Xbookmark::Config.stubs(:load).returns(test_config(source: "both", x_access_token: "token",
+                                                       x_token_expires_at: 2_000_000_000))
+    Xbookmark::Browser::Session.stubs(:profile_saved?).returns(false)
+    Time.stubs(:now).returns(Time.at(1_000_000_000))
+
+    out = capture_stdout { Xbookmark::CLI::Auth.start(%w[status]) }
+
+    assert_includes out, "source: both"
+    assert_includes out, "Logged in. Token expires at"
   end
 
   it "prints auth status without exiting when a token is present" do

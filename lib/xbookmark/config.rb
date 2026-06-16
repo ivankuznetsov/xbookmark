@@ -104,6 +104,11 @@ module Xbookmark
         source == SOURCE_API || source == SOURCE_BOTH
       end
 
+      # True when the browser source is active.
+      def browser_source?(source)
+        source == SOURCE_BROWSER || source == SOURCE_BOTH
+      end
+
       def load_env_files!(cwd:, env:)
         explicit = env["XBOOKMARK_ENV_FILE"]
         candidates = [
