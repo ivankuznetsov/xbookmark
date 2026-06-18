@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "json"
+require "uri"
 
 module Xbookmark
   module Browser
@@ -13,6 +14,12 @@ module Xbookmark
       GRAPHQL_PATH = "/i/api/graphql/"
       BOOKMARKS_OPERATION = "Bookmarks"
       TWEET_OPERATIONS = %w[TweetResultByRestId TweetDetail].freeze
+      # X serves its internal GraphQL API only from its own hosts, and the page is
+      # always loaded from x.com (Session::BOOKMARKS_URL). A matching
+      # /i/api/graphql/ path on any other host is third-party subresource traffic
+      # (an embedded widget, an ad/analytics frame, a redirector) and must never be
+      # parsed as trusted bookmark/tweet data — fail closed to an X-host allowlist.
+      GRAPHQL_HOSTS = %w[x.com twitter.com].freeze
 
       def initialize(page)
         @page = page
@@ -148,11 +155,30 @@ module Xbookmark
       end
 
       def bookmarks_url?(url)
-        url.include?(GRAPHQL_PATH) && url.include?("/#{BOOKMARKS_OPERATION}")
+        x_graphql_url?(url) && url.include?("/#{BOOKMARKS_OPERATION}")
       end
 
       def tweet_url?(url)
-        url.include?(GRAPHQL_PATH) && TWEET_OPERATIONS.any? { |op| url.include?("/#{op}") }
+        x_graphql_url?(url) && TWEET_OPERATIONS.any? { |op| url.include?("/#{op}") }
+      end
+
+      # True only for the GraphQL path served from one of X's own hosts. The host
+      # is taken from the parsed authority (not a substring), so a third-party URL
+      # that smuggles the path into its own query string is rejected. Fails closed
+      # on an unparseable url.
+      def x_graphql_url?(url)
+        return false unless url.include?(GRAPHQL_PATH)
+
+        host = host_for(url)
+        return false unless host
+
+        GRAPHQL_HOSTS.any? { |allowed| host == allowed || host.end_with?(".#{allowed}") }
+      end
+
+      def host_for(url)
+        URI.parse(url.to_s).host&.downcase
+      rescue URI::InvalidURIError
+        nil
       end
 
       def exchange_url(exchange)

@@ -78,6 +78,52 @@ describe Xbookmark::Browser::GraphqlCapture do
     assert_equal ["c1"], bodies.map { |b| b["cursor"] }
   end
 
+  it "ignores a matching GraphQL path served from a non-X host" do
+    # The page only ever loads from x.com, so a /i/api/graphql/Bookmarks path on
+    # any other host is third-party subresource traffic and must never be parsed
+    # as trusted bookmark data — fail closed to an X-host allowlist.
+    exchanges = [
+      FakeExchange.new(url: "https://evil.example/i/api/graphql/abc/Bookmarks", body: gql("spoof"), id: 1),
+      FakeExchange.new(url: "https://x.com/i/api/graphql/abc/Bookmarks", body: gql("real"), id: 2)
+    ]
+    capture = described_class.new(page_with(exchanges))
+
+    assert_equal ["real"], capture.drain_bookmarks.map { |b| b["cursor"] }, "only the x.com Bookmarks response is trusted"
+    refute capture.failures?, "an off-host path is simply ignored, not a capture failure"
+  end
+
+  it "accepts GraphQL traffic from X's own hosts (x.com and twitter.com)" do
+    exchanges = [
+      FakeExchange.new(url: "https://x.com/i/api/graphql/abc/Bookmarks", body: gql("a"), id: 1),
+      FakeExchange.new(url: "https://twitter.com/i/api/graphql/abc/Bookmarks", body: gql("b"), id: 2)
+    ]
+    capture = described_class.new(page_with(exchanges))
+
+    assert_equal %w[a b], capture.drain_bookmarks.map { |x| x["cursor"] }
+  end
+
+  it "fails closed on a matching path whose host cannot be parsed" do
+    # A url carrying the GraphQL path but with an unparseable authority must not be
+    # trusted — host_for returns nil and the exchange is ignored.
+    exchanges = [
+      FakeExchange.new(url: "https://x x.com/i/api/graphql/abc/Bookmarks", body: gql("bad"), id: 1),
+      FakeExchange.new(url: "https://x.com/i/api/graphql/abc/Bookmarks", body: gql("good"), id: 2)
+    ]
+    capture = described_class.new(page_with(exchanges))
+
+    assert_equal ["good"], capture.drain_bookmarks.map { |b| b["cursor"] }, "an unparseable host is not trusted"
+  end
+
+  it "ignores a single-tweet GraphQL path served from a non-X host" do
+    exchanges = [
+      FakeExchange.new(url: "https://evil.example/i/api/graphql/abc/TweetResultByRestId", body: gql("spoof"), id: 1),
+      FakeExchange.new(url: "https://x.com/i/api/graphql/abc/TweetResultByRestId", body: gql("real"), id: 2)
+    ]
+    capture = described_class.new(page_with(exchanges))
+
+    assert_equal ["real"], capture.drain_tweets.map { |b| b["cursor"] }, "only the x.com tweet response is trusted"
+  end
+
   it "does not return the same exchange twice across drains" do
     ex = FakeExchange.new(url: "https://x.com/i/api/graphql/abc/Bookmarks", body: gql("c1"), id: 7)
     page = page_with([ex])
