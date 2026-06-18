@@ -285,6 +285,28 @@ describe Xbookmark::Browser::Session do
     end
   end
 
+  it "releases the profile lock when the browser fails to launch" do
+    with_tmp_home do
+      raising_class = Class.new do
+        def initialize(_options)
+          raise "chromium launch failed"
+        end
+      end
+      session = build_session(browser_class: raising_class)
+
+      # The failed launch must propagate, and the rescue must release the profile
+      # lock so a single crashed launch can't wedge every later run.
+      err = capture_stderr do
+        error = assert_raises(RuntimeError) { session.start }
+        assert_match(/chromium launch failed/, error.message)
+      end
+      assert_match(%r{launching Chromium}, err)
+
+      other = build_session
+      capture_stderr { assert_instance_of FakeFerrumBrowser, other.start }
+    end
+  end
+
   it "releases the profile lock on quit" do
     with_tmp_home do
       session = build_session

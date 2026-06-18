@@ -2,6 +2,7 @@
 
 require "test_helper"
 require "xbookmark/browser/source"
+require "xbookmark/state/store"
 # Source no longer pulls in X::Client (it inlines its one constant), but the
 # contract-parity test below still compares against it, so load it explicitly.
 require "xbookmark/x/client"
@@ -142,6 +143,30 @@ class TweetExpiringAfterSettlePage
     # initial guard saw a clean URL and only the re-guard catches the expiry.
     @current_url = "https://x.com/i/flow/login"
     []
+  end
+end
+
+# Drains only a stray tweet (never the focal id) and, like a session expiring
+# after the initial guard, flips current_url to a login URL when the traffic is
+# read. Exercises get_tweet's no-match-branch re-guard, which must surface
+# SessionExpired (re-login) rather than SourceUnavailable/TransientError.
+class StrayTweetThenLoginPage
+  def initialize(stray_body)
+    @exchange = StubXchg.new("https://x.com/i/api/graphql/abc/TweetResultByRestId?p=0", stray_body, 0)
+    @current_url = "https://x.com/i/web/status/555"
+  end
+
+  def go_to(_) = nil
+  def current_url = @current_url
+  def execute(_) = nil
+  def network = self
+  def wait_for_idle = nil
+
+  def traffic
+    # The stray tweet is visible, but reading traffic also reveals the post-settle
+    # login redirect (the session expired after the initial guard saw a clean URL).
+    @current_url = "https://x.com/i/flow/login"
+    [@exchange]
   end
 end
 
@@ -519,6 +544,48 @@ describe Xbookmark::Browser::Source do
     assert_equal 1, session.quits
   end
 
+  it "seals a clean full backfill when X prefetches and abandons a final Bookmarks request (cursor repeat + pending)" do
+    # X commonly prefetches one more Bookmarks request as the final page drains,
+    # then abandons it — leaving a pending exchange on a history that is genuinely
+    # complete. The walk stops on a repeated Bottom cursor, and finish_walk must
+    # skip its pending? check there (honoring it would keep a finished full
+    # backfill from ever sealing). A regression reordering that condition would
+    # raise TransientError here instead of completing.
+    page1 = StubXchg.new("https://x.com/i/api/graphql/abc/Bookmarks?p=0", bookmarks_body(ids: %w[1], cursor: "c1"), 0)
+    page2 = StubXchg.new("https://x.com/i/api/graphql/abc/Bookmarks?p=1", bookmarks_body(ids: %w[2], cursor: "c1"), 1)
+    abandoned = StubXchg.new("https://x.com/i/api/graphql/abc/Bookmarks?p=2", "", 2)
+    page = GappyTimelinePage.new([[page1], [page1, page2, abandoned]])
+    session = StubSession.new(page)
+    source = described_class.new(config: config, session: session)
+
+    yielded = []
+    source.bookmarks { |env| yielded << env } # must complete without raising
+
+    assert_equal [%w[1], %w[2]], yielded.map { |e| e["data"].map { |t| t["id"] } }
+    assert_equal 1, session.quits
+  end
+
+  it "raises a transient error when a capture failed mid-walk and the walk then ran dry on a clean settle" do
+    # The good page yields, then a later Bookmarks body fails to parse (a mid-walk
+    # GraphQL shape change) on an otherwise clean (non-stalled) settle, and the
+    # walk runs out on empty rounds. finish_walk's failures?-only final branch must
+    # surface this as transient so a truncated backfill is not sealed complete.
+    good = StubXchg.new("https://x.com/i/api/graphql/abc/Bookmarks?p=0", bookmarks_body(ids: %w[1], cursor: "c1"), 0)
+    bad  = StubXchg.new("https://x.com/i/api/graphql/abc/Bookmarks?p=1", "{bad json", 1)
+    page = GappyTimelinePage.new([[good], [good, bad]])
+    session = StubSession.new(page)
+    source = described_class.new(config: config, session: session)
+
+    yielded = []
+    err = capture_stderr do
+      assert_raises(Xbookmark::TransientError) { source.bookmarks { |env| yielded << env } }
+    end
+
+    assert_equal 1, yielded.size, "the good page captured before the parse failure is still yielded"
+    assert_match(/could not parse a GraphQL body/, err)
+    assert_equal 1, session.quits
+  end
+
   it "raises TransientError when the timeline walk exceeds its wall-clock budget" do
     # The iteration cap bounds scrolls, not elapsed time; a manual backfill must
     # also be bounded by the wall-clock deadline (the scheduled path has systemd).
@@ -693,6 +760,18 @@ describe Xbookmark::Browser::Source do
     assert_raises(Xbookmark::Browser::SessionExpired) { source.get_tweet("1") }
   end
 
+  it "raises SessionExpired from get_tweet when only a stray drained and the session redirected post-settle" do
+    # A non-empty capture that lacks the focal id (only a stray quoted/hovercard
+    # tweet drained) on a clean settle would otherwise be a permanent
+    # SourceUnavailable. But the session expired after the initial guard, so the
+    # no-match branch's re-guard must reclassify it as SessionExpired (re-login)
+    # rather than letting a retry/resync mark the still-existing tweet gone.
+    page = StrayTweetThenLoginPage.new(tweet_detail_body("999"))
+    source = described_class.new(config: config, session: StubSession.new(page))
+
+    assert_raises(Xbookmark::Browser::SessionExpired) { source.get_tweet("555") }
+  end
+
   it "get_tweet returns the requested tweet, not a stray that drained last" do
     # The page fires an extra TweetResultByRestId/TweetDetail for a quoted or
     # hovercard tweet (999) that drains AFTER the focal tweet (555). The reverse
@@ -751,5 +830,36 @@ describe Xbookmark::Browser::Source do
     source = described_class.new(config: config, session: StubSession.new(page))
 
     assert_raises(Xbookmark::TransientError) { source.get_tweet("555") }
+  end
+
+  # ---- consent gating (the unattended path must not hit X before consent) ----
+
+  it "refuses bookmarks until browser-source consent is recorded" do
+    store = Xbookmark::State::Store.new(":memory:")
+    page = StubTimelinePage.new([bookmarks_body(ids: %w[1], cursor: "c1")])
+    source = described_class.new(config: config, store: store, session: StubSession.new(page))
+
+    error = assert_raises(Xbookmark::ConfigError) { source.bookmarks { |_| flunk "must not hit X without consent" } }
+    assert_match(/consent/, error.message)
+    assert_empty page.visited, "the page is never navigated before consent"
+  end
+
+  it "syncs bookmarks once browser-source consent is recorded" do
+    store = Xbookmark::State::Store.new(":memory:")
+    store.set_meta(Xbookmark::Browser::Login::CONSENT_KEY, "2026-01-01T00:00:00Z")
+    page = StubTimelinePage.new([bookmarks_body(ids: %w[1], cursor: "c1")])
+    source = described_class.new(config: config, store: store, session: StubSession.new(page))
+
+    yielded = []
+    source.bookmarks { |env| yielded << env }
+    assert_equal 1, yielded.size
+  end
+
+  it "refuses get_tweet until browser-source consent is recorded" do
+    store = Xbookmark::State::Store.new(":memory:")
+    source = described_class.new(config: config, store: store,
+                                 session: StubSession.new(StubTimelinePage.new([tweet_detail_body("1")], url_kind: :tweet)))
+
+    assert_raises(Xbookmark::ConfigError) { source.get_tweet("1") }
   end
 end

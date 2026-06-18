@@ -5,6 +5,7 @@ require "json"
 require "time"
 require_relative "report"
 require_relative "pipeline"
+require_relative "../sources/factory"
 require_relative "../x/client"
 require_relative "../x/expansions"
 require_relative "../browser/errors"
@@ -32,12 +33,6 @@ module Xbookmark
       SOURCE_BLOCK_ERRORS = [
         Xbookmark::AuthError, Xbookmark::RateLimited, Xbookmark::TransientError, Xbookmark::ConfigError
       ].freeze
-
-      # The duck-typed source contract get_tweet_any fully trusts (it drops its
-      # respond_to? guard on the basis these are always present). Sources::Factory
-      # enforces this at build time, but the Runner also accepts arbitrary
-      # sources:/x_client: objects, so it must validate here too.
-      CONTRACT_METHODS = %i[bookmarks get_tweet].freeze
 
       def initialize(config:, store:, sources: nil, x_client: nil, orchestrator: nil, renderer: nil, pipeline: nil, registrar: nil)
         @config = config
@@ -187,7 +182,9 @@ module Xbookmark
         registrar.ensure_registered! if registrar.respond_to?(:ensure_registered!)
         registrar.index!
       rescue StandardError => e
-        warn "[xbookmark] qmd reindex failed: #{e.message}"
+        # Match the #{e.class}: #{e.message} convention used by the other swallows
+        # in this file so a generic message (e.g. an Errno path) is triageable.
+        warn "[xbookmark] qmd reindex failed: #{e.class}: #{e.message}"
       end
 
       def default_orchestrator
@@ -215,12 +212,17 @@ module Xbookmark
       end
 
       def backfill(report, limit:)
-        if limit && @store.mode == Xbookmark::State::Store::MODE_FRESH
-          @store.mode = Xbookmark::State::Store::MODE_FRESH # noop, but keep flow visible
-        end
         attempted = retry_first(report)
         # New pages from API
         process_new_pages(report, limit: limit, attempted_ids: attempted)
+        # By-design `both`-mode limitation: a backfill seals as complete only when
+        # NO source raised an error this run. If the API source fully paginated the
+        # timeline but the browser half raised (e.g. SessionExpired), source_errors
+        # is positive and the store stays un-sealed, so every scheduled run re-walks
+        # the whole API timeline (and re-fires the expiry signal) until the human
+        # re-logs in. This is the safe direction — it never seals a possibly
+        # truncated history — at the cost of redundant API walks while one source
+        # is blocked.
         return if report.source_errors.positive?
 
         if limit
@@ -491,12 +493,13 @@ module Xbookmark
         report.permanent_errors += 1
       end
 
+      # The Factory enforces the duck-typed source contract at build time, but the
+      # Runner also accepts arbitrary sources:/x_client: objects (and get_tweet_any
+      # trusts them with no respond_to? guard), so it validates here too —
+      # delegating to the Factory's single check so the two trust boundaries can
+      # never enforce different contracts.
       def verify_source_contract!(source)
-        missing = CONTRACT_METHODS.reject { |method| source.respond_to?(method) }
-        return if missing.empty?
-
-        raise Xbookmark::ConfigError,
-              "source #{source.class} does not satisfy the bookmark-source contract (missing: #{missing.join(", ")})"
+        Xbookmark::Sources::Factory.verify_contract!(source)
       end
 
       # Releases each source's resources once the run is done. The browser source

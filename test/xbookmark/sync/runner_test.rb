@@ -746,7 +746,7 @@ describe Xbookmark::Sync::Runner do
                                  pipeline: pipeline, registrar: bad_registrar)
 
     err = capture_stderr { @report = runner.run(mode: :backfill_limited, limit: 1) }
-    assert_match(/qmd reindex failed: qmd down/, err)
+    assert_match(/qmd reindex failed: RuntimeError: qmd down/, err)
     assert_equal 1, @report.synced
   end
 
@@ -963,6 +963,21 @@ describe Xbookmark::Sync::Runner do
     assert_equal "1", store.payload_for("1")["data"].first["id"]
   end
 
+  it "re-raises a trailing source block past an earlier tweet-gone source (resync)" do
+    # source1 reports the tweet gone (SourceUnavailable → try next), source2 is
+    # blocked. get_tweet_any must re-raise the block — not let the earlier
+    # SourceUnavailable swallow it and mark the still-existing tweet permanently
+    # gone. The block is isolated by resync's source_blocked, not a permanent error.
+    runner = described_class.new(config: config, store: store,
+                                 sources: [TweetGoneSource.new, SourceBlockedClient.new],
+                                 pipeline: FakePipeline.new(->(_) { }), registrar: registrar)
+
+    capture_stderr { @report = runner.run(mode: :resync, tweet_id: "1") }
+
+    assert @report.source_errors.positive?, "the trailing block is recorded, not swallowed by the earlier tweet-gone"
+    assert_equal 0, @report.permanent_errors, "a blocked source must not mark the tweet permanently gone"
+  end
+
   it "re-raises the last source block when every source's get_tweet is blocked" do
     store.upsert_pending(tweet_id: "1", author_handle: "alice", bookmarked_at: "2026-01-01T00:00:00Z")
     store.record_failure(tweet_id: "1", error: "temporary")
@@ -1062,6 +1077,18 @@ describe Xbookmark::Sync::Runner do
     runner.run(mode: :backfill_limited, limit: 1)
 
     assert_equal 1, source.closes, "the run must quit the source via close_sources"
+  end
+
+  it "closes every source in a multi-source list (no orphaned Chromium)" do
+    source_a = CloseableSource.new(pages: [])
+    source_b = CloseableSource.new(pages: [])
+    runner = described_class.new(config: config, store: store, sources: [source_a, source_b],
+                                 pipeline: FakePipeline.new(->(_) { }), registrar: registrar)
+
+    runner.run(mode: :backfill_limited, limit: 1)
+
+    assert_equal 1, source_a.closes, "the first source is quit"
+    assert_equal 1, source_b.closes, "the second source is quit too — close_sources must walk every source"
   end
 
   it "closes each source even when the run raises (ensure path)" do

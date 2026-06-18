@@ -21,11 +21,12 @@ module Xbookmark
     #     block. Raises AuthError / RateLimited / TransientError to signal a
     #     source block.
     #
-    #   get_tweet(id) -> { "data" => tweet, "includes" => {...} }
-    #     Returns a single-tweet API v2 payload. Raises SourceUnavailable when
-    #     the tweet is permanently gone and TransientError when the fetch failed
-    #     transiently — it never returns nil, so the Runner can tell "retry" from
-    #     "permanently gone".
+    #   get_tweet(id, expansions: nil) -> { "data" => tweet, "includes" => {...} }
+    #     Returns a single-tweet API v2 payload. `expansions` is accepted for
+    #     signature parity with X::Client#get_tweet (the browser source ignores
+    #     it). Raises SourceUnavailable when the tweet is permanently gone and
+    #     TransientError when the fetch failed transiently — it never returns nil,
+    #     so the Runner can tell "retry" from "permanently gone".
     #
     #   close (optional)
     #     Releases any held resources (the browser source quits Chromium). The
@@ -35,6 +36,9 @@ module Xbookmark
 
       # The duck-typed method names every source must answer (the prose contract
       # above, made enforceable). get_tweet_any in the Runner fully trusts these.
+      # Single source of truth: Sync::Runner#verify_source_contract! delegates to
+      # this module's #verify_contract! so the build-time and runtime checks can
+      # never enforce different contracts.
       CONTRACT_METHODS = %i[bookmarks get_tweet].freeze
 
       def build(config:, store:)
@@ -46,9 +50,9 @@ module Xbookmark
       def sources_for(config, store)
         case config.source
         when Xbookmark::Config::SOURCE_BROWSER
-          [browser_source(config)]
+          [browser_source(config, store)]
         when Xbookmark::Config::SOURCE_BOTH
-          [api_source(config, store), browser_source(config)]
+          [api_source(config, store), browser_source(config, store)]
         when Xbookmark::Config::SOURCE_API
           [api_source(config, store)]
         else
@@ -75,8 +79,10 @@ module Xbookmark
         Xbookmark::X::Client.new(config: config, store: store)
       end
 
-      def browser_source(config)
-        Xbookmark::Browser::Source.new(config: config)
+      def browser_source(config, store)
+        # Thread the store so the source can gate sync/backfill on the one-time
+        # browser-source consent marker recorded by Browser::Login.
+        Xbookmark::Browser::Source.new(config: config, store: store)
       end
     end
   end

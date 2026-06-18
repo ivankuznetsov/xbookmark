@@ -21,10 +21,26 @@ module SourceContractTest
         assert_kind_of Enumerator, build_contract_bookmarks_source.bookmarks(user_id: "42")
       end
 
+      it "(contract) bookmarks accepts the full pagination_token:/max_results: keyword set" do
+        # respond_to?(:bookmarks) cannot catch an arity/keyword drift, so exercise
+        # the keywords the Runner actually passes so a signature change fails here.
+        enum = build_contract_bookmarks_source.bookmarks(user_id: "42", pagination_token: nil, max_results: 50)
+        assert_kind_of Enumerator, enum
+      end
+
       it "(contract) get_tweet returns a non-nil payload with data for a present tweet" do
         payload = build_contract_present_source.get_tweet(contract_present_id)
         refute_nil payload, "get_tweet must never return nil"
         assert payload["data"], "get_tweet payload must carry data the Runner can expand"
+      end
+
+      it "(contract) get_tweet accepts the optional expansions: keyword" do
+        # X::Client forwards expansions: to the API; the browser source ignores it.
+        # Both must accept the keyword so a future keyword caller cannot raise
+        # ArgumentError on one source only.
+        payload = build_contract_present_source.get_tweet(contract_present_id, expansions: nil)
+        refute_nil payload, "get_tweet(expansions:) must never return nil"
+        assert payload["data"], "get_tweet(expansions:) payload must carry data the Runner can expand"
       end
 
       it "(contract) get_tweet raises SourceUnavailable (never nil) for a gone tweet" do
