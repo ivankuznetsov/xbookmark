@@ -840,6 +840,29 @@ describe Xbookmark::Sync::Runner do
     assert_equal "1", store.payload_for("1")["data"].first["id"]
   end
 
+  it "falls through a tweet-gone source to a healthy source on the backfill retry path (both mode)" do
+    # The resync path's SourceUnavailable fallthrough is covered above; this
+    # exercises the *other* get_tweet_any caller — retry_first → fetch_bookmark —
+    # so a regression dropping the `next` would mark a recoverable retry row as a
+    # permanent error instead of fetching it from the healthy second source.
+    single = {
+      "data" => { "id" => "1", "author_id" => "u1", "text" => "x", "created_at" => "2026-01-01T00:00:00Z", "conversation_id" => "1" },
+      "includes" => { "users" => [{ "id" => "u1", "username" => "alice" }] }
+    }
+    store.upsert_pending(tweet_id: "1", author_handle: "alice", bookmarked_at: "2026-01-01T00:00:00Z")
+    store.record_failure(tweet_id: "1", error: "temporary")
+    pipeline = FakePipeline.new(->(_) { Xbookmark::Sync::Pipeline::Outcome.new(status: :done, markdown_path: "/x", digest: "d") })
+    runner = described_class.new(config: config, store: store,
+                                 sources: [TweetGoneSource.new, FakeXClient.new(single_tweet: single)],
+                                 pipeline: pipeline, registrar: registrar)
+
+    capture_stderr { @report = runner.run(mode: :backfill_limited, limit: 10) }
+
+    assert_equal 1, @report.synced, "the retry row falls through SourceUnavailable to the healthy source"
+    assert_equal 0, @report.permanent_errors, "a recoverable retry row is not marked permanently failed"
+    assert_equal "1", store.payload_for("1")["data"].first["id"]
+  end
+
   it "re-raises the last source block when every source's get_tweet is blocked" do
     store.upsert_pending(tweet_id: "1", author_handle: "alice", bookmarked_at: "2026-01-01T00:00:00Z")
     store.record_failure(tweet_id: "1", error: "temporary")
@@ -854,6 +877,14 @@ describe Xbookmark::Sync::Runner do
     assert @report.source_errors.positive?
     assert_equal 0, @report.permanent_errors
     assert_equal "needs_retry", store.find_bookmark("1")[:status]
+  end
+
+  it "fails fast when constructed with no sources instead of sealing an empty run as complete" do
+    error = assert_raises(ArgumentError) do
+      described_class.new(config: config, store: store,
+                          pipeline: FakePipeline.new(->(_) { }), registrar: registrar)
+    end
+    assert_match(/at least one source/, error.message)
   end
 
   it "raises SourceUnavailable on resync when no source can return the tweet" do

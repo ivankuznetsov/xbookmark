@@ -40,6 +40,13 @@ module Xbookmark
         # API source keeps syncing in the same run even when the browser session
         # has expired. `x_client:` stays as a back-compat single-element shim.
         @sources = sources ? Array(sources) : [x_client].compact
+        # A run with zero sources fetches no pages yet still walks the
+        # mark-backfilled / stamp-last_sync paths, sealing an empty store as a
+        # successful backfill. Fail fast at construction instead — the Factory
+        # always returns at least one source (or raises), so an empty list is a
+        # wiring bug, not a valid configuration.
+        raise ArgumentError, "Sync::Runner requires at least one source" if @sources.empty?
+
         @renderer = renderer || Xbookmark::Render::BookmarkRenderer.new(vault_path: config.vault_path)
         @orch = orchestrator || default_orchestrator
         @pipeline = pipeline || Xbookmark::Sync::Pipeline.new(config: config, store: store, orchestrator: @orch,
@@ -376,8 +383,9 @@ module Xbookmark
       def get_tweet_any(tweet_id)
         last_block = nil
         @sources.each do |source|
-          next unless source.respond_to?(:get_tweet)
-
+          # get_tweet is a mandatory part of the source contract (enforced by
+          # Sources::Factory#verify_contract!), so every source answers it — no
+          # respond_to? guard, which would only mask a future contract violation.
           begin
             page = source.get_tweet(tweet_id)
             return page if page && page["data"]
