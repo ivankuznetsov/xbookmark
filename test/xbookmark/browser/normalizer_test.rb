@@ -89,7 +89,10 @@ describe Xbookmark::Browser::Normalizer do
 
       assert_equal a.url, b.url, "url parity for #{id}"
       assert_equal a.author_handle, b.author_handle, "author parity for #{id}"
+      assert_equal a.text, b.text, "text parity for #{id}"
+      assert_equal a.created_at, b.created_at, "created_at parity for #{id}"
       assert_equal a.media.map(&:type), b.media.map(&:type), "media kinds parity for #{id}"
+      assert_equal a.media.map(&:url), b.media.map(&:url), "media url parity for #{id}"
       assert_equal a.quoted_tweet_id.to_s, b.quoted_tweet_id.to_s, "quoted id parity for #{id}"
     end
 
@@ -252,6 +255,79 @@ describe Xbookmark::Browser::Normalizer do
     env = single_entry_envelope(result)
     assert_empty env["data"].first["referenced_tweets"]
     assert_empty env["includes"]["tweets"]
+  end
+
+  # ---- hostile GraphQL shapes (High 2/3: one bad element must not crash) ----
+
+  it "treats a non-Hash payload as an empty envelope" do
+    env = described_class.new([1, 2, 3]).envelope
+    assert_empty env["data"]
+    refute env["meta"].key?("next_token")
+  end
+
+  it "survives a non-Hash data shape without raising" do
+    env = described_class.new({ "data" => [] }).envelope
+    assert_empty env["data"]
+  end
+
+  it "skips non-Hash instructions, entries, and timeline items" do
+    payload = {
+      "data" => { "bookmark_timeline_v2" => { "timeline" => { "instructions" => [
+        "junk",
+        { "type" => "TimelineAddEntries", "entries" => [
+          "tombstone",
+          { "content" => "not-a-hash" },
+          { "content" => { "entryType" => "TimelineTimelineItem", "itemContent" => "nope" } },
+          { "content" => { "entryType" => "TimelineTimelineItem", "itemContent" => {
+            "itemType" => "TimelineTweet", "tweet_results" => { "result" => {
+              "__typename" => "Tweet", "rest_id" => "1",
+              "legacy" => { "id_str" => "1", "full_text" => "ok", "created_at" => "Thu Jan 01 00:00:00 +0000 2026" }
+            } } } } }
+        ] }
+      ] } } }
+    }
+    assert_equal %w[1], described_class.new(payload).envelope["data"].map { |t| t["id"] }
+  end
+
+  it "ignores non-Hash media, variant, and url entries" do
+    result = {
+      "__typename" => "Tweet", "rest_id" => "2",
+      "legacy" => {
+        "id_str" => "2", "full_text" => "t", "created_at" => "Thu Jan 01 00:00:00 +0000 2026",
+        "extended_entities" => { "media" => ["junk", {
+          "media_key" => "v1", "type" => "video", "media_url_https" => "https://x/p.jpg",
+          "video_info" => { "variants" => ["nope", { "bitrate" => 1, "content_type" => "video/mp4", "url" => "https://x/v.mp4" }] }
+        }] },
+        "entities" => { "urls" => ["bad", { "url" => "u", "expanded_url" => "e" }] }
+      }
+    }
+    env = single_entry_envelope(result)
+    media = env["includes"]["media"]
+    assert_equal %w[v1], media.map { |m| m["media_key"] }
+    assert_equal 1, media.first["variants"].size
+    assert_equal ["e"], env["data"].first["entities"]["urls"].map { |u| u["expanded_url"] }
+  end
+
+  it "drops a non-Hash tweet or quoted result instead of crashing" do
+    wrapped_non_hash = { "__typename" => "TweetWithVisibilityResults", "tweet" => "garbage" }
+    assert_empty single_entry_envelope(wrapped_non_hash)["data"]
+
+    with_bad_quote = {
+      "__typename" => "Tweet", "rest_id" => "3",
+      "legacy" => { "id_str" => "3", "full_text" => "q", "created_at" => "Thu Jan 01 00:00:00 +0000 2026" },
+      "quoted_status_result" => { "result" => "garbage" }
+    }
+    env = single_entry_envelope(with_bad_quote)
+    assert_empty env["data"].first["referenced_tweets"]
+    assert_empty env["includes"]["tweets"]
+  end
+
+  it "returns a non-String created_at untouched instead of raising TypeError" do
+    result = {
+      "__typename" => "Tweet", "rest_id" => "4",
+      "legacy" => { "id_str" => "4", "full_text" => "t", "created_at" => 1_735_689_600 }
+    }
+    assert_equal 1_735_689_600, single_entry_envelope(result)["data"].first["created_at"]
   end
 
   it "leaves an unparseable created_at untouched" do

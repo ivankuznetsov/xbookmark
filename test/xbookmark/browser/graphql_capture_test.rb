@@ -114,6 +114,39 @@ describe Xbookmark::Browser::GraphqlCapture do
     assert_empty described_class.new(page_with([], raises: true)).drain_bookmarks
   end
 
+  it "tracks parse and capture failures so the source can tell broken from empty" do
+    refute described_class.new(page_with([])).failures?
+
+    corrupt = described_class.new(page_with([
+      FakeExchange.new(url: "https://x.com/i/api/graphql/abc/Bookmarks", body: "{not json", id: 1)
+    ]))
+    assert_empty corrupt.drain_bookmarks
+    assert corrupt.failures?
+    assert_equal 1, corrupt.failures
+
+    broken = described_class.new(page_with([], raises: true))
+    assert_empty broken.drain_bookmarks
+    assert broken.failures?
+  end
+
+  it "re-reads an exchange whose body was empty at first and completes later" do
+    mutable = Class.new do
+      def initialize = @reads = 0
+      def request = Struct.new(:url).new("https://x.com/i/api/graphql/abc/Bookmarks")
+      def id = 99
+
+      def response
+        @reads += 1
+        Struct.new(:body).new(@reads >= 2 ? JSON.generate({ "cursor" => "late" }) : "")
+      end
+    end.new
+    capture = described_class.new(page_with([mutable]))
+
+    assert_empty capture.drain_bookmarks, "first drain: body not ready yet"
+    assert_equal ["late"], capture.drain_bookmarks.map { |b| b["cursor"] }, "second drain: completed body is not skipped"
+    refute capture.failures?, "an empty-then-ready body is not a failure"
+  end
+
   it "falls back to object identity when an exchange has no id" do
     no_id = Class.new do
       def request = Struct.new(:url).new("https://x.com/i/api/graphql/abc/Bookmarks")

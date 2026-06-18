@@ -17,7 +17,11 @@ module Xbookmark
     # renderer, downloader, whisper, or enrichment code.
     class Normalizer
       def initialize(graphql_payload)
-        @payload = graphql_payload || {}
+        # X's internal GraphQL is an undocumented, hostile surface: a tombstone,
+        # ad slot, or shape change can hand us anything. Treat a non-Hash payload
+        # as empty so a single bad response degrades to an empty page rather than
+        # crashing the whole run.
+        @payload = graphql_payload.is_a?(Hash) ? graphql_payload : {}
         @users = {}
         @media = {}
         @tweets = {}
@@ -62,16 +66,21 @@ module Xbookmark
       end
 
       def timeline_entries
-        instructions = dig_timeline&.dig("instructions") || []
+        # Every array element is assumed to be a Hash below; X can return
+        # non-Hash slots, so filter defensively before indexing into them.
+        instructions = Array(dig_timeline&.dig("instructions")).select { |ins| ins.is_a?(Hash) }
         add = instructions.find { |ins| ins["type"] == "TimelineAddEntries" } || {}
-        Array(add["entries"])
+        Array(add["entries"]).select { |entry| entry.is_a?(Hash) }
       end
 
       def dig_timeline
         timeline = @payload.dig("data", "bookmark_timeline_v2", "timeline")
         # Older/alternate operation key.
         timeline ||= @payload.dig("data", "bookmark_timeline", "timeline")
-        timeline
+        timeline if timeline.is_a?(Hash)
+      rescue TypeError
+        # A hostile `data` shape (e.g. an Array) makes #dig raise; treat as empty.
+        nil
       end
 
       def bottom_cursor
@@ -83,11 +92,11 @@ module Xbookmark
       end
 
       def normalize_tweet_entry(entry)
-        content = entry["content"] || {}
-        return nil unless content["entryType"] == "TimelineTimelineItem"
+        content = entry["content"]
+        return nil unless content.is_a?(Hash) && content["entryType"] == "TimelineTimelineItem"
 
-        item = content["itemContent"] || {}
-        return nil unless item["itemType"] == "TimelineTweet"
+        item = content["itemContent"]
+        return nil unless item.is_a?(Hash) && item["itemType"] == "TimelineTweet"
 
         result = item.dig("tweet_results", "result")
         result && normalize_tweet_result(result)
@@ -97,10 +106,13 @@ module Xbookmark
       # quoted tweet into includes. Also resolves the inner tweet of a
       # visibility wrapper.
       def normalize_tweet_result(result)
-        tweet = unwrap(result)
-        return nil unless tweet
+        return nil unless result.is_a?(Hash)
 
-        legacy = tweet["legacy"] || {}
+        tweet = unwrap(result)
+        return nil unless tweet.is_a?(Hash)
+
+        legacy = tweet["legacy"]
+        legacy = {} unless legacy.is_a?(Hash)
         id = tweet["rest_id"] || legacy["id_str"]
         return nil unless id
 
@@ -176,7 +188,7 @@ module Xbookmark
 
       def entity_urls(legacy)
         urls = legacy.dig("entities", "urls") || []
-        urls.map do |u|
+        Array(urls).select { |u| u.is_a?(Hash) }.map do |u|
           {
             "url" => u["url"],
             "expanded_url" => u["expanded_url"],
@@ -189,6 +201,8 @@ module Xbookmark
         media = legacy.dig("extended_entities", "media")
         media = legacy.dig("entities", "media") if media.nil? || media.empty?
         Array(media).filter_map do |m|
+          next unless m.is_a?(Hash)
+
           key = m["media_key"]
           next unless key
 
@@ -217,7 +231,7 @@ module Xbookmark
         variants = media.dig("video_info", "variants")
         return nil unless variants
 
-        variants.map do |v|
+        Array(variants).select { |v| v.is_a?(Hash) }.map do |v|
           {
             "bit_rate" => v["bitrate"],
             "content_type" => v["content_type"],
@@ -232,9 +246,10 @@ module Xbookmark
         return by_rest_id if by_rest_id
 
         # TweetDetail timeline shape: dig the first TimelineTweet entry.
-        instructions = @payload.dig("data", "threaded_conversation_with_injections_v2", "instructions") || []
+        instructions = Array(@payload.dig("data", "threaded_conversation_with_injections_v2", "instructions"))
+                       .select { |ins| ins.is_a?(Hash) }
         add = instructions.find { |ins| ins["type"] == "TimelineAddEntries" } || {}
-        entry = Array(add["entries"]).find do |e|
+        entry = Array(add["entries"]).select { |e| e.is_a?(Hash) }.find do |e|
           e.dig("content", "itemContent", "itemType") == "TimelineTweet"
         end
         entry&.dig("content", "itemContent", "tweet_results", "result")
@@ -243,9 +258,13 @@ module Xbookmark
       def iso8601(created_at)
         return nil if created_at.nil?
         # X GraphQL uses the classic "Wed Feb 12 20:00:00 +0000 2025" format;
-        # convert to ISO8601 so frontmatter dates match the API v2 path exactly.
-        Time.parse(created_at).utc.iso8601
-      rescue ArgumentError
+        # convert to millisecond-precision ISO8601 so frontmatter dates match the
+        # API v2 path exactly (API v2 emits e.g. "2026-01-01T00:00:00.000Z").
+        Time.parse(created_at).utc.iso8601(3)
+      rescue ArgumentError, TypeError
+        # ArgumentError: an unparseable string. TypeError: a non-String value
+        # (e.g. X handing back an Integer epoch) — Time.parse only accepts a
+        # String, so return the value untouched rather than crashing the page.
         created_at
       end
     end
