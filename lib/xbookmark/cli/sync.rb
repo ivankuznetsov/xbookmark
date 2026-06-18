@@ -15,17 +15,7 @@ module Xbookmark
       end
 
       def backfill_run
-        require_relative "../config"
-        require_relative "../sync/runner"
-        require_relative "../state/store"
-        require_relative "../x/auth"
-        require_relative "../sources/factory"
-
-        config = Xbookmark::Config.load(wiki_override: options[:wiki], vault_override: options[:vault], verbose: options[:verbose])
-        store  = Xbookmark::State::Store.new(config.state_db_path)
-        sources = Xbookmark::Sources::Factory.build(config: config, store: store)
-        runner = Xbookmark::Sync::Runner.new(config: config, store: store, sources: sources)
-
+        runner = build_runner
         mode  = options[:limit] ? :backfill_limited : :backfill_full
         report = runner.run(mode: mode, limit: options[:limit])
         puts report
@@ -33,32 +23,14 @@ module Xbookmark
       end
 
       def sync_run
-        require_relative "../config"
-        require_relative "../sync/runner"
-        require_relative "../state/store"
-        require_relative "../sources/factory"
-
-        config = Xbookmark::Config.load(wiki_override: options[:wiki], vault_override: options[:vault], verbose: options[:verbose])
-        store  = Xbookmark::State::Store.new(config.state_db_path)
-        sources = Xbookmark::Sources::Factory.build(config: config, store: store)
-        runner = Xbookmark::Sync::Runner.new(config: config, store: store, sources: sources)
-
+        runner = build_runner
         report = runner.run(mode: :sync, from_scheduler: options[:"from-scheduler"])
         puts report
         exit_with(report)
       end
 
       def resync_run(tweet_id)
-        require_relative "../config"
-        require_relative "../sync/runner"
-        require_relative "../state/store"
-        require_relative "../sources/factory"
-
-        config = Xbookmark::Config.load(wiki_override: options[:wiki], vault_override: options[:vault], verbose: options[:verbose])
-        store  = Xbookmark::State::Store.new(config.state_db_path)
-        sources = Xbookmark::Sources::Factory.build(config: config, store: store)
-        runner = Xbookmark::Sync::Runner.new(config: config, store: store, sources: sources)
-
+        runner = build_runner
         report = runner.run(mode: :resync, tweet_id: tweet_id)
         puts report
         exit_with(report)
@@ -80,6 +52,23 @@ module Xbookmark
       end
 
       private
+
+      # Shared wiring for the fetch commands (backfill/sync/resync): load config,
+      # open the store, build the sources, and assemble the Runner. Kept in one
+      # place so a future dependency change (a new source, a different store) is a
+      # single edit rather than three parallel ones.
+      def build_runner
+        require_relative "../config"
+        require_relative "../sync/runner"
+        require_relative "../state/store"
+        require_relative "../x/auth"
+        require_relative "../sources/factory"
+
+        config = Xbookmark::Config.load(wiki_override: options[:wiki], vault_override: options[:vault], verbose: options[:verbose])
+        store  = Xbookmark::State::Store.new(config.state_db_path)
+        sources = Xbookmark::Sources::Factory.build(config: config, store: store)
+        Xbookmark::Sync::Runner.new(config: config, store: store, sources: sources)
+      end
 
       def exit_with(report)
         # Browser session expiry is the one source-block case that is
