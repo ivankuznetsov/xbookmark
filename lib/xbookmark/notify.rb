@@ -29,7 +29,11 @@ module Xbookmark
         script = "display notification #{applescript_quote(body)} with title #{applescript_quote(title)}"
         ["osascript", "-e", script]
       elsif Paths.linux?
-        ["notify-send", title.to_s, body.to_s]
+        # Wrap notify-send in `timeout 5` so a wedged D-Bus can't leave the
+        # detached notifier running forever: under a non-systemd driver there is
+        # no cgroup to reap the orphan, so one stuck notifier would leak per failed
+        # run. The notification is best-effort, so a 5s self-cap is plenty.
+        ["timeout", "5", "notify-send", title.to_s, body.to_s]
       end
     end
 

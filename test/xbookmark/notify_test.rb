@@ -4,9 +4,10 @@ require "test_helper"
 require "xbookmark/notify"
 
 describe Xbookmark::Notify do
-  it "builds a notify-send command on Linux" do
+  it "builds a self-timing-out notify-send command on Linux" do
     stub_platform_linux
-    assert_equal ["notify-send", "Title", "Body"], described_class.command_for("Title", "Body")
+    # `timeout 5` caps a wedged notifier so a non-systemd run can't leak orphans.
+    assert_equal ["timeout", "5", "notify-send", "Title", "Body"], described_class.command_for("Title", "Body")
   end
 
   it "builds an osascript command on macOS and escapes embedded quotes" do
@@ -34,7 +35,7 @@ describe Xbookmark::Notify do
 
   it "dispatches the command and reports success" do
     stub_platform_linux
-    described_class.expects(:invoke).with(["notify-send", "Title", "Body"]).returns(true)
+    described_class.expects(:invoke).with(["timeout", "5", "notify-send", "Title", "Body"]).returns(true)
     assert described_class.deliver("Title", "Body")
   end
 
