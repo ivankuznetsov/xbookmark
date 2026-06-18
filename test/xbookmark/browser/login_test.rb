@@ -86,12 +86,29 @@ describe Xbookmark::Browser::Login do
 
   it "reports a timeout when login is never detected" do
     session = FakeLoginSession.new([])
-    login = build(session)
+    # Advance a fake monotonic clock so the wait stops on the wall-clock deadline
+    # rather than a fixed poll count; the first read seeds the deadline.
+    tick = 0.0
+    login = described_class.new(config: config, store: store, session: session,
+                                input: TtyStringIO.new("y\n"), output: @out = StringIO.new,
+                                clock: clock, sleeper: ->(_) { }, monotonic: -> { tick += 120.0 })
 
     err = capture_stderr { refute login.call }
     assert_includes @out.string, "Login not detected"
     assert_match(/LOGIN_TIMEOUT/, err, "emits a grep-able token for agents")
     assert_equal 1, session.quits
+  end
+
+  it "stops polling once the wall-clock deadline passes" do
+    session = FakeLoginSession.new([])
+    tick = 0.0
+    # deadline = first read (120) + 300 = 420; reads 240, 360, 480 → stops on 480.
+    login = described_class.new(config: config, store: store, session: session,
+                                input: TtyStringIO.new("y\n"), output: StringIO.new,
+                                clock: clock, sleeper: ->(_) { }, monotonic: -> { tick += 120.0 })
+
+    capture_stderr { refute login.call }
+    assert_equal 3, session.login_checks, "the wall-clock deadline bounds the poll count"
   end
 
   it "declines non-interactively when stdin is not a tty and no flag is given" do

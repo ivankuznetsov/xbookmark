@@ -17,6 +17,11 @@ module Xbookmark
       POLL_INTERVAL_SECONDS = 2
       # Real wait between login polls; injectable so tests run instantly.
       DEFAULT_SLEEPER = ->(seconds) { sleep(seconds) }
+      # Monotonic clock seam so the login wait is bounded by real elapsed
+      # wall-clock: each poll runs a real logged_in? navigation on top of the
+      # sleep, so a fixed poll count would overshoot the advertised
+      # LOGIN_TIMEOUT_SECONDS. Injectable so tests stay instant.
+      DEFAULT_MONOTONIC = -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) }
 
       CONSENT_WARNING = <<~TEXT
         ⚠  Browser bookmark source — please read
@@ -31,7 +36,7 @@ module Xbookmark
       TEXT
 
       def initialize(config:, store:, session: nil, input: $stdin, output: $stdout,
-                     clock: Time, sleeper: DEFAULT_SLEEPER, accept_risk: false)
+                     clock: Time, sleeper: DEFAULT_SLEEPER, accept_risk: false, monotonic: DEFAULT_MONOTONIC)
         @config = config
         @store = store
         @session = session
@@ -40,6 +45,7 @@ module Xbookmark
         @clock = clock
         @sleeper = sleeper
         @accept_risk = accept_risk
+        @monotonic = monotonic
       end
 
       # Returns true on a confirmed login, false on declined consent or timeout.
@@ -101,16 +107,16 @@ module Xbookmark
       end
 
       def wait_for_login
-        max_polls.times do
+        # Bound by real elapsed wall-clock so the wait can't run materially past
+        # the LOGIN_TIMEOUT_SECONDS the message advertises (a fixed poll count
+        # would, because each poll adds a real logged_in? navigation to the sleep).
+        deadline = @monotonic.call + LOGIN_TIMEOUT_SECONDS
+        loop do
           return true if session.logged_in?
+          return false if @monotonic.call >= deadline
 
           @sleeper.call(POLL_INTERVAL_SECONDS)
         end
-        false
-      end
-
-      def max_polls
-        [(LOGIN_TIMEOUT_SECONDS / POLL_INTERVAL_SECONDS), 1].max
       end
 
       def session
