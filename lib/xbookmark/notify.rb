@@ -10,13 +10,16 @@ module Xbookmark
     module_function
 
     # Returns true if a notification command was dispatched, false otherwise
-    # (unknown platform, missing binary, or any failure — all swallowed).
-    def send(title, body)
+    # (unknown platform, missing binary, timeout, or any failure — all swallowed).
+    #
+    # Named `deliver` rather than `send` so it does not shadow Object#send (a
+    # one-arg call would otherwise silently fall through to Ruby's reflective
+    # send instead of this method).
+    def deliver(title, body)
       argv = command_for(title, body)
       return false unless argv
 
       invoke(argv)
-      true
     rescue StandardError
       false
     end
@@ -30,12 +33,22 @@ module Xbookmark
       end
     end
 
+    # Fire-and-forget: spawn the notifier and detach so the unattended run never
+    # blocks on it (a stuck or absent D-Bus would otherwise hang the timer before
+    # it can exit). The notification is best-effort, so a successful spawn counts
+    # as dispatched.
     def invoke(argv)
-      system(*argv, out: File::NULL, err: File::NULL)
+      pid = Process.spawn(*argv, out: File::NULL, err: File::NULL)
+      Process.detach(pid)
+      true
     end
 
     def applescript_quote(value)
-      %("#{value.to_s.gsub('"', '\\"')}")
+      # Escape backslashes BEFORE quotes so a value ending in a backslash cannot
+      # break out of the AppleScript string literal. The block form sidesteps
+      # gsub's own backslash handling in the replacement.
+      escaped = value.to_s.gsub(/[\\"]/) { |char| "\\#{char}" }
+      %("#{escaped}")
     end
   end
 end
