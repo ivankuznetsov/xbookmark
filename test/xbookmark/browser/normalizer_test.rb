@@ -367,6 +367,32 @@ describe Xbookmark::Browser::Normalizer do
     assert_equal(%w[5001], env["data"].map { |t| t["id"] })
   end
 
+  def thread_detail_payload(*ids)
+    entries = ids.map do |id|
+      result = {
+        "__typename" => "Tweet", "rest_id" => id,
+        "legacy" => { "id_str" => id, "full_text" => "t#{id}", "created_at" => "Thu Jan 01 00:00:00 +0000 2026" }
+      }
+      { "content" => { "itemContent" => { "itemType" => "TimelineTweet", "tweet_results" => { "result" => result } } } }
+    end
+    instructions = [{ "type" => "TimelineAddEntries", "entries" => entries }]
+    { "data" => { "threaded_conversation_with_injections_v2" => { "instructions" => instructions } } }
+  end
+
+  it "selects the requested reply out of a TweetDetail thread, not the thread root" do
+    # Thread root 5000 precedes the focal reply 5001 in the conversation.
+    payload = thread_detail_payload("5000", "5001")
+    env = described_class.new(payload).single_tweet_envelope("5001")
+    assert_equal(%w[5001], env["data"].map { |t| t["id"] }, "resync must return the focal reply, not the root")
+  end
+
+  it "returns an empty single-tweet envelope when the requested id is absent from the thread" do
+    # Better to report the tweet as unavailable than to resync the wrong tweet.
+    payload = thread_detail_payload("5000", "5001")
+    env = described_class.new(payload).single_tweet_envelope("9999")
+    assert_empty env["data"]
+  end
+
   it "returns an empty single-tweet envelope when no tweet is present" do
     env = described_class.new({}).single_tweet_envelope
     assert_empty env["data"]

@@ -194,16 +194,19 @@ describe Xbookmark::Browser::Source do
     assert_equal [%w[1], %w[2]], yielded.map { |e| e["data"].map { |t| t["id"] } }
   end
 
-  it "yields an empty page instead of aborting when normalizing one page raises" do
+  it "yields an empty page for a malformed page but surfaces a transient error so backfill is not marked complete" do
     page = StubTimelinePage.new([bookmarks_body(ids: %w[1], cursor: "c1")])
     source = described_class.new(config: config, session: StubSession.new(page))
     Xbookmark::Browser::Normalizer.any_instance.stubs(:envelope).raises("boom")
 
     yielded = []
-    capture_stderr { source.bookmarks { |env| yielded << env } }
+    err = capture_stderr do
+      assert_raises(Xbookmark::TransientError) { source.bookmarks { |env| yielded << env } }
+    end
 
-    assert_equal 1, yielded.size
+    assert_equal 1, yielded.size, "the bad page is still yielded as an empty envelope so earlier good pages survive"
     assert_empty yielded.first["data"]
+    assert_match(/skipping a malformed bookmarks page/, err)
   end
 
   it "honors a break in the consumer block and still quits the session" do

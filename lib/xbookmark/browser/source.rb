@@ -95,7 +95,7 @@ module Xbookmark
             raise SourceUnavailable, "tweet #{id} unavailable via browser source"
           end
 
-          envelope = Normalizer.new(gql).single_tweet_envelope
+          envelope = Normalizer.new(gql).single_tweet_envelope(id)
           tweet = envelope["data"].first
           raise SourceUnavailable, "tweet #{id} unavailable via browser source" unless tweet
 
@@ -121,6 +121,7 @@ module Xbookmark
         empty_rounds = 0
         pages = 0
         stalled = false
+        normalize_failed = false
 
         MAX_TIMELINE_ITERATIONS.times do
           settled = settle(page)
@@ -139,7 +140,8 @@ module Xbookmark
           pages += responses.size
           cursor = seen_cursor
           responses.each do |gql|
-            envelope = normalize_page(gql)
+            envelope, ok = normalize_page(gql)
+            normalize_failed ||= !ok
             yield envelope
             cursor = envelope.dig("meta", "next_token") || cursor
           end
@@ -150,7 +152,7 @@ module Xbookmark
           scroll(page)
         end
 
-        finish_walk(pages, empty_rounds, capture, stalled)
+        finish_walk(pages, empty_rounds, capture, stalled, normalize_failed)
       end
 
       # Interpret how the walk ended. An authenticated bookmarks page always
@@ -160,7 +162,7 @@ module Xbookmark
       # session served at the same URL (re-login). When some pages came through
       # but we stopped on empty rounds, warn that the tail may be incomplete
       # rather than silently treating a truncated timeline as exhausted.
-      def finish_walk(pages, empty_rounds, capture, stalled)
+      def finish_walk(pages, empty_rounds, capture, stalled, normalize_failed)
         if pages.zero?
           if capture.failures? || stalled
             raise TransientError, "browser bookmarks capture failed; will retry next run"
@@ -168,6 +170,16 @@ module Xbookmark
 
           raise SessionExpired,
                 "browser session expired or checkpointed; re-run `xbookmark auth login --browser`"
+        end
+
+        # A page that crashed the normalizer was dropped to an empty envelope,
+        # which also drops its cursor — so the walk can stop short of true
+        # end-of-history while still reporting pages>0. Surface it as transient
+        # (like a capture failure) so backfill records a source error and retries
+        # next run instead of marking an incomplete history complete.
+        if normalize_failed
+          raise TransientError,
+                "browser bookmarks page failed to normalize; history tail may be incomplete, will retry next run"
         end
 
         # A clean settled empty-rounds stop is just end-of-history; only warn when
@@ -180,12 +192,14 @@ module Xbookmark
       end
 
       # Normalize one captured page, isolating a malformed page to an empty
-      # envelope so one bad page never aborts the whole walk.
+      # envelope so one bad page never aborts the walk mid-stream. Returns
+      # [envelope, ok] so the walk can tell a dropped page from a real empty one
+      # and refuse to treat the run as a complete backfill.
       def normalize_page(gql)
-        Normalizer.new(gql).envelope
+        [Normalizer.new(gql).envelope, true]
       rescue StandardError => e
         warn "[xbookmark] skipping a malformed bookmarks page: #{e.class}: #{e.message}"
-        { "data" => [], "includes" => { "users" => [], "media" => [], "tweets" => [] }, "meta" => {} }
+        [{ "data" => [], "includes" => { "users" => [], "media" => [], "tweets" => [] }, "meta" => {} }, false]
       end
 
       def guard_session!(page)

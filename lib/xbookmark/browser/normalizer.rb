@@ -36,9 +36,11 @@ module Xbookmark
 
       # Normalizes a single TweetDetail/TweetResultByRestId result → a
       # single-tweet API v2 envelope (for get_tweet/retry/resync parity).
-      def single_tweet_envelope
+      # `requested_id` selects the focal tweet out of a TweetDetail thread so a
+      # reply resyncs itself rather than the thread root that precedes it.
+      def single_tweet_envelope(requested_id = nil)
         reset_includes!
-        result = single_tweet_result
+        result = single_tweet_result(requested_id)
         tweet = result && normalize_tweet_result(result)
         build_envelope([tweet].compact, next_token: nil)
       end
@@ -240,19 +242,42 @@ module Xbookmark
         end
       end
 
-      def single_tweet_result
-        # TweetResultByRestId shape.
+      def single_tweet_result(requested_id = nil)
+        # TweetResultByRestId shape — X already returns exactly the asked-for tweet.
         by_rest_id = @payload.dig("data", "tweetResult", "result")
         return by_rest_id if by_rest_id
 
-        # TweetDetail timeline shape: dig the first TimelineTweet entry.
+        # TweetDetail timeline shape: the threaded conversation carries several
+        # tweets (thread root, the focal tweet, replies). Select the one whose
+        # rest_id matches the requested id so resyncing a reply returns that
+        # reply, not whichever TimelineTweet happens to come first. Fall back to
+        # the first only when no id was requested (callers that just want any).
+        results = tweet_detail_results
+        return results.first if requested_id.nil?
+
+        results.find { |result| tweet_result_id(result) == requested_id.to_s }
+      end
+
+      # All TimelineTweet results from a TweetDetail threaded conversation, in
+      # page order.
+      def tweet_detail_results
         instructions = Array(@payload.dig("data", "threaded_conversation_with_injections_v2", "instructions"))
                        .select { |ins| ins.is_a?(Hash) }
         add = instructions.find { |ins| ins["type"] == "TimelineAddEntries" } || {}
-        entry = Array(add["entries"]).select { |e| e.is_a?(Hash) }.find do |e|
-          e.dig("content", "itemContent", "itemType") == "TimelineTweet"
+        Array(add["entries"]).select { |e| e.is_a?(Hash) }.filter_map do |e|
+          next unless e.dig("content", "itemContent", "itemType") == "TimelineTweet"
+
+          e.dig("content", "itemContent", "tweet_results", "result")
         end
-        entry&.dig("content", "itemContent", "tweet_results", "result")
+      end
+
+      # The rest_id of a tweet result, unwrapping a visibility wrapper, using the
+      # same id resolution as #normalize_tweet_result so matching is consistent.
+      def tweet_result_id(result)
+        tweet = unwrap(result)
+        return nil unless tweet.is_a?(Hash)
+
+        (tweet["rest_id"] || tweet.dig("legacy", "id_str"))&.to_s
       end
 
       def iso8601(created_at)
