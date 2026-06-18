@@ -46,8 +46,10 @@ module Xbookmark
         source = source_from(env)
         validate_required!(env, source: source)
 
+        # Thread the already-parsed source through so source_from runs once per
+        # load instead of re-parsing (and re-validating) inside build_config.
         build_config(env, loaded_env_files: loaded_env_files, wiki_override: wiki_override,
-                          vault_override: vault_override, verbose: verbose)
+                          vault_override: vault_override, verbose: verbose, source: source)
       end
 
       def load_offline(wiki_override: nil, vault_override: nil, cwd: Dir.pwd, env: ENV.to_h.dup, verbose: false)
@@ -56,7 +58,10 @@ module Xbookmark
                           vault_override: vault_override, verbose: verbose)
       end
 
-      def build_config(env, loaded_env_files:, wiki_override:, vault_override:, verbose:)
+      def build_config(env, loaded_env_files:, wiki_override:, vault_override:, verbose:, source: nil)
+        # load passes the source it already parsed; load_offline does not, so fall
+        # back to parsing here. Either way source_from runs at most once per load.
+        source ||= source_from(env)
         vault_path = first_present(wiki_override, vault_override, configured_wiki_path(env)) || default_wiki_dir(env)
         vault_path = File.expand_path(vault_path)
 
@@ -84,7 +89,7 @@ module Xbookmark
           min_run_interval_hours: (env["XBOOKMARK_MIN_RUN_INTERVAL_HOURS"] || "20").to_f,
           aux_summaries: truthy?(env["XBOOKMARK_AUX_SUMMARIES"]),
           taxonomy_maintenance: !falsey?(env["XBOOKMARK_TAXONOMY_MAINTENANCE"]),
-          source: source_from(env),
+          source: source,
           env_file: loaded_env_files.first,
           verbose: verbose
         )
