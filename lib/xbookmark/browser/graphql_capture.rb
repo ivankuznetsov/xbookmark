@@ -28,6 +28,12 @@ module Xbookmark
         # whose body never filled), so the Source can tell "endpoint observed but
         # empty" (transient) from "endpoint never seen" (a walled/expired session).
         @observed = false
+        # True when the most recent drain saw a matching exchange whose body had
+        # not arrived yet (classified :pending). Unlike @observed (sticky), this
+        # reflects the latest drain, so after at least one good page the Source can
+        # tell a next-page request that was issued but never completed (transient)
+        # from a genuine end-of-history that issued no further request at all.
+        @pending = false
       end
 
       # True when at least one capture/parse failure has been tallied. This is
@@ -43,6 +49,13 @@ module Xbookmark
       # observed-but-unfilled endpoint (transient) from one never seen (expired).
       def observed?
         @observed
+      end
+
+      # True when the most recent drain saw a matching exchange whose body never
+      # filled (still pending). Distinguishes a next-page request that was issued
+      # but never completed from a genuine end-of-history that issued no request.
+      def pending?
+        @pending
       end
 
       # Parsed JSON bodies of Bookmarks GraphQL responses not yet returned.
@@ -80,6 +93,9 @@ module Xbookmark
           index += 1
         end
         @scanned = high_water
+        # `blocked` is set the moment a matching exchange is seen still pending, so
+        # it records whether this drain saw a never-yet-filled matching request.
+        @pending = blocked
         results
       end
 

@@ -417,6 +417,39 @@ describe Xbookmark::Browser::Source do
     assert_equal 1, session.quits
   end
 
+  it "raises a transient error when a next page is observed but never fills after good pages (no silent truncation)" do
+    # pages>0, a clean settle, and no capture failure — finish_walk's empty-rounds
+    # guard alone would seal this as a complete backfill. But a next-page Bookmarks
+    # request was observed whose body never filled (pending), so the unfetched tail
+    # must be retried, not sealed. Covers the pages>0 counterpart to the pages==0
+    # observed-but-never-filled case.
+    good = StubXchg.new("https://x.com/i/api/graphql/abc/Bookmarks?p=0", bookmarks_body(ids: %w[1], cursor: "c1"), 0)
+    pending = StubXchg.new("https://x.com/i/api/graphql/abc/Bookmarks?p=1", "", 1)
+    page = GappyTimelinePage.new([[good], [good, pending]])
+    session = StubSession.new(page)
+    source = described_class.new(config: config, session: session)
+
+    yielded = []
+    error = assert_raises(Xbookmark::TransientError) { source.bookmarks { |env| yielded << env } }
+    assert_equal 1, yielded.size, "the good page captured before the never-filled next page is still yielded"
+    assert_match(/never filled|history tail may be incomplete/, error.message)
+    assert_equal 1, session.quits
+  end
+
+  it "raises TransientError when the timeline walk exceeds its wall-clock budget" do
+    # The iteration cap bounds scrolls, not elapsed time; a manual backfill must
+    # also be bounded by the wall-clock deadline (the scheduled path has systemd).
+    page = StubTimelinePage.new([bookmarks_body(ids: %w[1], cursor: "c1")])
+    session = StubSession.new(page)
+    source = described_class.new(config: config, session: session)
+    # First call sets the deadline; the next clock read is already past it.
+    source.stubs(:monotonic_now).returns(0, Xbookmark::Browser::Source::MAX_WALK_SECONDS + 1)
+
+    error = assert_raises(Xbookmark::TransientError) { source.bookmarks { |_| } }
+    assert_match(/wall-clock budget/, error.message)
+    assert_equal 1, session.quits
+  end
+
   it "raises a transient error when an unsettled walk stops on empty rounds (possible truncation)" do
     page = StubTimelinePage.new([bookmarks_body(ids: %w[1], cursor: "c1")], wait_raises: true)
     session = StubSession.new(page)

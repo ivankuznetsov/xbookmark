@@ -37,6 +37,13 @@ module Xbookmark
       # never-settling page cannot run the daily timer unbounded. 10_000 pages of
       # ~50 bookmarks each is far beyond any real timeline.
       MAX_TIMELINE_ITERATIONS = 10_000
+      # Wall-clock backstop on the whole timeline walk. The iteration cap bounds
+      # the number of scrolls, but each settle can block up to Ferrum's ~60s idle
+      # timeout, so a repeatedly-timing-out-but-cursor-advancing walk could sit
+      # for hours. The scheduled path is bounded by systemd RuntimeMaxSec=7200;
+      # mirror that here so a manual `backfill --browser` is bounded in-process
+      # too rather than only by the operator's patience.
+      MAX_WALK_SECONDS = 7200
       # The browser timeline page controls its own GraphQL page size; reuse the
       # API page size constant as the enum_for default since the Runner always
       # passes max_results explicitly anyway.
@@ -93,8 +100,8 @@ module Xbookmark
           settled = settle(page)
 
           capture = GraphqlCapture.new(page)
-          gql = capture.drain_tweets.last
-          unless gql
+          tweets = capture.drain_tweets
+          if tweets.empty?
             # The initial guard only saw the session state at navigation time. A
             # session that expires *after* go_to (X completes a login/checkpoint
             # redirect while the page settles) captures no tweet and can settle
@@ -114,11 +121,15 @@ module Xbookmark
             raise SourceUnavailable, "tweet #{id} unavailable via browser source"
           end
 
-          envelope = Normalizer.new(gql).single_tweet_envelope(id)
-          tweet = envelope["data"].first
-          raise SourceUnavailable, "tweet #{id} unavailable via browser source" unless tweet
+          # The page can fire extra TweetResultByRestId/TweetDetail calls for
+          # quoted, hovercard, or recommended tweets, so the last drained response
+          # is not necessarily the asked-for tweet. Select the response whose
+          # normalized id matches the requested id — returning whichever drained
+          # last could cache or render a stray tweet under the wrong tweet_id.
+          envelope = matching_tweet_envelope(tweets, id)
+          raise SourceUnavailable, "tweet #{id} unavailable via browser source" unless envelope
 
-          { "data" => tweet, "includes" => envelope["includes"] }
+          { "data" => envelope["data"].first, "includes" => envelope["includes"] }
         end
       rescue Xbookmark::Error
         raise
@@ -150,7 +161,18 @@ module Xbookmark
         # The loop returns the iteration count on natural completion and nil when
         # any `break` fires, so a walk that exhausts the cap while still advancing
         # is distinguishable from one that stopped on a real terminal condition.
+        deadline = monotonic_now + MAX_WALK_SECONDS
         completed = MAX_TIMELINE_ITERATIONS.times do
+          # Wall-clock backstop: each settle can block up to Ferrum's idle
+          # timeout, so the iteration cap alone does not bound elapsed time.
+          # Surface a transient stop so backfill retries rather than sitting for
+          # hours on a manual run that systemd's RuntimeMaxSec does not cover.
+          if monotonic_now > deadline
+            raise TransientError,
+                  "browser timeline walk exceeded its #{MAX_WALK_SECONDS}s wall-clock budget before " \
+                  "reaching end-of-history; will retry next run"
+          end
+
           settled = settle(page)
           stalled ||= !settled
           responses = capture.drain_bookmarks
@@ -250,6 +272,18 @@ module Xbookmark
                 "reaching end-of-history; will retry next run"
         end
 
+        # A next-page Bookmarks request was observed after the good pages but its
+        # body never filled (canceled/pending), so the drains went empty while the
+        # page settled cleanly and no capture was tallied as a failure. The
+        # empty-rounds guard below would otherwise read this as end-of-history and
+        # seal a truncated backfill; surface it as transient so the unfetched tail
+        # is retried. (The pages.zero? branch already covers this via observed?.)
+        if capture.pending?
+          raise TransientError,
+                "browser bookmarks next page was observed but never filled; " \
+                "history tail may be incomplete, will retry next run"
+        end
+
         # A clean settled empty-rounds stop is just end-of-history; only the
         # suspicious stop (the page stalled, or a capture failed) could silently
         # truncate the tail — surface it as transient so the run records a source
@@ -270,6 +304,26 @@ module Xbookmark
       rescue StandardError => e
         warn "[xbookmark] skipping a malformed bookmarks page: #{e.class}: #{e.message}"
         [Normalizer.empty_envelope, false]
+      end
+
+      # Selects the captured single-tweet response that actually carries the
+      # requested id. Scans newest-first so the freshest matching capture wins,
+      # and only returns an envelope whose tweet id equals the requested id — a
+      # stray response for a quoted/hovercard/recommended tweet that happened to
+      # drain last must never be cached or rendered under the requested tweet_id.
+      def matching_tweet_envelope(gql_responses, id)
+        gql_responses.reverse_each do |gql|
+          envelope = Normalizer.new(gql).single_tweet_envelope(id)
+          tweet = envelope["data"].first
+          return envelope if tweet && tweet["id"] == id.to_s
+        end
+        nil
+      end
+
+      # Monotonic seconds for the walk's wall-clock deadline. Wrapped so the
+      # backstop is testable without stubbing a global clock.
+      def monotonic_now
+        Process.clock_gettime(Process::CLOCK_MONOTONIC)
       end
 
       def guard_session!(page)
