@@ -19,7 +19,9 @@ describe Xbookmark::CLI::Doctor do
   def run_doctor(opts = {})
     out = StringIO.new
     doctor = described_class.new([], opts.merge(output: out, input: StringIO.new))
-    doctor.execute
+    # Swallow the grep-able stderr tokens (BROWSER_SESSION_MISSING etc.) so they
+    # don't clutter test output; these cases assert on the stdout report.
+    capture_stderr { doctor.execute }
     out.string
   end
 
@@ -103,7 +105,7 @@ describe Xbookmark::CLI::Doctor do
 
     doctor.expects(:system).never
 
-    doctor.execute
+    capture_stderr { doctor.execute }
 
     assert_includes out.string, "needs an interactive terminal"
   end

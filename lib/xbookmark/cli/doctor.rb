@@ -102,8 +102,15 @@ module Xbookmark
         # not-set-up line for a source it deliberately opted out of.
         return unless Xbookmark::Config.browser_source?(source)
 
-        _saved, message = Xbookmark::Browser::Session.describe_profile(profile)
+        saved, message = Xbookmark::Browser::Session.describe_profile(profile)
         say "browser session: #{message}"
+        return if saved
+
+        # Stable, grep-able stderr token (parity with `auth status`'s
+        # BROWSER_SESSION_MISSING) so an agent grepping doctor stderr for
+        # `[xbookmark]` tokens sees the not-set-up session rather than concluding
+        # readiness from a clean exit while stdout says "browser session: not set up".
+        warn "[xbookmark] BROWSER_SESSION_MISSING source=#{source}; re-run `xbookmark auth login --browser`."
       end
 
       def safe_keystore_backend
@@ -161,6 +168,9 @@ module Xbookmark
         # (an unattended agent/scheduler shell) — the commands above are already
         # printed, so just point the operator at them. Mirrors Login/Setup.
         unless tty_input?
+          # Grep-able stderr token (parity with the other CLI tokens) so an agent
+          # can branch on the non-interactive bail rather than parsing the prose.
+          warn "[xbookmark] DOCTOR_FIX_NONINTERACTIVE; doctor --fix needs an interactive terminal; run the printed install commands manually."
           say ""
           say "doctor --fix needs an interactive terminal to confirm; run the commands above manually instead."
           return
