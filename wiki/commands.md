@@ -50,7 +50,7 @@ Configuration loaded by these commands comes from `XBOOKMARK_ENV_FILE`, `$PWD/.e
 
 ## Command Flow
 
-- `backfill`, `sync`, and `resync` all load config, open the SQLite state store, create an X API client, and delegate to `Xbookmark::Sync::Runner`.
+- `backfill`, `sync`, and `resync` all load config, open the SQLite state store, build the ordered bookmark sources via `Xbookmark::Sources::Factory`, and delegate to `Xbookmark::Sync::Runner`. The factory returns an X API client, a browser source, or both per `config.source`; browser-only mode deliberately builds no API client. See [[browser-source]].
 - `auth refresh` loads config, invokes `Xbookmark::X::Auth#refresh!`, and writes rotated tokens to the same destination as `auth login`.
 - `backfill` and `sync` first process cached pending/retry rows from SQLite. Rows with cached `payload_json` can be enriched without X; uncached legacy retry rows and new bookmark discovery still need X.
 - `sync` starts from the newest bookmark page and stops after a page with no new bookmarks; X `next_token` values are not treated as durable cursors between runs.
