@@ -116,16 +116,32 @@ describe Xbookmark::CLI::Doctor do
   end
 
   it "reports browser source readiness: chromium, profile, session, source" do
+    ENV["XBOOKMARK_SOURCE"] = "browser"
     Xbookmark::Browser::Chromium.stubs(:detect).returns("/usr/bin/chromium")
     Xbookmark::Browser::Session.stubs(:profile_saved?).returns(true)
 
     out = run_doctor
 
-    assert_match(/^source: api/, out)
+    assert_match(/^source: browser/, out)
     assert_match(%r{chromium: ok \(/usr/bin/chromium\)}, out)
     assert_match(/browser profile: /, out)
     assert_match(/browser session: profile saved but unverified/, out)
     assert_match(/validity is confirmed at next sync/, out)
+  ensure
+    ENV.delete("XBOOKMARK_SOURCE")
+  end
+
+  it "omits the browser session line on an API-only host" do
+    # A grep-on-`browser session:` health check on an api-only host must not see a
+    # perpetual not-set-up line for a source it deliberately opted out of, just as
+    # report_x_auth gates the X-auth lines on api_source?.
+    Xbookmark::Browser::Chromium.stubs(:detect).returns("/usr/bin/chromium")
+    Xbookmark::Browser::Session.stubs(:profile_saved?).returns(false)
+
+    out = run_doctor
+
+    assert_match(/^source: api/, out)
+    refute_match(/browser session:/, out)
   end
 
   it "does not nag about API login when the source is browser-only" do
@@ -138,6 +154,7 @@ describe Xbookmark::CLI::Doctor do
   end
 
   it "reports a missing Chromium and an unconfigured browser session" do
+    ENV["XBOOKMARK_SOURCE"] = "browser"
     Xbookmark::Browser::Chromium.stubs(:detect).returns(nil)
     Xbookmark::Browser::Session.stubs(:profile_saved?).returns(false)
 
@@ -145,6 +162,8 @@ describe Xbookmark::CLI::Doctor do
 
     assert_match(/chromium: NOT FOUND/, out)
     assert_match(/browser session: not set up/, out)
+  ensure
+    ENV.delete("XBOOKMARK_SOURCE")
   end
 
   it "lists chromium as a fixable missing tool when the browser source is active" do

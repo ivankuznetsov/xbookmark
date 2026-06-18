@@ -57,7 +57,7 @@ module Xbookmark
       # In browser-only mode no X API token is expected, so don't nag the user to
       # run the dev-API OAuth login they deliberately opted out of.
       def report_x_auth(config)
-        source = (config.respond_to?(:source) && config.source) || Xbookmark::Config::SOURCE_API
+        source = Xbookmark::Config.source_of(config)
         unless Xbookmark::Config.api_source?(source)
           say "X auth: not required (source=#{source})"
           return
@@ -77,7 +77,7 @@ module Xbookmark
         require_relative "../browser/chromium"
         require_relative "../browser/session"
 
-        source = config.source || Xbookmark::Config::SOURCE_API
+        source = Xbookmark::Config.source_of(config)
         say ""
         say "source: #{source}"
 
@@ -95,17 +95,15 @@ module Xbookmark
 
         profile = Xbookmark::Paths.browser_profile_dir
         say "browser profile: #{profile}"
-        if Xbookmark::Browser::Session.profile_saved?(profile)
-          # Re-assert 0700 in case the profile was restored/copied with looser
-          # perms (it holds live X cookies). A chmod launches no browser, so this
-          # stays compatible with the browser-free diagnostic.
-          Xbookmark::Browser::Session.secure_profile_dir!(profile)
-          # profile_saved? is a browser-free file check, so it cannot confirm the
-          # session is still logged in; don't imply readiness here.
-          say "browser session: profile saved but unverified (validity is confirmed at next sync)"
-        else
-          say "browser session: not set up (run: xbookmark auth login --browser)"
-        end
+
+        # Only report (and re-harden) the saved session when the browser source is
+        # active — mirrors report_x_auth's api_source? gate, so an api-only host's
+        # health check grepping "browser session:" does not see a perpetual
+        # not-set-up line for a source it deliberately opted out of.
+        return unless Xbookmark::Config.browser_source?(source)
+
+        _saved, message = Xbookmark::Browser::Session.describe_profile(profile)
+        say "browser session: #{message}"
       end
 
       def safe_keystore_backend

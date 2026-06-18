@@ -392,6 +392,58 @@ describe Xbookmark::CLI do
     $stdout = old_stdout
   end
 
+  it "emits a grep-able API_TOKEN_MISSING token when the API token is absent" do
+    # Symmetric with the browser half's BROWSER_SESSION_MISSING so an agent in
+    # `both` mode can detect which half needs fixing without scraping prose.
+    Xbookmark::Config.stubs(:load).returns(test_config(source: "api", x_access_token: ""))
+
+    old_stdout = $stdout
+    $stdout = StringIO.new
+    err = capture_stderr do
+      error = assert_raises(SystemExit) { Xbookmark::CLI::Auth.start(%w[status]) }
+      assert_equal 1, error.status
+    end
+    assert_includes err, "API_TOKEN_MISSING source=api"
+  ensure
+    $stdout = old_stdout
+  end
+
+  it "emits a grep-able API_TOKEN_EXPIRED token when the API token is expired" do
+    Xbookmark::Config.stubs(:load).returns(test_config(source: "api", x_access_token: "token",
+                                                       x_refresh_token: "refresh", x_token_expires_at: 999))
+    Time.stubs(:now).returns(Time.at(1_000))
+
+    old_stdout = $stdout
+    $stdout = StringIO.new
+    err = capture_stderr do
+      error = assert_raises(SystemExit) { Xbookmark::CLI::Auth.start(%w[status]) }
+      assert_equal 1, error.status
+    end
+    assert_includes err, "API_TOKEN_EXPIRED source=api"
+  ensure
+    $stdout = old_stdout
+  end
+
+  it "emits a grep-able LOGIN_FAILED token when browser login raises unexpectedly" do
+    # Chromium present but won't start (Ferrum::ProcessTimeoutError) escapes
+    # Login#call, which has no rescue; the StandardError backstop must surface a
+    # stable token rather than a raw Thor stacktrace.
+    Xbookmark::Config.stubs(:load_offline).returns(test_config(source: "browser"))
+    Xbookmark::State::Store.stubs(:new).returns(stub)
+    failing = stub
+    failing.stubs(:call).raises(RuntimeError, "Ferrum::ProcessTimeoutError: chromium did not start")
+    Xbookmark::Browser::Login.stubs(:new).returns(failing)
+
+    old_stderr = $stderr
+    $stderr = StringIO.new
+    error = assert_raises(SystemExit) { Xbookmark::CLI::Auth.start(%w[login --browser]) }
+    assert_equal 1, error.status
+    assert_includes $stderr.string, "LOGIN_FAILED"
+    refute_includes $stderr.string, "cli/auth.rb"
+  ensure
+    $stderr = old_stderr
+  end
+
   it "prints auth status without exiting when a token is present" do
     Xbookmark::Config.stubs(:load).returns(test_config(x_access_token: "token", x_token_expires_at: 2_000_000_000))
     Time.stubs(:now).returns(Time.at(1_000_000_000))
