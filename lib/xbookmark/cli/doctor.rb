@@ -41,7 +41,7 @@ module Xbookmark
 
         report_x_auth(config)
 
-        report_browser(config)
+        report_browser(config, missing)
 
         if missing.any?
           render_fixes(missing)
@@ -73,18 +73,24 @@ module Xbookmark
       # Browser bookmark source readiness. Chromium is required-but-not-bundled,
       # so this is the runtime check that it is present; nothing here launches a
       # browser. The session's true validity is verified on the next sync.
-      def report_browser(config)
+      def report_browser(config, missing)
         require_relative "../browser/chromium"
         require_relative "../browser/session"
 
+        source = config.source || Xbookmark::Config::SOURCE_API
         say ""
-        say "source: #{config.source || Xbookmark::Config::SOURCE_API}"
+        say "source: #{source}"
 
         chromium = Xbookmark::Browser::Chromium.detect
         if chromium
           say "chromium: ok (#{chromium})"
         else
           say "chromium: NOT FOUND (the browser source needs a system Chromium; e.g. install chromium/google-chrome)"
+          # Chromium is the browser source's one mandatory binary, so feed it into
+          # the same `missing` list (and `--fix` install one-liners) as the other
+          # tools — but only when the browser source is active, so an API-only host
+          # is not told to install a browser it never uses.
+          missing << "chromium" if Xbookmark::Config.browser_source?(source)
         end
 
         profile = Xbookmark::Paths.browser_profile_dir

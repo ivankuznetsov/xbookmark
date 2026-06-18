@@ -146,6 +146,33 @@ describe Xbookmark::CLI::Doctor do
     assert_match(/chromium: NOT FOUND/, out)
     assert_match(/browser session: not set up/, out)
   end
+
+  it "lists chromium as a fixable missing tool when the browser source is active" do
+    ENV["XBOOKMARK_SOURCE"] = "browser"
+    Xbookmark::System::PackageManager.stubs(:detect).returns(:pacman)
+    Xbookmark::Paths.stubs(:which).returns(nil)
+    Xbookmark::Transcribe::Whisper.stubs(:detect).returns(nil)
+    Xbookmark::Browser::Chromium.stubs(:detect).returns(nil)
+
+    out = run_doctor
+
+    assert_match(/Missing tools: .*chromium/, out)
+    assert_match(/chromium: sudo pacman -S --needed chromium/, out)
+  ensure
+    ENV.delete("XBOOKMARK_SOURCE")
+  end
+
+  it "does not offer to install chromium when the source is API-only" do
+    Xbookmark::System::PackageManager.stubs(:detect).returns(:pacman)
+    Xbookmark::Paths.stubs(:which).returns(nil)
+    Xbookmark::Transcribe::Whisper.stubs(:detect).returns(nil)
+    Xbookmark::Browser::Chromium.stubs(:detect).returns(nil)
+
+    out = run_doctor
+
+    assert_match(/chromium: NOT FOUND/, out)
+    refute_match(/chromium: sudo pacman/, out)
+  end
 end
 
 describe Xbookmark::System::Runtime do
@@ -203,5 +230,12 @@ describe Xbookmark::System::PackageManager do
     assert_nil described_class.install_command("qmd", manager: :pacman)
     assert_nil described_class.install_command("codex", manager: :brew)
     assert_nil described_class.install_command("missing", manager: :brew)
+  end
+
+  it "knows how to install chromium on each manager" do
+    assert_equal ["sudo", "pacman", "-S", "--needed", "chromium"], described_class.install_command("chromium", manager: :pacman)
+    assert_equal ["sudo", "apt-get", "install", "-y", "chromium"], described_class.install_command("chromium", manager: :apt)
+    assert_equal ["sudo", "dnf", "install", "-y", "chromium"], described_class.install_command("chromium", manager: :dnf)
+    assert_equal ["brew", "install", "chromium"], described_class.install_command("chromium", manager: :brew)
   end
 end
