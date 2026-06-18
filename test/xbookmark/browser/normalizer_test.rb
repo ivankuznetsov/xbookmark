@@ -112,6 +112,40 @@ describe Xbookmark::Browser::Normalizer do
     assert_equal a_video.duration_ms, b_video.duration_ms, "video duration_ms parity"
     assert_equal Xbookmark::Media::VariantPicker.best_video_url(a_video),
                  Xbookmark::Media::VariantPicker.best_video_url(b_video), "video picked-variant parity"
+
+    # AC4 (animated_gif + reply): the shared x/bookmarks_page.json fixture is held
+    # at exactly three bookmarks (other suites assert that), so the API-shape
+    # counterparts for the browser's gif (1004) and reply (1005) are built inline
+    # here and run through the same cross-path equivalence as 1001-1003.
+    api_extra = Xbookmark::X::Expansions.new(
+      "data" => [
+        { "id" => "1004", "author_id" => "u1", "text" => "gif tweet",
+          "created_at" => "2026-01-04T00:00:00.000Z", "conversation_id" => "1004",
+          "attachments" => { "media_keys" => ["g1"] } },
+        { "id" => "1005", "author_id" => "u2",
+          "text" => "a long-form reply that exceeds the classic 280 character limit and is carried in note_tweet",
+          "created_at" => "2026-01-05T00:00:00.000Z", "conversation_id" => "8888",
+          "referenced_tweets" => [{ "type" => "replied_to", "id" => "8888" }] }
+      ],
+      "includes" => { "media" => [
+        { "media_key" => "g1", "type" => "animated_gif", "preview_image_url" => "https://x/gif-preview.jpg",
+          "variants" => [{ "content_type" => "video/mp4", "url" => "https://x/anim.mp4" }] }
+      ] },
+      "meta" => {}
+    ).bookmarks
+
+    a_gif = api_extra.find { |b| b.tweet_id == "1004" }.media.first
+    b_gif = browser.find { |b| b.tweet_id == "1004" }.media.first
+    assert_equal a_gif.type, b_gif.type, "animated_gif media.type parity"
+    assert_equal "animated_gif", b_gif.type
+    assert_equal Xbookmark::Media::VariantPicker.best_video_url(a_gif),
+                 Xbookmark::Media::VariantPicker.best_video_url(b_gif), "animated_gif picked-variant parity"
+
+    a_reply = api_extra.find { |b| b.tweet_id == "1005" }
+    b_reply = browser.find { |b| b.tweet_id == "1005" }
+    assert_equal a_reply.in_reply_to_tweet_id, b_reply.in_reply_to_tweet_id, "reply in_reply_to_tweet_id parity"
+    assert_equal "8888", b_reply.in_reply_to_tweet_id
+    assert_equal a_reply.text, b_reply.text, "reply text parity"
   end
 
   # ---- pagination / cursor edge cases ----

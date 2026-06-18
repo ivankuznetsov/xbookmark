@@ -54,7 +54,7 @@ module Xbookmark
           # NOTE: X's bookmarks endpoint does not expose a true bookmark
           # timestamp — only the tweet's `created_at` is available. We
           # copy it into `bookmarked_at` so downstream code (e.g. the
-          # YYYY/MM/DD bookmark wiki sharding in BookmarkRenderer#bookmark_date)
+          # YYYY/MM/DD bookmark wiki sharding in PathBuilder#bookmark_date)
           # has a stable date, but it is the *tweet creation* date, not
           # the date the user actually bookmarked it.
           bookmarked_at: t["created_at"],

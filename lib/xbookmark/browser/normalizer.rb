@@ -96,8 +96,9 @@ module Xbookmark
 
       def dig_timeline
         timeline = @payload.dig("data", "bookmark_timeline_v2", "timeline")
-        # Defensive fallback to the legacy bookmark_timeline key; not exercised by
-        # the committed fixtures (only by an inline test payload).
+        # Defensive fallback to the legacy bookmark_timeline key, exercised
+        # end-to-end by the committed test/fixtures/browser/bookmarks_page_legacy.json
+        # fixture.
         timeline ||= @payload.dig("data", "bookmark_timeline", "timeline")
         timeline if timeline.is_a?(Hash)
       rescue TypeError
@@ -172,9 +173,11 @@ module Xbookmark
         # When X omits the embedded user object (a restricted/withheld author, or
         # a tombstone with no rest_id) the tweet still carries the author id in its
         # own legacy, which #author_id resolves. Without a matching users entry
-        # Expansions resolves the author to {} (nil handle/name) and Bookmark#url
-        # plus the path builder break, so register at least an id-only fallback
-        # keyed by that legacy id — parity with the author_id legacy fallback.
+        # Expansions resolves the author to {} (nil handle/name), so Bookmark#url
+        # returns nil and PathBuilder#human_prefix degrades to the "bookmark" slug
+        # — degraded output, not a crash. Register at least an id-only fallback
+        # keyed by that legacy id (which restores id resolution, not the handle) —
+        # parity with the author_id legacy fallback.
         unless rest_id
           legacy_user_id = tweet.dig("legacy", "user_id_str")
           includes[:users][legacy_user_id] ||= { "id" => legacy_user_id.to_s } if legacy_user_id
@@ -231,7 +234,8 @@ module Xbookmark
           {
             "url" => u["url"],
             "expanded_url" => u["expanded_url"],
-            "display_url" => u["display_url"]
+            "display_url" => u["display_url"],
+            "title" => u["title"]
           }.compact
         end
       end
@@ -325,11 +329,13 @@ module Xbookmark
         Time.parse(created_at).utc.iso8601(3)
       rescue ArgumentError, TypeError => e
         # ArgumentError: an unparseable string. TypeError: a non-String value
-        # (e.g. X handing back an Integer epoch). Emitting it verbatim would flow
-        # to PathBuilder#bookmark_date, which re-parses the same bad value and
-        # re-raises — marking the bookmark a permanent error and dropping it
-        # forever. Drop the field instead (it is .compact'd, so simply omitted),
-        # and warn so the swallow is observable.
+        # (e.g. X handing back an Integer epoch). Drop the field (it is
+        # .compact'd, so simply omitted) and warn so the swallow is observable.
+        # Both bookmarked_at and created_at downstream derive from this same
+        # value, so dropping it leaves PathBuilder#bookmark_date with nothing to
+        # parse; that method falls back to an epoch sentinel so the bookmark still
+        # renders into a date shard rather than raising uncaught and being dropped
+        # as a permanent error.
         warn "[xbookmark] dropping unparseable created_at #{created_at.inspect}: #{e.class}: #{e.message}"
         nil
       end
