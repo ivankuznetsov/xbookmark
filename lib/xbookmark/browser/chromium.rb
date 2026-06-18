@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "../paths"
+
 module Xbookmark
   module Browser
     # Detects a system-installed Chromium/Chrome. Chromium is *required but not
@@ -36,12 +38,10 @@ module Xbookmark
         nil
       end
 
+      # Delegates to the shared PATH scan; kept as a module method so callers (and
+      # tests) that ask Chromium to resolve a binary still have a single answer.
       def which(cmd)
-        ENV.fetch("PATH", "").split(File::PATH_SEPARATOR).each do |dir|
-          full = File.join(dir, cmd)
-          return full if File.executable?(full) && !File.directory?(full)
-        end
-        nil
+        Xbookmark::Paths.which(cmd)
       end
     end
   end

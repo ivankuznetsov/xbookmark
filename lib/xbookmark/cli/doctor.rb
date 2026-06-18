@@ -116,7 +116,7 @@ module Xbookmark
       end
 
       def check_bin(label, bin)
-        path = which(bin)
+        path = Xbookmark::Paths.which(bin)
         if path
           say "#{label}: ok (#{path})"
           true
@@ -124,14 +124,6 @@ module Xbookmark
           say "#{label}: NOT FOUND in PATH (#{bin})"
           false
         end
-      end
-
-      def which(cmd)
-        ENV.fetch("PATH", "").split(File::PATH_SEPARATOR).each do |dir|
-          full = File.join(dir, cmd)
-          return full if File.executable?(full) && !File.directory?(full)
-        end
-        nil
       end
 
       def render_fixes(missing)

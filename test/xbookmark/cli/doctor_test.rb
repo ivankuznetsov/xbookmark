@@ -44,7 +44,7 @@ describe Xbookmark::CLI::Doctor do
 
   it "lists each missing tool with an install command for the host package manager" do
     Xbookmark::System::PackageManager.stubs(:detect).returns(:pacman)
-    described_class.any_instance.stubs(:which).returns(nil)
+    Xbookmark::Paths.stubs(:which).returns(nil)
     Xbookmark::Transcribe::Whisper.stubs(:detect).returns(nil)
 
     out = run_doctor
@@ -54,7 +54,7 @@ describe Xbookmark::CLI::Doctor do
 
   it "prints manual install guidance when no package manager is detected" do
     Xbookmark::System::PackageManager.stubs(:detect).returns(:unknown)
-    described_class.any_instance.stubs(:which).returns(nil)
+    Xbookmark::Paths.stubs(:which).returns(nil)
     Xbookmark::Transcribe::Whisper.stubs(:detect).returns(nil)
 
     out = run_doctor
@@ -74,7 +74,7 @@ describe Xbookmark::CLI::Doctor do
     out = StringIO.new
     input = StringIO.new("yes\nno\nyes\n")
     doctor = described_class.new([], fix: true, output: out, input: input)
-    doctor.stubs(:which).returns(nil)
+    Xbookmark::Paths.stubs(:which).returns(nil)
     Xbookmark::Transcribe::Whisper.stubs(:detect).returns(nil)
     Xbookmark::System::PackageManager.stubs(:detect).returns(:pacman)
     Xbookmark::System::PackageManager.stubs(:install_command).with("codex", manager: :pacman).returns(["echo", "codex"])
@@ -92,7 +92,7 @@ describe Xbookmark::CLI::Doctor do
   end
 
   it "skips the fix-up section when no tools are missing" do
-    described_class.any_instance.stubs(:which).returns("/usr/bin/fake")
+    Xbookmark::Paths.stubs(:which).returns("/usr/bin/fake")
     Xbookmark::Transcribe::Whisper.stubs(:detect).returns("/usr/bin/whisper")
     out = run_doctor
     refute_match(/Missing tools:/, out)

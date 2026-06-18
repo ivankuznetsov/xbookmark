@@ -8,6 +8,17 @@ module Xbookmark
       RbConfig::CONFIG["host_os"] =~ /darwin/i ? true : false
     end
 
+    # Neutral PATH scan: the first executable (non-directory) file named `cmd`
+    # on PATH, or nil. Single home for the byte-identical scan that `doctor`
+    # (codex/qmd/ffmpeg) and Chromium detection both need.
+    def which(cmd)
+      ENV.fetch("PATH", "").split(File::PATH_SEPARATOR).each do |dir|
+        full = File.join(dir, cmd)
+        return full if File.executable?(full) && !File.directory?(full)
+      end
+      nil
+    end
+
     def linux?
       RbConfig::CONFIG["host_os"] =~ /linux/i ? true : false
     end
