@@ -249,6 +249,36 @@ describe Xbookmark::Browser::Normalizer do
     assert_equal %w[p10], env["data"].first["attachments"]["media_keys"]
   end
 
+  it "drops the variants key for a video whose video_info carries no variants" do
+    # video_variants returns nil when video_info has no `variants` key, and the
+    # `.compact` in normalize_media drops the key — so VariantPicker sees no
+    # candidates and returns nil rather than crashing on a missing field.
+    result = {
+      "__typename" => "Tweet",
+      "rest_id" => "2006",
+      "core" => { "user_results" => { "result" => {
+        "rest_id" => "u1", "legacy" => { "screen_name" => "alice", "name" => "Alice" }
+      } } },
+      "legacy" => {
+        "id_str" => "2006", "user_id_str" => "u1", "full_text" => "t",
+        "created_at" => "Thu Jan 01 00:00:00 +0000 2026",
+        "extended_entities" => { "media" => [
+          { "media_key" => "v9", "type" => "video", "media_url_https" => "https://x/thumb.jpg",
+            "video_info" => { "duration_millis" => 5000 } }
+        ] }
+      }
+    }
+    env = single_entry_envelope(result)
+    media = env["includes"]["media"].first
+    assert_equal "video", media["type"]
+    assert_equal 5000, media["duration_ms"]
+    refute media.key?("variants"), "a video_info with no variants drops the compacted variants key"
+
+    video = Xbookmark::X::Expansions.new(env).bookmarks.first.media.first
+    assert_nil Xbookmark::Media::VariantPicker.best_video_url(video),
+               "no variants means VariantPicker finds no playable mp4"
+  end
+
   it "references a quoted id without an object and derives the id from the quoted result" do
     no_object = {
       "__typename" => "Tweet", "rest_id" => "3001",
