@@ -460,4 +460,33 @@ describe Xbookmark::Browser::Normalizer do
     assert_empty env["data"]
     assert_equal({}, env["meta"])
   end
+
+  # ---- TweetDetail thread shape with interleaved non-tweet entries ----
+  # The real conversation timeline interleaves cursor and module entries between
+  # the TimelineTweet entries; tweet_detail_results must skip them (normalizer.rb
+  # #tweet_detail_results) when selecting the focal tweet.
+
+  it "selects the focal reply from a real thread fixture, skipping cursor and module entries" do
+    thread = fixture_json("browser", "tweet_thread.json")
+    env = described_class.new(thread).single_tweet_envelope("5001")
+    assert_equal %w[5001], env["data"].map { |t| t["id"] }, "the focal reply is returned, not the root or a module reply"
+    bm = Xbookmark::X::Expansions.new(env).bookmarks.first
+    assert_equal "bob", bm.author_handle
+    assert_equal "5000", bm.in_reply_to_tweet_id
+  end
+
+  it "falls back to the first thread tweet when no id is requested, ignoring cursor/module entries" do
+    thread = fixture_json("browser", "tweet_thread.json")
+    env = described_class.new(thread).single_tweet_envelope
+    assert_equal %w[5000], env["data"].map { |t| t["id"] }, "the leading TimelineTweet wins; the Top cursor before it is skipped"
+  end
+
+  it "does not surface a tweet nested inside a TimelineTimelineModule entry" do
+    # A module's inner tweet is not a top-level TimelineTweet entry, so it is not a
+    # resync target — requesting it reports the tweet unavailable rather than the
+    # wrong tweet.
+    thread = fixture_json("browser", "tweet_thread.json")
+    env = described_class.new(thread).single_tweet_envelope("5002")
+    assert_empty env["data"]
+  end
 end
