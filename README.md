@@ -472,6 +472,8 @@ The artifact written depends on your OS:
 
 If X is unreachable or the saved OAuth refresh token is rejected during a scheduled run, the job still exits successfully when no local bookmark processing failed. It logs `source blocked`, continues local taxonomy cleanup, QMD maintenance, and cached retry/enrichment work, and does not stamp the run as completed so the next timer can fetch new bookmarks after auth is repaired. A manual `bin/xbookmark sync` still exits non-zero on source errors. Re-run `bin/xbookmark auth login` to re-issue a rejected refresh token.
 
+**Exception — browser session expiry.** The above exit-0-on-source-error rule does *not* apply to an expired browser session (`XBOOKMARK_SOURCE=browser` or `both`). When the browser session is expired or checkpointed, the run exits **1 even under `--from-scheduler`** (this is the one deliberate divergence from the rule above), fires a desktop notification, and logs a stable, grep-able token: `SESSION_EXPIRED source=browser`. A wrapper should match that token to distinguish "needs interactive re-login" from a generic failure, then run `bin/xbookmark auth login --browser` (add `--accept-risk` to accept the consent prompt non-interactively). Healthy sources in the same run still sync and finalize before the non-zero exit.
+
 `bin/xbookmark install --uninstall` removes whichever artifact was created on this machine. Log files are preserved.
 
 ## FAQ
