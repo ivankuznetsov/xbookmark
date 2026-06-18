@@ -39,7 +39,17 @@ module Xbookmark
       # isolated profile dir exists and holds Chromium state. Used by `doctor`
       # and `auth status` so they never have to launch Chromium to report.
       def self.profile_saved?(dir = Xbookmark::Paths.browser_profile_dir)
-        File.directory?(dir) && !Dir.empty?(dir)
+        return false unless File.directory?(dir)
+
+        !Dir.empty?(dir)
+      rescue SystemCallError
+        # An existing-but-unreadable profile dir (restored as root, or a
+        # permission-stripped copy) can't be probed for emptiness, but it does
+        # exist — treat it as saved so the always-report diagnostics (`doctor`,
+        # `auth status`) surface an actionable profile problem (and re-harden on
+        # the describe_profile path) instead of crashing with a raw Errno. Mirrors
+        # describe_profile's chmod-degrade.
+        true
       end
 
       # Re-asserts 0700 on the profile dir (and its parent config dir). The

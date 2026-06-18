@@ -196,6 +196,17 @@ describe Xbookmark::Browser::Session do
     end
   end
 
+  it "treats an existing-but-unreadable profile dir as saved instead of crashing the diagnostic" do
+    # An unreadable profile dir (restored as root, or permission-stripped) makes
+    # Dir.empty? raise EACCES; the always-report diagnostics must surface an
+    # actionable problem, not crash with a raw Errno.
+    Dir.mktmpdir do |dir|
+      Dir.stubs(:empty?).raises(Errno::EACCES, dir)
+
+      assert described_class.profile_saved?(dir), "an existing-but-unreadable profile dir counts as saved"
+    end
+  end
+
   it "closes the page even when the block raises" do
     with_tmp_home do
       session = build_session
