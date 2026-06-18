@@ -85,6 +85,40 @@ class GappyTimelinePage
   end
 end
 
+# Serves one real Bookmarks page, then the session expires mid-walk: X stops
+# issuing Bookmarks traffic and redirects to login at the same URL. Drains go
+# empty (cleanly settled) so the empty-rounds break fires with pages>0.
+class MidWalkExpiringPage
+  attr_reader :scrolls
+
+  def initialize(body)
+    @exchange = StubXchg.new("https://x.com/i/api/graphql/abc/Bookmarks?p=0", body, 0)
+    @drains = 0
+    @scrolls = 0
+    @current_url = Xbookmark::Browser::Source::BOOKMARKS_URL
+  end
+
+  def go_to(_) = nil
+  def current_url = @current_url
+  def network = self
+  def wait_for_idle = nil
+
+  def execute(_)
+    @scrolls += 1
+    nil
+  end
+
+  def traffic
+    @drains += 1
+    return [@exchange] if @drains == 1
+
+    # After the first page the session is gone — the page now redirects to login
+    # and X serves no further Bookmarks traffic.
+    @current_url = "https://x.com/i/flow/login"
+    []
+  end
+end
+
 # A timeline whose Bottom cursor strictly advances on every scroll and never
 # repeats, so the walk can only terminate by hitting MAX_TIMELINE_ITERATIONS.
 # Traffic is cumulative (append-only), mirroring the real CDP buffer.
@@ -343,6 +377,20 @@ describe Xbookmark::Browser::Source do
     source = described_class.new(config: config, session: session)
 
     assert_raises(Xbookmark::Browser::SessionExpired) { source.bookmarks { |_| flunk "should not yield" } }
+    assert_equal 1, session.quits
+  end
+
+  it "raises SessionExpired when the session expires mid-walk and drains go empty (no silent truncation)" do
+    # pages>0, the settle is clean, and no capture failed — finish_walk alone
+    # would seal this as a complete backfill. The post-loop guard re-check must
+    # spot the mid-walk login redirect and demand re-login instead.
+    page = MidWalkExpiringPage.new(bookmarks_body(ids: %w[1], cursor: "c1"))
+    session = StubSession.new(page)
+    source = described_class.new(config: config, session: session)
+
+    yielded = []
+    assert_raises(Xbookmark::Browser::SessionExpired) { source.bookmarks { |env| yielded << env } }
+    assert_equal 1, yielded.size, "the page captured before the expiry is still yielded"
     assert_equal 1, session.quits
   end
 

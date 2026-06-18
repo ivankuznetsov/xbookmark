@@ -179,6 +179,16 @@ module Xbookmark
           scroll(page)
         end
 
+        # The initial guard only sees the session state at the start of the walk.
+        # A session that expires *mid-walk* (X stops issuing Bookmarks requests and
+        # serves a login/checkpoint redirect at the same URL) drains empty and
+        # breaks cleanly with pages>0, which finish_walk would otherwise read as a
+        # genuine end-of-history and seal a truncated backfill. Re-check the page
+        # URL here so a redirect that appeared after the initial guard is
+        # reclassified as SessionExpired (re-login) rather than silently dropping
+        # the unfetched tail.
+        guard_session!(page)
+
         finish_walk(pages: pages, empty_rounds: empty_rounds, capture: capture, stalled: stalled,
                     normalize_failed: normalize_failed, missing_cursor: missing_cursor,
                     hit_iteration_cap: !completed.nil?)
