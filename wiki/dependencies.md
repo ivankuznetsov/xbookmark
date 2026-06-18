@@ -3,7 +3,7 @@ title: Dependencies
 type: dependencies
 source: git ls-files; Gemfile; xbookmark.gemspec; README.md
 created: 2026-05-14
-updated: 2026-05-25
+updated: 2026-06-17
 tags: [dependencies]
 ---
 

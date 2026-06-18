@@ -3,7 +3,7 @@ title: Decisions
 type: decisions
 source: git log; git worktree list; .hive-state/config.yml; lib/xbookmark/**/*.rb; README.md; .env.example
 created: 2026-05-14
-updated: 2026-06-14
+updated: 2026-06-17
 tags: [decisions]
 ---
 
