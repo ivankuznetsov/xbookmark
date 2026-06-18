@@ -68,8 +68,9 @@ describe Xbookmark::Browser::Login do
     session = FakeLoginSession.new([true])
     login = build(session, input: "n\n")
 
-    refute login.call
+    err = capture_stderr { refute login.call }
     assert_includes @out.string, "Consent declined"
+    assert_match(/CONSENT_DECLINED/, err, "emits a grep-able token for agents")
     assert_empty session.opened
     assert_nil store.get_meta("browser_consent_at")
     assert_equal 1, session.quits
@@ -87,8 +88,9 @@ describe Xbookmark::Browser::Login do
     session = FakeLoginSession.new([])
     login = build(session)
 
-    refute login.call
+    err = capture_stderr { refute login.call }
     assert_includes @out.string, "Login not detected"
+    assert_match(/LOGIN_TIMEOUT/, err, "emits a grep-able token for agents")
     assert_equal 1, session.quits
   end
 
@@ -98,8 +100,9 @@ describe Xbookmark::Browser::Login do
                                 input: StringIO.new("y\n"), output: out = StringIO.new,
                                 clock: clock, sleeper: ->(_) { })
 
-    refute login.call, "must not block on `gets` for a non-interactive stdin"
+    err = capture_stderr { refute login.call, "must not block on `gets` for a non-interactive stdin" }
     assert_includes out.string, "--accept-risk"
+    assert_match(/CONSENT_REQUIRED/, err, "emits a grep-able token for agents")
     assert_empty session.opened
     assert_nil store.get_meta("browser_consent_at")
     assert_equal 1, session.quits

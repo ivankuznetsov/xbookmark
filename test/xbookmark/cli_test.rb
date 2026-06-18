@@ -52,6 +52,9 @@ describe Xbookmark::CLI do
       daily_sync_time: "06:00",
       min_run_interval_hours: 20.0,
       aux_summaries: false,
+      # Config.load always resolves a concrete source (default "api"); mirror that
+      # so Sources::Factory (which now rejects an unknown/nil source) builds.
+      source: "api",
       env_file: "/tmp/.env",
       verbose: false
     }.merge(overrides))
@@ -291,6 +294,19 @@ describe Xbookmark::CLI do
     Xbookmark::CLI::Auth.start(%w[login --browser])
   end
 
+  it "wires --accept-risk through to the browser login as accept_risk: true" do
+    # End-to-end guard: a regression dropping/renaming the dasherized option would
+    # pass accept_risk: nil and silently re-enable the consent prompt that hangs
+    # unattended runs, with green unit tests.
+    Xbookmark::Config.stubs(:load_offline).returns(test_config(source: "browser"))
+    Xbookmark::State::Store.stubs(:new).returns(stub)
+    browser_login = mock("browser login")
+    browser_login.expects(:call).returns(true)
+    Xbookmark::Browser::Login.expects(:new).with(has_entry(accept_risk: true)).returns(browser_login)
+
+    Xbookmark::CLI::Auth.start(%w[login --browser --accept-risk])
+  end
+
   it "exits non-zero when browser login is not completed" do
     Xbookmark::Config.stubs(:load_offline).returns(test_config(source: "browser"))
     Xbookmark::State::Store.stubs(:new).returns(stub)
@@ -310,6 +326,7 @@ describe Xbookmark::CLI do
     error = assert_raises(SystemExit) { Xbookmark::CLI::Auth.start(%w[login --browser]) }
     assert_equal 1, error.status
     assert_includes $stderr.string, "No Chromium"
+    assert_includes $stderr.string, "CHROMIUM_MISSING"
   ensure
     $stderr = old_stderr
   end
@@ -484,7 +501,7 @@ describe Xbookmark::CLI do
   it "runs backfill, sync, and resync with real stores and runner wiring" do
     config = test_config
     Xbookmark::Config.stubs(:load).returns(config)
-    Xbookmark::X::Client.stubs(:new).returns(stub)
+    Xbookmark::X::Client.stubs(:new).returns(stub(bookmarks: nil, get_tweet: nil))
 
     reports = [
       FakeReport.new(failed: 0, permanent_errors: 0, message: "backfilled"),
@@ -540,6 +557,19 @@ describe Xbookmark::CLI do
       capture_stdout { Xbookmark::CLI::Sync.new([], {}).sync_run }
     end
     assert_equal 1, error.status
+  end
+
+  it "does not notify and exits zero for a non-expired source block under --from-scheduler" do
+    # The mutual exclusion to the expiry case: a generic source outage on a
+    # scheduled run degrades to exit 0 and must NOT fire the re-login notification.
+    Xbookmark::Config.stubs(:load).returns(test_config)
+    Xbookmark::Sync::Runner.stubs(:new).returns(
+      stub(run: FakeReport.new(failed: 0, permanent_errors: 0, source_errors: 1, message: "source blocked"))
+    )
+    Xbookmark::Notify.expects(:deliver).never
+
+    out = capture_stdout { Xbookmark::CLI::Sync.new([], { "from-scheduler": true }).sync_run }
+    assert_includes out, "source blocked"
   end
 
   it "notifies and exits non-zero on browser session expiry even from the scheduler" do

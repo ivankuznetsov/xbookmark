@@ -52,6 +52,10 @@ module Xbookmark
           say "Browser session saved to #{session.profile_dir}. You can close the window."
           true
         else
+          # Grep-able stderr token so an agent can pick the right remediation from
+          # the failure rather than parsing prose (mirrors the SESSION_EXPIRED
+          # convention in cli/sync.rb).
+          warn "[xbookmark] LOGIN_TIMEOUT; login not detected within #{LOGIN_TIMEOUT_SECONDS}s; re-run `xbookmark auth login --browser`."
           say "Login not detected within #{LOGIN_TIMEOUT_SECONDS}s. Re-run `xbookmark auth login --browser`."
           false
         end
@@ -70,6 +74,7 @@ module Xbookmark
         # forever. Decline with an actionable pointer instead. Mirrors the
         # tty? guard in cli/setup.rb.
         unless interactive?
+          warn "[xbookmark] CONSENT_REQUIRED; browser-source consent needs an interactive terminal or `--accept-risk`."
           say "Browser-source consent needs an interactive terminal. Re-run interactively, " \
               "or pass `--accept-risk` to accept the ToS/account risk non-interactively."
           return false
@@ -78,6 +83,7 @@ module Xbookmark
         @output.print(CONSENT_WARNING)
         answer = @input.gets.to_s.strip.downcase
         unless %w[y yes].include?(answer)
+          warn "[xbookmark] CONSENT_DECLINED; browser login aborted."
           say "Consent declined; browser login aborted."
           return false
         end

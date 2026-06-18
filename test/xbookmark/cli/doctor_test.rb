@@ -73,6 +73,7 @@ describe Xbookmark::CLI::Doctor do
   it "prompts before running fix commands and skips declined commands" do
     out = StringIO.new
     input = StringIO.new("yes\nno\nyes\n")
+    def input.tty? = true # an interactive `doctor --fix` reads from a TTY
     doctor = described_class.new([], fix: true, output: out, input: input)
     Xbookmark::Paths.stubs(:which).returns(nil)
     Xbookmark::Transcribe::Whisper.stubs(:detect).returns(nil)
@@ -89,6 +90,22 @@ describe Xbookmark::CLI::Doctor do
 
     assert_includes out.string, "qmd: install manually"
     assert_includes out.string, "skipped whisper"
+  end
+
+  it "does not prompt for --fix when stdin is not a TTY (unattended)" do
+    out = StringIO.new
+    input = StringIO.new("") # a non-interactive pipe: tty? is false
+    doctor = described_class.new([], fix: true, output: out, input: input)
+    Xbookmark::Paths.stubs(:which).returns(nil)
+    Xbookmark::Transcribe::Whisper.stubs(:detect).returns(nil)
+    Xbookmark::System::PackageManager.stubs(:detect).returns(:pacman)
+    Xbookmark::System::PackageManager.stubs(:install_command).returns(["echo", "tool"])
+
+    doctor.expects(:system).never
+
+    doctor.execute
+
+    assert_includes out.string, "needs an interactive terminal"
   end
 
   it "skips the fix-up section when no tools are missing" do

@@ -98,7 +98,9 @@ module Xbookmark
         login = Xbookmark::Browser::Login.new(config: config, store: store, accept_risk: options[:"accept-risk"])
         exit 1 unless login.call
       rescue Xbookmark::ConfigError => e
-        warn "[xbookmark] #{e.message}"
+        # The only ConfigError on the browser-login path is a missing system
+        # Chromium; emit a grep-able token so an agent can branch on it.
+        warn "[xbookmark] CHROMIUM_MISSING; #{e.message}"
         exit 1
       end
 
@@ -108,6 +110,9 @@ module Xbookmark
       def browser_status
         require_relative "../browser/session"
         if Xbookmark::Browser::Session.profile_saved?
+          # Re-assert 0700 on the profile (it holds live X cookies, > the OAuth
+          # token); a chmod launches no browser, so this stays browser-free.
+          Xbookmark::Browser::Session.secure_profile_dir!
           puts "browser session: profile saved but unverified (#{Xbookmark::Paths.browser_profile_dir}); " \
                "validity is confirmed at next sync"
           true

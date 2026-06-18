@@ -90,6 +90,10 @@ module Xbookmark
         profile = Xbookmark::Paths.browser_profile_dir
         say "browser profile: #{profile}"
         if Xbookmark::Browser::Session.profile_saved?(profile)
+          # Re-assert 0700 in case the profile was restored/copied with looser
+          # perms (it holds live X cookies). A chmod launches no browser, so this
+          # stays compatible with the browser-free diagnostic.
+          Xbookmark::Browser::Session.secure_profile_dir!(profile)
           # profile_saved? is a browser-free file check, so it cannot confirm the
           # session is still logged in; don't imply readiness here.
           say "browser session: profile saved but unverified (validity is confirmed at next sync)"
@@ -149,6 +153,15 @@ module Xbookmark
 
         return unless options[:fix]
 
+        # `--fix` prompts on @input.gets; never block on a non-interactive stdin
+        # (an unattended agent/scheduler shell) — the commands above are already
+        # printed, so just point the operator at them. Mirrors Login/Setup.
+        unless tty_input?
+          say ""
+          say "doctor --fix needs an interactive terminal to confirm; run the commands above manually instead."
+          return
+        end
+
         commands.each do |(tool, cmd)|
           next if cmd.nil?
           say ""
@@ -160,6 +173,10 @@ module Xbookmark
             say "  skipped #{tool}"
           end
         end
+      end
+
+      def tty_input?
+        @input.respond_to?(:tty?) && @input.tty?
       end
 
       def say(line)
