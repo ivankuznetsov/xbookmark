@@ -371,16 +371,25 @@ describe Xbookmark::CLI do
     $stdout = old_stdout
   end
 
-  it "still reports the API token status in both mode" do
+  it "still reports the API token status in both mode but signals the degraded browser half" do
     Xbookmark::Config.stubs(:load).returns(test_config(source: "both", x_access_token: "token",
                                                        x_token_expires_at: 2_000_000_000))
     Xbookmark::Browser::Session.stubs(:profile_saved?).returns(false)
     Time.stubs(:now).returns(Time.at(1_000_000_000))
 
-    out = capture_stdout { Xbookmark::CLI::Auth.start(%w[status]) }
+    old_stdout = $stdout
+    $stdout = StringIO.new
+    err = capture_stderr do
+      error = assert_raises(SystemExit) { Xbookmark::CLI::Auth.start(%w[status]) }
+      assert_equal 1, error.status, "a degraded browser half exits non-zero even when the API token is fine"
+    end
 
-    assert_includes out, "source: both"
-    assert_includes out, "Logged in. Token expires at"
+    assert_includes $stdout.string, "source: both"
+    assert_includes $stdout.string, "Logged in. Token expires at"
+    assert_includes err, "BROWSER_SESSION_MISSING source=both",
+                    "both mode emits a grep-able token so a wrapper can detect the degraded browser half"
+  ensure
+    $stdout = old_stdout
   end
 
   it "prints auth status without exiting when a token is present" do

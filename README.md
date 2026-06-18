@@ -227,6 +227,7 @@ case below exits non-zero.
 | Token | Emitting command | Exit | Remediation |
 | --- | --- | --- | --- |
 | `SESSION_EXPIRED source=browser` | `sync` / `backfill` / `resync` | `1` (even under `--from-scheduler`) | Re-run `bin/xbookmark auth login --browser` |
+| `BROWSER_SESSION_MISSING source=browser\|both` | `auth status` | `1` | Re-run `bin/xbookmark auth login --browser` |
 | `CHROMIUM_MISSING` | `auth login --browser` | `1` | Install a system Chromium/Chrome, then re-run |
 | `CONFIG_ERROR` | `auth login --browser` | `1` | Fix the offending config (e.g. an invalid `XBOOKMARK_SOURCE`), then re-run |
 | `LOGIN_TIMEOUT` | `auth login --browser` | `1` | Re-run `bin/xbookmark auth login --browser` and finish signing in |

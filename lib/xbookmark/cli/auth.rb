@@ -39,32 +39,43 @@ module Xbookmark
         config = Xbookmark::Config.load(wiki_override: options[:wiki], vault_override: options[:vault], verbose: options[:verbose])
         source = (config.respond_to?(:source) && config.source) || Xbookmark::Config::SOURCE_API
         puts "source: #{source}"
+
+        degraded_browser = false
         if Xbookmark::Config.browser_source?(source)
-          browser_present = browser_status
-          # In browser-only mode the browser session IS the credential; mirror
-          # the API branch's `exit 1` so a wrapper can detect "needs re-login"
-          # without scraping prose, instead of always reporting success.
-          exit 1 if source == Xbookmark::Config::SOURCE_BROWSER && !browser_present
-        end
-        return unless Xbookmark::Config.api_source?(source)
-
-        unless config.x_access_token && !config.x_access_token.empty?
-          puts "Not logged in. Run: xbookmark auth login"
-          exit 1
-        end
-
-        expires_at = config.x_token_expires_at
-        if expires_at && expires_at <= Time.now.to_i
-          puts "Access token expired at: #{format_timestamp(expires_at)}"
-          if config.x_refresh_token && !config.x_refresh_token.empty?
-            puts "Refresh token present. Run: xbookmark auth refresh"
-          else
-            puts "No refresh token. Run: xbookmark auth login"
+          degraded_browser = !browser_status
+          if degraded_browser
+            # The browser session IS the credential for the browser/both source.
+            # Emit a stable, grep-able token (mirroring sync's SESSION_EXPIRED) so a
+            # wrapper can detect "browser needs re-login" without scraping prose —
+            # including in `both` mode, where the API half may still be healthy and
+            # would otherwise leave this exiting 0 with prose-only output.
+            warn "[xbookmark] BROWSER_SESSION_MISSING source=#{source}; re-run `xbookmark auth login --browser`."
           end
-          exit 1
         end
 
-        puts "Logged in. Token expires at: #{expires_at ? format_timestamp(expires_at) : "unknown"}"
+        if Xbookmark::Config.api_source?(source)
+          unless config.x_access_token && !config.x_access_token.empty?
+            puts "Not logged in. Run: xbookmark auth login"
+            exit 1
+          end
+
+          expires_at = config.x_token_expires_at
+          if expires_at && expires_at <= Time.now.to_i
+            puts "Access token expired at: #{format_timestamp(expires_at)}"
+            if config.x_refresh_token && !config.x_refresh_token.empty?
+              puts "Refresh token present. Run: xbookmark auth refresh"
+            else
+              puts "No refresh token. Run: xbookmark auth login"
+            end
+            exit 1
+          end
+
+          puts "Logged in. Token expires at: #{expires_at ? format_timestamp(expires_at) : "unknown"}"
+        end
+
+        # A degraded browser half exits non-zero even when the API half is fine, so
+        # `browser` and `both` share the same non-zero "needs re-login" contract.
+        exit 1 if degraded_browser
       end
 
       desc "refresh", "Refresh the saved X OAuth token"
