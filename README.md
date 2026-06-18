@@ -70,7 +70,7 @@ If you prefer to run the steps yourself, jump to [Installation](#installation) a
 - Local Whisper transcription of audio and video linked from a bookmark, with
   LLM-produced transcript summaries and readable dialogue-style formatting.
 - Obsidian graph landing pages for authors, canonical concepts, concept hierarchy, real multi-bookmark threads, and explicit post lists on topic/concept pages.
-- Official X API v2 only, via OAuth 2.0 with PKCE.
+- Two ingest sources: the official X API v2 (default, via OAuth 2.0 with PKCE), or an opt-in [browser source](#browser-source-no-dev-api) that reads your own bookmarks through a real logged-in Chromium with no dev API.
 - MIT-licensed and runs entirely on your machine.
 
 ## Installation
