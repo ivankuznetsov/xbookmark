@@ -863,6 +863,30 @@ describe Xbookmark::Sync::Runner do
     assert_match(/source blocked during new bookmark fetch: rate limited mid-page/, err)
   end
 
+  it "does not re-process a tweet an earlier source already attempted in the same run (both mode)" do
+    # The same not-yet-done tweet appears in both sources' pages. Once the first
+    # source has attempted it (needs_retry, so it never becomes done), a later
+    # source must skip it via attempted_ids — re-running it would double the
+    # attempt count and march a still-recoverable row toward a false
+    # permanent_error.
+    shared = {
+      "data" => [{ "id" => "dup", "author_id" => "u1", "text" => "x", "created_at" => "2026-01-01T00:00:00Z", "conversation_id" => "dup" }],
+      "includes" => { "users" => [{ "id" => "u1", "username" => "alice" }] },
+      "meta" => {}
+    }
+    pipeline = FakePipeline.new(->(_) { Xbookmark::Sync::Pipeline::Outcome.new(status: :needs_retry, error: StandardError.new("still down")) })
+    runner = described_class.new(config: config, store: store,
+                                 sources: [FakeXClient.new(pages: [shared]), FakeXClient.new(pages: [shared])],
+                                 pipeline: pipeline, registrar: registrar)
+
+    report = runner.run(mode: :backfill_limited, limit: 10)
+
+    assert_equal ["dup"], pipeline.calls, "the duplicate tweet is processed once across both sources"
+    assert_equal 1, store.find_bookmark("dup")[:attempts], "a later source must not inflate the attempt count"
+    assert_equal 1, report.failed
+    assert_equal 0, report.permanent_errors
+  end
+
   it "caps total items across sources at the requested limit" do
     page_a = {
       "data" => Array.new(3) { |i| { "id" => "a#{i}", "author_id" => "u1", "text" => "x", "created_at" => "2026-01-01T00:00:00Z", "conversation_id" => "a#{i}" } },

@@ -330,6 +330,11 @@ module Xbookmark
               end
               next if attempted_ids[bm.tweet_id.to_s]
 
+              # Mark attempted before processing so a later source in the same run
+              # (the `both` mode threads attempted_ids across sources) can't
+              # re-process the same not-yet-done tweet and advance its attempts
+              # toward permanent_error. Mirrors retry_first.
+              attempted_ids[bm.tweet_id.to_s] = true
               run_one(bm, report)
               collected += 1
               page_new += 1
