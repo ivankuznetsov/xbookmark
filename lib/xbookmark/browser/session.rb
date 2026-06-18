@@ -57,11 +57,30 @@ module Xbookmark
         true
       end
 
+      # Shared browser-free profile report for the diagnostics (`doctor`, `auth
+      # status`). Returns [saved?, message]. When a profile exists it re-hardens
+      # 0700, but degrades a chmod failure (a profile restored as root, or a
+      # chmod-rejecting FS) to a warning instead of crashing the "always report"
+      # diagnostic with a raw Errno — the launch path keeps the hard chmod via
+      # #secure_profile_dir!. Single home for the policy so `auth` and `doctor`
+      # cannot drift (e.g. one silently stops re-hardening).
+      def self.describe_profile(dir = Xbookmark::Paths.browser_profile_dir)
+        return [false, "not set up (run: xbookmark auth login --browser)"] unless profile_saved?(dir)
+
+        begin
+          secure_profile_dir!(dir)
+        rescue SystemCallError => e
+          warn "[xbookmark] could not re-harden the browser profile dir #{dir}: #{e.class}: #{e.message}"
+        end
+        [true, "profile saved but unverified (#{dir}); validity is confirmed at next sync"]
+      end
+
       def initialize(config:, headless: true, browser_class: nil, chromium_path: nil)
         @config = config
         @headless = headless
         @browser_class = browser_class
         @chromium_path = chromium_path
+        @profile_lock = nil
       end
 
       def profile_dir
@@ -90,6 +109,7 @@ module Xbookmark
         # Swallow teardown failures so they can't mask the real error.
       ensure
         @browser = nil
+        release_profile_lock
       end
 
       # Opens a fresh page, yields it, and always closes it afterwards. The
@@ -134,7 +154,25 @@ module Xbookmark
 
       def build_browser
         klass = @browser_class || self.class.ferrum_browser_class
-        klass.new(ferrum_options)
+        options = ferrum_options
+        # Take a cross-process lock on the profile before launching: the only
+        # other mutual exclusion is the vault taxonomy flock, which the
+        # `auth login --browser` path never holds, so a scheduled headless sync
+        # and an interactive re-login could otherwise launch two Chromium
+        # processes against the same user-data-dir and corrupt the shared
+        # cookie/leveldb store — the very X session being repaired.
+        acquire_profile_lock!
+        begin
+          # Record the resolved Chromium path at launch. The unattended timer
+          # launches whatever `chromium`-named binary is first on PATH under the
+          # live-X-session profile, so logging the path makes a spoofed binary
+          # observable after the fact.
+          warn "[xbookmark] launching Chromium: #{options[:browser_path]}"
+          klass.new(options)
+        rescue StandardError
+          release_profile_lock
+          raise
+        end
       end
 
       # Generous bounds so the unattended daily walk can never hang Chromium
@@ -163,6 +201,38 @@ module Xbookmark
       def prepare_profile_dir!
         FileUtils.mkdir_p(profile_dir, mode: 0o700)
         self.class.secure_profile_dir!(profile_dir)
+      end
+
+      # Sibling lock file next to the profile dir (not inside it — Chromium owns
+      # that tree). Mirrors the Taxonomy::Lock pattern: a non-blocking flock,
+      # callers that can't acquire it must not race.
+      def profile_lock_path
+        "#{profile_dir}.lock"
+      end
+
+      def acquire_profile_lock!
+        FileUtils.mkdir_p(File.dirname(profile_lock_path))
+        file = File.open(profile_lock_path, "w")
+        if file.flock(File::LOCK_EX | File::LOCK_NB)
+          @profile_lock = file
+          return
+        end
+
+        file.close
+        raise Xbookmark::TransientError,
+              "another xbookmark browser session is already using the profile at #{profile_dir}; " \
+              "skipping this launch so two Chromium processes cannot corrupt the shared session store"
+      end
+
+      def release_profile_lock
+        return unless @profile_lock
+
+        @profile_lock.flock(File::LOCK_UN)
+        @profile_lock.close
+      rescue StandardError
+        # Releasing a lock on an already-torn-down fd must never mask the real error.
+      ensure
+        @profile_lock = nil
       end
 
       def raise_missing_chromium

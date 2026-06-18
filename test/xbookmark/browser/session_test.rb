@@ -248,4 +248,79 @@ describe Xbookmark::Browser::Session do
     klass = described_class.ferrum_browser_class
     assert_equal "Ferrum::Browser", klass.name
   end
+
+  it "logs the resolved Chromium path at launch so a spoofed binary is observable" do
+    with_tmp_home do
+      session = build_session(chromium_path: "/usr/bin/chromium")
+      err = capture_stderr { session.start }
+      assert_match(%r{launching Chromium: /usr/bin/chromium}, err)
+    end
+  end
+
+  it "refuses to launch a second Chromium against the same profile (cross-process lock)" do
+    with_tmp_home do
+      first = build_session
+      capture_stderr { first.start }
+
+      second = build_session
+      error = assert_raises(Xbookmark::TransientError) { capture_stderr { second.start } }
+      assert_match(/already using the profile/, error.message)
+
+      # Releasing the first session frees the lock so a later run can launch.
+      first.quit
+      relaunched = nil
+      capture_stderr { relaunched = second.start }
+      assert_instance_of FakeFerrumBrowser, relaunched
+    end
+  end
+
+  it "releases the profile lock on quit" do
+    with_tmp_home do
+      session = build_session
+      capture_stderr { session.start }
+      session.quit
+
+      other = build_session
+      capture_stderr { assert_instance_of FakeFerrumBrowser, other.start }
+    end
+  end
+
+  it "describe_profile reports a saved session and re-hardens it to 0700" do
+    with_tmp_home do
+      profile = Xbookmark::Paths.browser_profile_dir
+      FileUtils.mkdir_p(profile)
+      File.write(File.join(profile, "Cookies"), "x")
+
+      saved, message = described_class.describe_profile(profile)
+
+      assert saved
+      assert_match(/profile saved but unverified/, message)
+      assert_equal "700", format("%o", File.stat(profile).mode & 0o777)
+    end
+  end
+
+  it "describe_profile reports an unset session" do
+    with_tmp_home do
+      saved, message = described_class.describe_profile(Xbookmark::Paths.browser_profile_dir)
+      refute saved
+      assert_match(/not set up/, message)
+    end
+  end
+
+  it "describe_profile degrades a chmod failure to a warning instead of crashing the diagnostic" do
+    with_tmp_home do
+      profile = Xbookmark::Paths.browser_profile_dir
+      FileUtils.mkdir_p(profile)
+      File.write(File.join(profile, "Cookies"), "x")
+      described_class.stubs(:secure_profile_dir!).raises(Errno::EPERM, "chmod")
+
+      saved = nil
+      err = capture_stderr do
+        saved, = described_class.describe_profile(profile)
+      end
+
+      assert saved, "a chmod failure must not stop the diagnostic from reporting the saved profile"
+      assert_match(/could not re-harden the browser profile dir/, err)
+    end
+  end
 end
