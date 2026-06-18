@@ -74,12 +74,12 @@ module Xbookmark
         # Browser session expiry is the one source-block case that is
         # intentionally noisy: notify a human and exit non-zero even under
         # --from-scheduler, distinct from the API-token-block degrade-to-0 path.
-        if report.respond_to?(:session_expired?) && report.session_expired?
+        if report.session_expired?
           notify_session_expired(report)
           exit 1
         end
 
-        maintenance_errors = report.respond_to?(:maintenance_errors) ? report.maintenance_errors : 0
+        maintenance_errors = report.maintenance_errors
         return if report.failed.zero? && report.permanent_errors.zero? && report.source_errors.zero? && maintenance_errors.zero?
         # An unattended scheduled run is best-effort: tolerate retryable trouble
         # (X source outages AND transient enrichment failures, both of which

@@ -3,6 +3,12 @@
 module Xbookmark
   module Sync
     class Report
+      # Deliberately a loose accumulator: these counters are internal to the sync
+      # subsystem (not a public API) and are incremented by hand by the Runner and
+      # its collaborators as a run progresses. They are plain attr_accessor on
+      # purpose — intent-named mutators would add ceremony for no behavior change.
+      # The one field that guards an invariant (expired_source) is the exception
+      # and is attr_reader-only with a dedicated mutator below.
       attr_accessor :synced, :skipped, :failed, :permanent_errors, :source_errors, :elapsed, :source_pages,
                     :bookmark_attempts, :partial, :maintenance_errors
       # expired_source is read-only from the outside: it can only be set through
@@ -32,10 +38,12 @@ module Xbookmark
         @expired_source = nil
       end
 
-      # Records that the browser session expired. The browser is the only source
-      # that raises Browser::SessionExpired (the one source block needing a human),
-      # so this is a parameterless marker; first-wins via ||= so a later block
-      # can't change the culprit, and session_expired? derives from it.
+      # Records that the browser session expired. Per plan U5 the browser is the
+      # ONLY source that raises Browser::SessionExpired (the one source block
+      # needing a human), so the culprit is the hardcoded "browser" rather than a
+      # parameter — there is no second source that can ever set this, so a source
+      # arg would be speculative (YAGNI). First-wins via ||= so a later block can't
+      # change the culprit, and session_expired? derives from this single field.
       def mark_session_expired
         @expired_source ||= "browser"
       end

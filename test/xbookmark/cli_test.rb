@@ -27,6 +27,14 @@ describe Xbookmark::CLI do
       self[:maintenance_errors] || 0
     end
 
+    # The real Sync::Report always answers session_expired?; mirror it so this
+    # double stays a faithful stand-in now that exit_with calls it directly
+    # (no respond_to? guard). These FakeReport-based cases are never the
+    # expiry case — that one uses a real Report.
+    def session_expired?
+      false
+    end
+
     def to_s
       message
     end
@@ -115,7 +123,9 @@ describe Xbookmark::CLI do
   end
 
   it "passes --wiki to auth subcommands" do
-    config = Struct.new(:x_access_token, :x_token_expires_at).new("", nil)
+    # A faithful Config stand-in always carries :source (Config.load resolves it),
+    # which Config.source_of now reads directly without a respond_to? guard.
+    config = Struct.new(:x_access_token, :x_token_expires_at, :source).new("", nil, "api")
     Xbookmark::Config.expects(:load).with(wiki_override: "/auth/wiki", vault_override: nil, verbose: false).returns(config)
 
     assert_raises(SystemExit) do
@@ -669,6 +679,28 @@ describe Xbookmark::CLI do
     assert_equal 1, error.status
     assert_match(/SESSION_EXPIRED source=browser/, $stderr.string,
                  "emits a stable, grep-able token so wrappers can branch without scraping prose")
+  ensure
+    $stderr = old_stderr
+  end
+
+  it "notifies and exits non-zero on browser session expiry on a manual (non-scheduler) sync" do
+    # exit_with checks session_expired? before the scheduler early-return, so a
+    # manual sync must also notify and exit 1. A regression moving that check after
+    # the early-return would silently drop the manual-path notification.
+    Xbookmark::Config.stubs(:load).returns(test_config)
+    report = Xbookmark::Sync::Report.new
+    report.mark_session_expired
+    Xbookmark::Sync::Runner.stubs(:new).returns(stub(run: report))
+    Xbookmark::Notify.expects(:deliver).once.returns(true)
+
+    old_stderr = $stderr
+    $stderr = StringIO.new
+    error = assert_raises(SystemExit) do
+      capture_stdout { Xbookmark::CLI::Sync.new([], {}).sync_run }
+    end
+
+    assert_equal 1, error.status
+    assert_match(/SESSION_EXPIRED source=browser/, $stderr.string)
   ensure
     $stderr = old_stderr
   end

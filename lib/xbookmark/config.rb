@@ -115,11 +115,12 @@ module Xbookmark
       end
 
       # Resolves a loaded config's source with the API default. Both loaders
-      # always populate :source, so this is the single home for the "source with
-      # API fallback" the CLI diagnostics need — keeping `auth` and `doctor` from
-      # drifting between the `respond_to?`-guarded and bare forms.
+      # always populate :source on the Struct, so this is the single home for the
+      # "source with API fallback" the CLI diagnostics need — keeping `auth` and
+      # `doctor` from drifting. The `|| SOURCE_API` still covers the brief
+      # load_offline window where :source can be nil.
       def source_of(config)
-        (config.respond_to?(:source) && config.source) || SOURCE_API
+        config.source || SOURCE_API
       end
 
       def load_env_files!(cwd:, env:)
