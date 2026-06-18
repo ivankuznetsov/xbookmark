@@ -125,10 +125,14 @@ module Xbookmark
             guard_session!(page)
 
             # A captured tweet is returned even when the settle stalled (the body
-            # was already drained), but with nothing captured a stalled/failed
-            # load is transient — reserve the permanent SourceUnavailable for a
-            # clean settle that simply produced no tweet.
-            raise TransientError, "browser capture failed for tweet #{id}" if capture.failures? || !settled
+            # was already drained), but with nothing captured a stalled, failed,
+            # or still-pending load is transient — reserve the permanent
+            # SourceUnavailable for a clean settle that simply produced no tweet. A
+            # pending focal request (the TweetDetail/TweetResultByRestId was
+            # observed but its body never filled) is a retryable miss, not a gone
+            # tweet — mirror finish_walk, which already honors pending? on the
+            # backfill path.
+            raise TransientError, "browser capture failed for tweet #{id}" if capture.failures? || capture.pending? || !settled
 
             raise SourceUnavailable, "tweet #{id} unavailable via browser source"
           end
@@ -141,12 +145,13 @@ module Xbookmark
           envelope = matching_tweet_envelope(tweets, id)
           unless envelope
             # A non-empty capture that nonetheless lacks the requested id happens
-            # when the focal TweetDetail/TweetResultByRestId timed out and only a
-            # stray quoted/hovercard tweet drained. That is a transient miss when
-            # the settle stalled or a capture failed — mirror the empty-capture
-            # branch so the Runner retries rather than recording a still-existing
-            # tweet as permanently gone.
-            raise TransientError, "browser capture for tweet #{id} did not include it" if capture.failures? || !settled
+            # when the focal TweetDetail/TweetResultByRestId timed out (or its body
+            # never filled) and only a stray quoted/hovercard tweet drained. That is
+            # a transient miss when the settle stalled, a capture failed, or the
+            # focal request is still pending — mirror the empty-capture branch so the
+            # Runner retries rather than recording a still-existing tweet as
+            # permanently gone.
+            raise TransientError, "browser capture for tweet #{id} did not include it" if capture.failures? || capture.pending? || !settled
 
             raise SourceUnavailable, "tweet #{id} unavailable via browser source"
           end

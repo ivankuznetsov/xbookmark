@@ -731,4 +731,25 @@ describe Xbookmark::Browser::Source do
 
     assert_raises(Xbookmark::TransientError) { source.get_tweet("555") }
   end
+
+  it "get_tweet treats a pending tweet body on a clean settle as transient, not permanently gone" do
+    # The focal TweetDetail/TweetResultByRestId was observed but its body never
+    # filled (empty => pending), and the settle was otherwise clean. The tweet may
+    # still exist, so this is a retryable miss — not the permanent SourceUnavailable
+    # that a retry/resync would treat as a gone tweet.
+    page = StubTimelinePage.new([""], url_kind: :tweet)
+    source = described_class.new(config: config, session: StubSession.new(page))
+
+    assert_raises(Xbookmark::TransientError) { source.get_tweet("404") }
+  end
+
+  it "get_tweet treats a pending focal request behind a stray on a clean settle as transient" do
+    # The focal 555 request is still pending (empty body) while only a stray (999)
+    # drained, on an otherwise clean settle. matching_tweet_envelope finds no 555,
+    # but the pending focal request makes this a retryable miss, not a gone tweet.
+    page = MultiTweetPage.new(["", tweet_detail_body("999")])
+    source = described_class.new(config: config, session: StubSession.new(page))
+
+    assert_raises(Xbookmark::TransientError) { source.get_tweet("555") }
+  end
 end
