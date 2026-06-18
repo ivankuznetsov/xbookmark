@@ -22,16 +22,20 @@ module Xbookmark
         # as empty so a single bad response degrades to an empty page rather than
         # crashing the whole run.
         @payload = graphql_payload.is_a?(Hash) ? graphql_payload : {}
-        @users = {}
-        @media = {}
-        @tweets = {}
+      end
+
+      # The canonical empty API v2 page envelope. Callers that must emit an empty
+      # page (e.g. the Source dropping a malformed page) route through here so the
+      # envelope shape has a single author and cannot drift from #build_envelope.
+      def self.empty_envelope
+        new(nil).envelope
       end
 
       # Normalizes a full bookmark timeline page → API v2 page envelope.
       def envelope
-        reset_includes!
-        data = timeline_entries.filter_map { |entry| normalize_tweet_entry(entry) }
-        build_envelope(data, next_token: bottom_cursor)
+        includes = new_includes
+        data = timeline_entries.filter_map { |entry| normalize_tweet_entry(entry, includes) }
+        build_envelope(data, next_token: bottom_cursor, includes: includes)
       end
 
       # Normalizes a single TweetDetail/TweetResultByRestId result → a
@@ -39,29 +43,30 @@ module Xbookmark
       # `requested_id` selects the focal tweet out of a TweetDetail thread so a
       # reply resyncs itself rather than the thread root that precedes it.
       def single_tweet_envelope(requested_id = nil)
-        reset_includes!
+        includes = new_includes
         result = single_tweet_result(requested_id)
-        tweet = result && normalize_tweet_result(result)
-        build_envelope([tweet].compact, next_token: nil)
+        tweet = result && normalize_tweet_result(result, includes)
+        build_envelope([tweet].compact, next_token: nil, includes: includes)
       end
 
       private
 
-      def reset_includes!
-        @users = {}
-        @media = {}
-        @tweets = {}
+      # Per-call includes accumulators. Kept method-local (threaded through the
+      # registration helpers) so includes can never leak across calls and no
+      # public entry point has to remember to reset shared instance state first.
+      def new_includes
+        { users: {}, media: {}, tweets: {} }
       end
 
-      def build_envelope(data, next_token:)
+      def build_envelope(data, next_token:, includes:)
         meta = {}
         meta["next_token"] = next_token if next_token
         {
           "data" => data,
           "includes" => {
-            "users" => @users.values,
-            "media" => @media.values,
-            "tweets" => @tweets.values
+            "users" => includes[:users].values,
+            "media" => includes[:media].values,
+            "tweets" => includes[:tweets].values
           },
           "meta" => meta
         }
@@ -77,7 +82,8 @@ module Xbookmark
 
       def dig_timeline
         timeline = @payload.dig("data", "bookmark_timeline_v2", "timeline")
-        # Older/alternate operation key.
+        # Defensive fallback to the legacy bookmark_timeline key; not exercised by
+        # the committed fixtures (only by an inline test payload).
         timeline ||= @payload.dig("data", "bookmark_timeline", "timeline")
         timeline if timeline.is_a?(Hash)
       rescue TypeError
@@ -93,7 +99,7 @@ module Xbookmark
         cursor_entry&.dig("content", "value")
       end
 
-      def normalize_tweet_entry(entry)
+      def normalize_tweet_entry(entry, includes)
         content = entry["content"]
         return nil unless content.is_a?(Hash) && content["entryType"] == "TimelineTimelineItem"
 
@@ -101,13 +107,13 @@ module Xbookmark
         return nil unless item.is_a?(Hash) && item["itemType"] == "TimelineTweet"
 
         result = item.dig("tweet_results", "result")
-        result && normalize_tweet_result(result)
+        result && normalize_tweet_result(result, includes)
       end
 
       # Returns the API v2 tweet hash and registers the author, media, and any
       # quoted tweet into includes. Also resolves the inner tweet of a
       # visibility wrapper.
-      def normalize_tweet_result(result)
+      def normalize_tweet_result(result, includes)
         return nil unless result.is_a?(Hash)
 
         tweet = unwrap(result)
@@ -118,9 +124,9 @@ module Xbookmark
         id = tweet["rest_id"] || legacy["id_str"]
         return nil unless id
 
-        register_user(tweet)
-        media_keys = register_media(legacy)
-        quoted_id = register_quoted(tweet, legacy)
+        register_user(tweet, includes)
+        media_keys = register_media(legacy, includes)
+        quoted_id = register_quoted(tweet, legacy, includes)
 
         {
           "id" => id.to_s,
@@ -144,7 +150,7 @@ module Xbookmark
         tweet.dig("core", "user_results", "result", "rest_id") || tweet.dig("legacy", "user_id_str")
       end
 
-      def register_user(tweet)
+      def register_user(tweet, includes)
         user = tweet.dig("core", "user_results", "result")
         return unless user
 
@@ -153,7 +159,7 @@ module Xbookmark
 
         legacy = user["legacy"] || {}
         core = user["core"] || {}
-        @users[rest_id] ||= {
+        includes[:users][rest_id] ||= {
           "id" => rest_id.to_s,
           "username" => core["screen_name"] || legacy["screen_name"],
           "name" => core["name"] || legacy["name"],
@@ -174,15 +180,15 @@ module Xbookmark
         refs
       end
 
-      def register_quoted(tweet, legacy)
+      def register_quoted(tweet, legacy, includes)
         quoted_result = tweet.dig("quoted_status_result", "result")
         quoted_id = legacy["quoted_status_id_str"]
 
         if quoted_result
-          quoted_tweet = normalize_tweet_result(quoted_result)
+          quoted_tweet = normalize_tweet_result(quoted_result, includes)
           if quoted_tweet
             quoted_id ||= quoted_tweet["id"]
-            @tweets[quoted_tweet["id"]] ||= quoted_tweet
+            includes[:tweets][quoted_tweet["id"]] ||= quoted_tweet
           end
         end
         quoted_id
@@ -199,7 +205,7 @@ module Xbookmark
         end
       end
 
-      def register_media(legacy)
+      def register_media(legacy, includes)
         media = legacy.dig("extended_entities", "media")
         media = legacy.dig("entities", "media") if media.nil? || media.empty?
         Array(media).filter_map do |m|
@@ -208,7 +214,7 @@ module Xbookmark
           key = m["media_key"]
           next unless key
 
-          @media[key] ||= normalize_media(m)
+          includes[:media][key] ||= normalize_media(m)
           key
         end
       end
@@ -286,11 +292,15 @@ module Xbookmark
         # convert to millisecond-precision ISO8601 so frontmatter dates match the
         # API v2 path exactly (API v2 emits e.g. "2026-01-01T00:00:00.000Z").
         Time.parse(created_at).utc.iso8601(3)
-      rescue ArgumentError, TypeError
+      rescue ArgumentError, TypeError => e
         # ArgumentError: an unparseable string. TypeError: a non-String value
-        # (e.g. X handing back an Integer epoch) — Time.parse only accepts a
-        # String, so return the value untouched rather than crashing the page.
-        created_at
+        # (e.g. X handing back an Integer epoch). Emitting it verbatim would flow
+        # to PathBuilder#bookmark_date, which re-parses the same bad value and
+        # re-raises — marking the bookmark a permanent error and dropping it
+        # forever. Drop the field instead (it is .compact'd, so simply omitted),
+        # and warn so the swallow is observable.
+        warn "[xbookmark] dropping unparseable created_at #{created_at.inspect}: #{e.class}: #{e.message}"
+        nil
       end
     end
   end

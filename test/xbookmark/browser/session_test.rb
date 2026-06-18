@@ -219,6 +219,29 @@ describe Xbookmark::Browser::Session do
     end
   end
 
+  it "swallows a browser teardown error so it cannot mask the real error" do
+    with_tmp_home do
+      session = build_session
+      browser = session.start
+      browser.stubs(:quit).raises("ferrum dead")
+
+      session.quit # must not raise even when Chromium teardown fails
+      session.quit # still cleared, still a no-op
+    end
+  end
+
+  it "swallows a page-close error during with_page teardown" do
+    with_tmp_home do
+      session = build_session
+      page = FakePage.new
+      page.stubs(:close).raises("close failed")
+      FakeFerrumBrowser.any_instance.stubs(:create_page).returns(page)
+
+      # The block's value returns normally; a failing close must not surface.
+      assert_equal :ok, session.with_page { |_| :ok }
+    end
+  end
+
   it "resolves the real Ferrum::Browser class without launching a browser" do
     # Calling the seam requires the gem; merely naming the constant does not
     # spawn Chromium.

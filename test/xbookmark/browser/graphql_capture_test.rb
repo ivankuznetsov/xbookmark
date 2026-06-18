@@ -102,7 +102,8 @@ describe Xbookmark::Browser::GraphqlCapture do
       FakeExchange.new(url: "https://x.com/i/api/graphql/abc/Bookmarks", body: "{not json", id: 2),
       FakeExchange.new(url: "https://x.com/i/api/graphql/abc/Bookmarks", has_response: false, id: 3)
     ]
-    assert_empty described_class.new(page_with(exchanges)).drain_bookmarks
+    capture = described_class.new(page_with(exchanges))
+    capture_stderr { assert_empty capture.drain_bookmarks }
   end
 
   it "tolerates an exchange whose request url raises" do
@@ -111,7 +112,8 @@ describe Xbookmark::Browser::GraphqlCapture do
   end
 
   it "returns nothing when reading network traffic raises" do
-    assert_empty described_class.new(page_with([], raises: true)).drain_bookmarks
+    capture = described_class.new(page_with([], raises: true))
+    capture_stderr { assert_empty capture.drain_bookmarks }
   end
 
   it "tracks parse and capture failures so the source can tell broken from empty" do
@@ -120,13 +122,14 @@ describe Xbookmark::Browser::GraphqlCapture do
     corrupt = described_class.new(page_with([
       FakeExchange.new(url: "https://x.com/i/api/graphql/abc/Bookmarks", body: "{not json", id: 1)
     ]))
-    assert_empty corrupt.drain_bookmarks
+    err = capture_stderr { assert_empty corrupt.drain_bookmarks }
     assert corrupt.failures?
-    assert_equal 1, corrupt.failures
+    assert_match(/could not parse a GraphQL body/, err)
 
     broken = described_class.new(page_with([], raises: true))
-    assert_empty broken.drain_bookmarks
+    err = capture_stderr { assert_empty broken.drain_bookmarks }
     assert broken.failures?
+    assert_match(/could not read network traffic/, err)
   end
 
   it "re-reads an exchange whose body was empty at first and completes later" do
@@ -147,13 +150,37 @@ describe Xbookmark::Browser::GraphqlCapture do
     refute capture.failures?, "an empty-then-ready body is not a failure"
   end
 
-  it "falls back to object identity when an exchange has no id" do
+  it "counts an exchange with no stable id as a capture failure instead of deduping by object identity" do
+    # Without a stable id we cannot dedup across drains; silently using object
+    # identity could re-yield duplicate pages if Ferrum hands back fresh wrappers.
     no_id = Class.new do
       def request = Struct.new(:url).new("https://x.com/i/api/graphql/abc/Bookmarks")
       def response = Struct.new(:body).new(JSON.generate({ "cursor" => "c1" }))
     end.new
     capture = described_class.new(page_with([no_id]))
-    assert_equal ["c1"], capture.drain_bookmarks.map { |b| b["cursor"] }
-    assert_empty capture.drain_bookmarks
+    err = capture_stderr { assert_empty capture.drain_bookmarks }
+    assert capture.failures?, "a no-id exchange is a capture failure, not a silently-deduped page"
+    assert_match(/no stable id/, err)
+  end
+
+  it "does not re-yield a completed exchange that sits behind a still-pending one" do
+    # A (pending until its 3rd read) precedes B (ready immediately). B must be
+    # returned exactly once even though A keeps blocking the high-water mark.
+    pending_then_ready = Class.new do
+      def initialize = @reads = 0
+      def request = Struct.new(:url).new("https://x.com/i/api/graphql/abc/Bookmarks")
+      def id = 1
+
+      def response
+        @reads += 1
+        Struct.new(:body).new(@reads >= 3 ? JSON.generate({ "cursor" => "a" }) : "")
+      end
+    end.new
+    b = FakeExchange.new(url: "https://x.com/i/api/graphql/abc/Bookmarks", body: gql("b"), id: 2)
+    capture = described_class.new(page_with([pending_then_ready, b]))
+
+    assert_equal ["b"], capture.drain_bookmarks.map { |x| x["cursor"] }, "B is returned once on the first drain"
+    assert_empty capture.drain_bookmarks, "B is not re-yielded while A is still pending"
+    assert_equal ["a"], capture.drain_bookmarks.map { |x| x["cursor"] }, "A is returned once it completes"
   end
 end

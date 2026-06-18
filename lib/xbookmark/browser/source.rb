@@ -19,7 +19,10 @@ module Xbookmark
     #
     # Lifecycle: the browser is built lazily and kept alive across calls (so a
     # backfill that fetches many single tweets does not cold-start Chromium per
-    # tweet). The Sync::Runner calls #close once it is done with the source.
+    # tweet). #bookmarks is the terminal sync operation — it quits the session in
+    # its own `ensure`, so a daily run never leaves Chromium resident — and the
+    # Sync::Runner calls #close (an idempotent backstop that also covers the
+    # resync/get_tweet-only path) once it is done with the source.
     class Source
       # Single definition lives in Session; aliased here for the public/test API.
       BOOKMARKS_URL = Session::BOOKMARKS_URL
@@ -40,6 +43,8 @@ module Xbookmark
       DEFAULT_PAGE_SIZE = Xbookmark::X::Client::BOOKMARK_PAGE_SIZE
 
       def initialize(config:, session: nil)
+        raise ArgumentError, "config required" if config.nil?
+
         @config = config
         @session = session
       end
@@ -85,12 +90,16 @@ module Xbookmark
         session.with_page do |page|
           page.go_to(tweet_url(id))
           guard_session!(page)
-          settle(page)
+          settled = settle(page)
 
           capture = GraphqlCapture.new(page)
           gql = capture.drain_tweets.last
           unless gql
-            raise TransientError, "browser capture failed for tweet #{id}" if capture.failures?
+            # A captured tweet is returned even when the settle stalled (the body
+            # was already drained), but with nothing captured a stalled/failed
+            # load is transient — reserve the permanent SourceUnavailable for a
+            # clean settle that simply produced no tweet.
+            raise TransientError, "browser capture failed for tweet #{id}" if capture.failures? || !settled
 
             raise SourceUnavailable, "tweet #{id} unavailable via browser source"
           end
@@ -117,13 +126,21 @@ module Xbookmark
 
       def walk_timeline(page)
         capture = GraphqlCapture.new(page)
-        seen_cursor = nil
+        # Track every cursor we've advanced through, not just the last one: a
+        # cursor *cycle* of period > 1 (c1,c2,c1,c2,…) would defeat a single-slot
+        # check and re-yield duplicate pages until the iteration cap, burning the
+        # whole RuntimeMaxSec window. Break on any repeat instead.
+        seen_cursors = {}
         empty_rounds = 0
         pages = 0
         stalled = false
         normalize_failed = false
+        missing_cursor = false
 
-        MAX_TIMELINE_ITERATIONS.times do
+        # The loop returns the iteration count on natural completion and nil when
+        # any `break` fires, so a walk that exhausts the cap while still advancing
+        # is distinguishable from one that stopped on a real terminal condition.
+        completed = MAX_TIMELINE_ITERATIONS.times do
           settled = settle(page)
           stalled ||= !settled
           responses = capture.drain_bookmarks
@@ -138,33 +155,47 @@ module Xbookmark
 
           empty_rounds = 0
           pages += responses.size
-          cursor = seen_cursor
+          page_cursor = nil
           responses.each do |gql|
             envelope, ok = normalize_page(gql)
             normalize_failed ||= !ok
             yield envelope
-            cursor = envelope.dig("meta", "next_token") || cursor
+            page_cursor = envelope.dig("meta", "next_token") || page_cursor
           end
 
-          break if cursor.nil? || cursor == seen_cursor
+          # A data-bearing page that exposed no Bottom cursor cannot be advanced
+          # and is not a trustworthy end-of-history (X always emits a Bottom
+          # cursor, even on the last page where it merely repeats) — flag it so
+          # the walk surfaces a transient stop rather than sealing a possibly
+          # truncated backfill as complete.
+          if page_cursor.nil?
+            missing_cursor = true
+            break
+          end
 
-          seen_cursor = cursor
+          break if seen_cursors.key?(page_cursor)
+
+          seen_cursors[page_cursor] = true
           scroll(page)
         end
 
-        finish_walk(pages, empty_rounds, capture, stalled, normalize_failed)
+        finish_walk(pages: pages, empty_rounds: empty_rounds, capture: capture, stalled: stalled,
+                    normalize_failed: normalize_failed, missing_cursor: missing_cursor,
+                    hit_iteration_cap: !completed.nil?)
       end
 
       # Interpret how the walk ended. An authenticated bookmarks page always
       # issues at least one Bookmarks query (an empty list still returns an empty
       # timeline), so zero captured responses means the page never queried
-      # bookmarks: a transient capture/stall (retry) or an expired/checkpointed
-      # session served at the same URL (re-login). When some pages came through
-      # but we stopped on empty rounds, warn that the tail may be incomplete
-      # rather than silently treating a truncated timeline as exhausted.
-      def finish_walk(pages, empty_rounds, capture, stalled, normalize_failed)
+      # bookmarks: a transient capture/stall (retry), a Bookmarks request that was
+      # observed but never filled (retry), or an expired/checkpointed session
+      # served at the same URL with no Bookmarks query at all (re-login). Any
+      # suspicious stop after at least one page is surfaced as transient so a
+      # backfill records a source error and retries instead of sealing a possibly
+      # truncated history as complete.
+      def finish_walk(pages:, empty_rounds:, capture:, stalled:, normalize_failed:, missing_cursor:, hit_iteration_cap:)
         if pages.zero?
-          if capture.failures? || stalled
+          if capture.failures? || stalled || capture.observed?
             raise TransientError, "browser bookmarks capture failed; will retry next run"
           end
 
@@ -182,13 +213,32 @@ module Xbookmark
                 "browser bookmarks page failed to normalize; history tail may be incomplete, will retry next run"
         end
 
-        # A clean settled empty-rounds stop is just end-of-history; only warn when
-        # the stop is suspicious (the page stalled, or a capture failed), which is
-        # the case that could silently truncate the tail of the timeline.
+        # A data-bearing page that exposed no pagination cursor is an untrustworthy
+        # end-of-history; retry rather than seal a possibly truncated backfill.
+        if missing_cursor
+          raise TransientError,
+                "browser bookmarks page yielded items but exposed no pagination cursor; " \
+                "history tail may be incomplete, will retry next run"
+        end
+
+        # Ran out of the iteration budget while the cursor was still advancing —
+        # practically unreachable, but mirror the other guards so the backstop is
+        # belt-and-suspenders rather than silently sealing a truncated backfill.
+        if hit_iteration_cap
+          raise TransientError,
+                "browser timeline walk hit the #{MAX_TIMELINE_ITERATIONS}-iteration cap before " \
+                "reaching end-of-history; will retry next run"
+        end
+
+        # A clean settled empty-rounds stop is just end-of-history; only the
+        # suspicious stop (the page stalled, or a capture failed) could silently
+        # truncate the tail — surface it as transient so the run records a source
+        # error and retries rather than sealing the backfill as complete.
         return unless empty_rounds > MAX_EMPTY_ROUNDS && (stalled || capture.failures?)
 
-        warn "[xbookmark] browser timeline walk stopped after #{MAX_EMPTY_ROUNDS} empty scroll rounds while the " \
-             "page was unsettled; the bookmark history tail may be incomplete and will be retried next run."
+        raise TransientError,
+              "browser timeline walk stopped after #{empty_rounds} empty scroll rounds while the page was " \
+              "unsettled or a capture failed; the bookmark history tail may be incomplete, will retry next run"
       end
 
       # Normalize one captured page, isolating a malformed page to an empty
@@ -199,7 +249,7 @@ module Xbookmark
         [Normalizer.new(gql).envelope, true]
       rescue StandardError => e
         warn "[xbookmark] skipping a malformed bookmarks page: #{e.class}: #{e.message}"
-        [{ "data" => [], "includes" => { "users" => [], "media" => [], "tweets" => [] }, "meta" => {} }, false]
+        [Normalizer.empty_envelope, false]
       end
 
       def guard_session!(page)

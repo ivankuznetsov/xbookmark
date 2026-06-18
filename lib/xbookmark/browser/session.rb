@@ -25,11 +25,13 @@ module Xbookmark
 
       # True when a navigated URL is a login / checkpoint interstitial rather
       # than the page we asked for. Shared by the bookmarks probe and the
-      # source's per-navigation guard.
+      # source's per-navigation guard. An empty/blank URL is deliberately NOT a
+      # login redirect: "the page never navigated / CDP returned nothing" is a
+      # transient condition, and treating it as expired would fire a spurious
+      # re-login on a still-valid session. It still fails `authenticated_url?`, so
+      # the logged_in? probe stays correctly negative.
       def self.login_redirect?(url)
         normalized = url.to_s
-        return true if normalized.empty?
-
         UNAUTHENTICATED_MARKERS.any? { |marker| normalized.include?(marker) }
       end
 
@@ -38,6 +40,21 @@ module Xbookmark
       # and `auth status` so they never have to launch Chromium to report.
       def self.profile_saved?(dir = Xbookmark::Paths.browser_profile_dir)
         File.directory?(dir) && !Dir.empty?(dir)
+      end
+
+      # Re-asserts 0700 on the profile dir (and its parent config dir). The
+      # profile holds the live X session cookies — strictly more powerful than the
+      # OAuth token — so a profile restored/copied with looser permissions stays
+      # world-traversable until the next launch. A chmod launches no browser, so
+      # `doctor`/`auth status` can re-harden on the browser-free diagnostic path.
+      # Returns true when it hardened an existing dir, false when none exists.
+      def self.secure_profile_dir!(dir = Xbookmark::Paths.browser_profile_dir)
+        return false unless File.directory?(dir)
+
+        parent = File.dirname(dir)
+        FileUtils.chmod(0o700, parent) if File.directory?(parent)
+        FileUtils.chmod(0o700, dir)
+        true
       end
 
       def initialize(config:, headless: true, browser_class: nil, chromium_path: nil)
@@ -62,9 +79,16 @@ module Xbookmark
         @browser ||= build_browser
       end
 
-      # Closes the browser and releases the profile lock.
+      # Closes the browser and releases the profile lock. Teardown is guarded: a
+      # Ferrum error while tearing down an already-crashed Chromium must never
+      # replace an already-classified SessionExpired/TransientError on the way
+      # out (which would escape SOURCE_BLOCK_ERRORS and abort a multi-source run
+      # instead of isolating the browser source). @browser is always cleared.
       def quit
         @browser&.quit
+      rescue StandardError
+        # Swallow teardown failures so they can't mask the real error.
+      ensure
         @browser = nil
       end
 
@@ -74,7 +98,11 @@ module Xbookmark
         page = start.create_page
         yield page
       ensure
-        page&.close
+        begin
+          page&.close
+        rescue StandardError
+          # Same rationale as #quit: never let page teardown mask the real error.
+        end
       end
 
       # Opens a persistent page at `url` and returns it (not closed) so a human
@@ -132,14 +160,9 @@ module Xbookmark
         }
       end
 
-      # The profile holds the live X session cookies — strictly more powerful
-      # than the OAuth token — so lock it (and its parent config dir) to 0700 so
-      # another local user on a shared host cannot read or hijack the session.
       def prepare_profile_dir!
         FileUtils.mkdir_p(profile_dir, mode: 0o700)
-        parent = File.dirname(profile_dir)
-        FileUtils.chmod(0o700, parent) if File.directory?(parent)
-        FileUtils.chmod(0o700, profile_dir)
+        self.class.secure_profile_dir!(profile_dir)
       end
 
       def raise_missing_chromium

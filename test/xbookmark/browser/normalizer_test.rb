@@ -101,6 +101,17 @@ describe Xbookmark::Browser::Normalizer do
       api.find { |b| b.tweet_id == "1003" }.quoted_tweet["text"],
       browser.find { |b| b.tweet_id == "1003" }.quoted_tweet["text"]
     )
+
+    # AC4: the video (1002) must round-trip its picked variant, preview image,
+    # and duration identically. media.url is nil for video on both paths, so the
+    # url-parity assertion above is vacuous for it — compare the fields that
+    # actually carry the video so a regression on the browser path would fail.
+    a_video = api.find { |b| b.tweet_id == "1002" }.media.first
+    b_video = browser.find { |b| b.tweet_id == "1002" }.media.first
+    assert_equal a_video.preview_image_url, b_video.preview_image_url, "video preview_image_url parity"
+    assert_equal a_video.duration_ms, b_video.duration_ms, "video duration_ms parity"
+    assert_equal Xbookmark::Media::VariantPicker.best_video_url(a_video),
+                 Xbookmark::Media::VariantPicker.best_video_url(b_video), "video picked-variant parity"
   end
 
   # ---- pagination / cursor edge cases ----
@@ -223,6 +234,21 @@ describe Xbookmark::Browser::Normalizer do
     assert_equal %w[p9], env["includes"]["media"].map { |m| m["media_key"] }
   end
 
+  it "falls back to entities.media when extended_entities.media is present but empty" do
+    result = {
+      "__typename" => "Tweet",
+      "rest_id" => "2005",
+      "legacy" => {
+        "id_str" => "2005", "full_text" => "t", "created_at" => "Thu Jan 01 00:00:00 +0000 2026",
+        "extended_entities" => { "media" => [] },
+        "entities" => { "media" => [{ "media_key" => "p10", "type" => "photo", "media_url_https" => "https://x/e2.jpg" }] }
+      }
+    }
+    env = single_entry_envelope(result)
+    assert_equal %w[p10], env["includes"]["media"].map { |m| m["media_key"] }
+    assert_equal %w[p10], env["data"].first["attachments"]["media_keys"]
+  end
+
   it "references a quoted id without an object and derives the id from the quoted result" do
     no_object = {
       "__typename" => "Tweet", "rest_id" => "3001",
@@ -322,20 +348,26 @@ describe Xbookmark::Browser::Normalizer do
     assert_empty env["includes"]["tweets"]
   end
 
-  it "returns a non-String created_at untouched instead of raising TypeError" do
+  it "omits a non-String created_at instead of raising TypeError or emitting a non-ISO8601 value" do
     result = {
       "__typename" => "Tweet", "rest_id" => "4",
       "legacy" => { "id_str" => "4", "full_text" => "t", "created_at" => 1_735_689_600 }
     }
-    assert_equal 1_735_689_600, single_entry_envelope(result)["data"].first["created_at"]
+    env = nil
+    capture_stderr { env = single_entry_envelope(result) }
+    refute env["data"].first.key?("created_at"),
+           "a non-ISO8601 created_at would later mark the bookmark a permanent error, so drop it"
   end
 
-  it "leaves an unparseable created_at untouched" do
+  it "omits an unparseable created_at and warns" do
     result = {
       "__typename" => "Tweet", "rest_id" => "4001",
       "legacy" => { "id_str" => "4001", "full_text" => "t", "created_at" => "not-a-date" }
     }
-    assert_equal "not-a-date", single_entry_envelope(result)["data"].first["created_at"]
+    env = nil
+    err = capture_stderr { env = single_entry_envelope(result) }
+    refute env["data"].first.key?("created_at")
+    assert_match(/dropping unparseable created_at/, err)
   end
 
   it "omits created_at when the source has none" do

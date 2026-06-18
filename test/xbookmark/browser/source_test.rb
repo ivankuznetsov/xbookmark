@@ -85,6 +85,47 @@ class GappyTimelinePage
   end
 end
 
+# A timeline whose Bottom cursor strictly advances on every scroll and never
+# repeats, so the walk can only terminate by hitting MAX_TIMELINE_ITERATIONS.
+# Traffic is cumulative (append-only), mirroring the real CDP buffer.
+class StrictlyAdvancingPage
+  attr_reader :scrolls
+
+  def initialize
+    @scrolls = 0
+    @current_url = Xbookmark::Browser::Source::BOOKMARKS_URL
+    @exchanges = [make(0)]
+  end
+
+  def go_to(_) = nil
+  def current_url = @current_url
+  def network = self
+  def wait_for_idle = nil
+  def traffic = @exchanges
+
+  def execute(_)
+    @scrolls += 1
+    @exchanges << make(@exchanges.size)
+    nil
+  end
+
+  private
+
+  def make(i)
+    body = JSON.generate({ "data" => { "bookmark_timeline_v2" => { "timeline" => { "instructions" => [
+      { "type" => "TimelineAddEntries", "entries" => [
+        { "content" => { "entryType" => "TimelineTimelineItem", "itemContent" => {
+          "itemType" => "TimelineTweet", "tweet_results" => { "result" => {
+            "__typename" => "Tweet", "rest_id" => "t#{i}",
+            "legacy" => { "id_str" => "t#{i}", "full_text" => "t", "created_at" => "Thu Jan 01 00:00:00 +0000 2026" }
+          } } } } },
+        { "content" => { "entryType" => "TimelineTimelineCursor", "cursorType" => "Bottom", "value" => "c#{i}" } }
+      ] }
+    ] } } } })
+    StubXchg.new("https://x.com/i/api/graphql/abc/Bookmarks?p=#{i}", body, i)
+  end
+end
+
 class StubSession
   attr_reader :quits
 
@@ -122,6 +163,20 @@ describe Xbookmark::Browser::Source do
     } } } })
   end
 
+  # Temporarily shrinks the hard iteration cap so the backstop can be exercised
+  # without a 10_000-iteration walk. remove_const first avoids a redefinition
+  # warning.
+  def with_max_timeline_iterations(count)
+    klass = Xbookmark::Browser::Source
+    original = klass::MAX_TIMELINE_ITERATIONS
+    klass.send(:remove_const, :MAX_TIMELINE_ITERATIONS)
+    klass.const_set(:MAX_TIMELINE_ITERATIONS, count)
+    yield
+  ensure
+    klass.send(:remove_const, :MAX_TIMELINE_ITERATIONS)
+    klass.const_set(:MAX_TIMELINE_ITERATIONS, original)
+  end
+
   it "walks the timeline by scrolling and stops when the cursor stops advancing" do
     bodies = [
       bookmarks_body(ids: %w[1], cursor: "c1"),
@@ -142,7 +197,10 @@ describe Xbookmark::Browser::Source do
     assert_equal [Xbookmark::Browser::Source::BOOKMARKS_URL], page.visited
   end
 
-  it "stops the walk when a page exposes no further cursor" do
+  it "raises a transient error when a data-bearing page exposes no Bottom cursor" do
+    # X always emits a Bottom cursor (it merely repeats at end-of-history), so a
+    # page that yielded tweets but exposed none is an untrustworthy stop — yield
+    # the data but surface a transient error so backfill is not sealed complete.
     no_cursor = JSON.generate({ "data" => { "bookmark_timeline_v2" => { "timeline" => {
       "instructions" => [{ "type" => "TimelineAddEntries", "entries" => [
         { "content" => { "entryType" => "TimelineTimelineItem", "itemContent" => {
@@ -158,10 +216,10 @@ describe Xbookmark::Browser::Source do
     source = described_class.new(config: config, session: session)
 
     yielded = []
-    source.bookmarks { |env| yielded << env }
-
-    assert_equal 1, yielded.size
-    assert_equal 0, page.scrolls
+    assert_raises(Xbookmark::TransientError) { source.bookmarks { |env| yielded << env } }
+    assert_equal 1, yielded.size, "the page's data is still yielded before the transient stop"
+    assert_equal 0, page.scrolls, "a missing cursor stops the walk without further scrolling"
+    assert_equal 1, session.quits
   end
 
   it "raises SessionExpired when no Bookmarks response is ever captured (checkpointed session)" do
@@ -197,7 +255,9 @@ describe Xbookmark::Browser::Source do
   it "yields an empty page for a malformed page but surfaces a transient error so backfill is not marked complete" do
     page = StubTimelinePage.new([bookmarks_body(ids: %w[1], cursor: "c1")])
     source = described_class.new(config: config, session: StubSession.new(page))
-    Xbookmark::Browser::Normalizer.any_instance.stubs(:envelope).raises("boom")
+    # Crash normalization of a data-bearing page; the empty-envelope fallback
+    # (a nil-payload Normalizer) has no entries to normalize, so it still works.
+    Xbookmark::Browser::Normalizer.any_instance.stubs(:normalize_tweet_entry).raises("boom")
 
     yielded = []
     err = capture_stderr do
@@ -245,6 +305,37 @@ describe Xbookmark::Browser::Source do
     assert_raises(Xbookmark::TransientError) { source.bookmarks { |_| flunk "no page expected" } }
   end
 
+  it "raises TransientError when a captured Bookmarks body fails to parse (transient, not expired)" do
+    # A clean settle (not stalled) plus a corrupt Bookmarks body must drive the
+    # capture.failures? && !stalled branch of finish_walk → transient, not a
+    # spurious re-login.
+    page = StubTimelinePage.new(["{bad json"], url_kind: :bookmarks)
+    source = described_class.new(config: config, session: StubSession.new(page))
+
+    capture_stderr do
+      assert_raises(Xbookmark::TransientError) { source.bookmarks { |_| flunk "no page expected" } }
+    end
+  end
+
+  it "raises TransientError when a Bookmarks request is observed but never fills (transient, not expired)" do
+    # A Bookmarks exchange whose body stays empty was observed but never filled —
+    # transient, distinct from a session that issued no Bookmarks query at all.
+    page = StubTimelinePage.new([""], url_kind: :bookmarks)
+    source = described_class.new(config: config, session: StubSession.new(page))
+
+    assert_raises(Xbookmark::TransientError) { source.bookmarks { |_| flunk "no page expected" } }
+  end
+
+  it "terminates at the iteration cap when the cursor never stops advancing" do
+    page = StrictlyAdvancingPage.new
+    source = described_class.new(config: config, session: StubSession.new(page))
+
+    with_max_timeline_iterations(5) do
+      assert_raises(Xbookmark::TransientError) { source.bookmarks { |_env| } }
+    end
+    assert_equal 5, page.scrolls, "the hard cap bounds the walk instead of letting it run unbounded"
+  end
+
   it "raises SessionExpired when the bookmarks page redirects to login" do
     page = StubTimelinePage.new([bookmarks_body(ids: %w[1], cursor: "c1")],
                                 current_url: "https://x.com/i/flow/login")
@@ -255,15 +346,16 @@ describe Xbookmark::Browser::Source do
     assert_equal 1, session.quits
   end
 
-  it "tolerates wait_for_idle timeouts while settling" do
+  it "raises a transient error when an unsettled walk stops on empty rounds (possible truncation)" do
     page = StubTimelinePage.new([bookmarks_body(ids: %w[1], cursor: "c1")], wait_raises: true)
     session = StubSession.new(page)
     source = described_class.new(config: config, session: session)
 
     yielded = []
-    err = capture_stderr { source.bookmarks { |env| yielded << env } }
-    assert_equal 1, yielded.size
-    assert_match(/history tail may be incomplete/, err, "an unsettled empty-rounds stop warns about possible truncation")
+    error = assert_raises(Xbookmark::TransientError) { source.bookmarks { |env| yielded << env } }
+    assert_equal 1, yielded.size, "the good page is still yielded before the transient stop"
+    assert_match(/history tail may be incomplete/, error.message)
+    assert_equal 1, session.quits
   end
 
   it "returns an Enumerator without building or quitting a session when called without a block" do
@@ -292,6 +384,10 @@ describe Xbookmark::Browser::Source do
 
   it "closes nothing when the source was never used" do
     assert_nil described_class.new(config: config).close
+  end
+
+  it "fails fast when constructed without a config" do
+    assert_raises(ArgumentError) { described_class.new(config: nil) }
   end
 
   it "builds a headless Session from config when none is injected" do
@@ -332,6 +428,26 @@ describe Xbookmark::Browser::Source do
     assert_equal 1, session.quits
   end
 
+  it "returns the captured tweet from get_tweet even when the settle stalls" do
+    # A slow single-tweet load whose body was nonetheless captured must still be
+    # returned — the stall only matters when nothing was captured.
+    page = StubTimelinePage.new([tweet_detail_body("777")], url_kind: :tweet, wait_raises: true)
+    source = described_class.new(config: config, session: StubSession.new(page))
+
+    payload = source.get_tweet("777")
+
+    assert_equal "777", payload["data"]["id"]
+  end
+
+  it "raises TransientError from get_tweet when a stalled settle captured nothing" do
+    # Nothing captured + a stalled settle is transient (retryable), not a
+    # permanent SourceUnavailable.
+    page = StubTimelinePage.new([JSON.generate({ "data" => {} })], url_kind: :bookmarks, wait_raises: true)
+    source = described_class.new(config: config, session: StubSession.new(page))
+
+    assert_raises(Xbookmark::TransientError) { source.get_tweet("404") }
+  end
+
   it "raises SourceUnavailable from get_tweet when no tweet is present in the capture" do
     page = StubTimelinePage.new([JSON.generate({ "data" => {} })], url_kind: :tweet)
     source = described_class.new(config: config, session: StubSession.new(page))
@@ -359,7 +475,9 @@ describe Xbookmark::Browser::Source do
     page = StubTimelinePage.new(["{bad json"], url_kind: :tweet)
     source = described_class.new(config: config, session: StubSession.new(page))
 
-    assert_raises(Xbookmark::TransientError) { source.get_tweet("9") }
+    capture_stderr do
+      assert_raises(Xbookmark::TransientError) { source.get_tweet("9") }
+    end
   end
 
   it "maps an unexpected browser error during get_tweet to TransientError" do
