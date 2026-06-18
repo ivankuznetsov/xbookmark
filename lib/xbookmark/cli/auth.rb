@@ -102,11 +102,14 @@ module Xbookmark
         exit 1
       end
 
-      # Returns true when a browser session profile is present.
+      # Returns true when a browser session profile has been persisted. This is a
+      # browser-free file check (Session.profile_saved?), so it cannot vouch the
+      # session is still logged in — say so rather than implying readiness.
       def browser_status
         require_relative "../browser/session"
         if Xbookmark::Browser::Session.profile_saved?
-          puts "browser session: present (#{Xbookmark::Paths.browser_profile_dir})"
+          puts "browser session: profile saved but unverified (#{Xbookmark::Paths.browser_profile_dir}); " \
+               "validity is confirmed at next sync"
           true
         else
           puts "browser session: none — run `xbookmark auth login --browser`"

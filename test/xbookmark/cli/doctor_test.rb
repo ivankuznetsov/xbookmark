@@ -107,7 +107,8 @@ describe Xbookmark::CLI::Doctor do
     assert_match(/^source: api/, out)
     assert_match(%r{chromium: ok \(/usr/bin/chromium\)}, out)
     assert_match(/browser profile: /, out)
-    assert_match(/browser session: saved/, out)
+    assert_match(/browser session: profile saved but unverified/, out)
+    assert_match(/validity is confirmed at next sync/, out)
   end
 
   it "does not nag about API login when the source is browser-only" do

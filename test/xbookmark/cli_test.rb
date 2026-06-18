@@ -321,7 +321,8 @@ describe Xbookmark::CLI do
     out = capture_stdout { Xbookmark::CLI::Auth.start(%w[status]) }
 
     assert_includes out, "source: browser"
-    assert_includes out, "browser session: present"
+    assert_includes out, "browser session: profile saved but unverified"
+    assert_includes out, "validity is confirmed at next sync"
     refute_includes out, "Not logged in"
   end
 

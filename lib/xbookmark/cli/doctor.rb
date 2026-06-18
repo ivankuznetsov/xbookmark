@@ -90,7 +90,9 @@ module Xbookmark
         profile = Xbookmark::Paths.browser_profile_dir
         say "browser profile: #{profile}"
         if Xbookmark::Browser::Session.profile_saved?(profile)
-          say "browser session: saved"
+          # profile_saved? is a browser-free file check, so it cannot confirm the
+          # session is still logged in; don't imply readiness here.
+          say "browser session: profile saved but unverified (validity is confirmed at next sync)"
         else
           say "browser session: not set up (run: xbookmark auth login --browser)"
         end
