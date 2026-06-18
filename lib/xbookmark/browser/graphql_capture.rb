@@ -67,24 +67,28 @@ module Xbookmark
 
       # Parsed JSON bodies of Bookmarks GraphQL responses not yet returned.
       def drain_bookmarks
-        drain { |url| bookmarks_url?(url) }
+        drain(:bookmarks) { |url| bookmarks_url?(url) }
       end
 
       # Parsed JSON bodies of single-tweet GraphQL responses not yet returned.
       def drain_tweets
-        drain { |url| tweet_url?(url) }
+        drain(:tweets) { |url| tweet_url?(url) }
       end
 
       private
 
-      def drain
+      # `family` namespaces the @seen dedup key (see #exchange_key): the bookmarks
+      # and tweet drains share the cumulative CDP buffer, so a CDP id reused across
+      # the two operation families would otherwise let a real response be silently
+      # classified :seen and dropped (a truncation, not a crash).
+      def drain(family)
         buffer = traffic
         results = []
         high_water = @scanned
         blocked = false
         index = @scanned
         while index < buffer.size
-          state, parsed = classify(buffer[index]) { |url| yield url }
+          state, parsed = classify(buffer[index], family) { |url| yield url }
           results << parsed if state == :parsed
           # Advance the high-water mark only across the leading run of settled
           # exchanges; a matching exchange whose body has not arrived yet
@@ -114,12 +118,12 @@ module Xbookmark
       #   :failed  — our operation, but unusable (no stable id, or a non-empty body
       #              that would not parse) — tallied as a capture failure
       #   :parsed  — our operation, freshly parsed (the second element is the body)
-      def classify(exchange)
+      def classify(exchange, family)
         url = exchange_url(exchange)
         return [:ignore, nil] unless url && yield(url)
 
         @observed = true
-        key = exchange_key(exchange)
+        key = exchange_key(exchange, family)
         if key.nil?
           # Without a stable id we cannot dedup across drains, so silently falling
           # back to a per-call object identity could re-yield duplicate pages if
@@ -137,7 +141,15 @@ module Xbookmark
         return [:pending, nil] if body.to_s.empty?
 
         parsed = parse(body)
-        return [:failed, nil] if parsed.nil?
+        if parsed.nil?
+          # A non-empty body that won't parse will never become usable, so mark it
+          # seen — otherwise a parse-failed exchange sitting behind a still-pending
+          # one is re-classified and re-warns on every drain until the pending one
+          # resolves, spamming the unattended run log. failures? is already set, so
+          # the run's classification is unchanged; this only stops the duplicate warn.
+          @seen[key] = true
+          return [:failed, nil]
+        end
 
         @seen[key] = true
         [:parsed, parsed]
@@ -194,8 +206,11 @@ module Xbookmark
         nil
       end
 
-      def exchange_key(exchange)
-        exchange.id if exchange.respond_to?(:id)
+      def exchange_key(exchange, family)
+        # Namespace by operation family so a CDP id collision across the bookmarks
+        # and tweet drains cannot make one family's response dedup against the
+        # other's (which would silently drop a real response).
+        [family, exchange.id] if exchange.respond_to?(:id)
       end
 
       def parse(body)
@@ -210,6 +225,12 @@ module Xbookmark
       end
 
       def response_body(exchange)
+        # Unguarded on purpose, unlike the tally+warn siblings (traffic/exchange_url/
+        # parse): a raising exchange.response.body aborts the drain and maps the
+        # whole source to TransientError upstream (a retry), which is safer than
+        # rescuing and mis-classifying one bad exchange as merely empty/failed while
+        # sealing the rest of a possibly-truncated walk as complete. Do not add a
+        # rescue here.
         exchange.response&.body
       end
     end
