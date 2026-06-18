@@ -27,8 +27,23 @@ describe Xbookmark::Sources::Factory do
     assert_equal [Xbookmark::X::Client, Xbookmark::Browser::Source], sources.map(&:class)
   end
 
-  it "treats an unrecognized/nil source as api (defensive default)" do
-    sources = described_class.build(config: config(nil), store: store)
-    assert_equal [Xbookmark::X::Client], sources.map(&:class)
+  it "raises ConfigError for an unrecognized source instead of silently defaulting to api" do
+    error = assert_raises(Xbookmark::ConfigError) { described_class.build(config: config("nonsense"), store: store) }
+    assert_match(/Unknown source/, error.message)
+  end
+
+  it "only returns sources that satisfy the bookmark-source contract" do
+    [config("api"), config("browser"), config("both")].each do |cfg|
+      described_class.build(config: cfg, store: store).each do |source|
+        assert_respond_to source, :bookmarks
+        assert_respond_to source, :get_tweet
+      end
+    end
+  end
+
+  it "rejects a source that does not satisfy the contract" do
+    described_class.stubs(:api_source).returns(Object.new)
+    error = assert_raises(Xbookmark::ConfigError) { described_class.build(config: config("api"), store: store) }
+    assert_match(/does not satisfy the bookmark-source contract/, error.message)
   end
 end

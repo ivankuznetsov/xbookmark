@@ -33,15 +33,42 @@ module Xbookmark
     module Factory
       module_function
 
+      # The duck-typed method names every source must answer (the prose contract
+      # above, made enforceable). get_tweet_any in the Runner fully trusts these.
+      CONTRACT_METHODS = %i[bookmarks get_tweet].freeze
+
       def build(config:, store:)
+        sources = sources_for(config, store)
+        sources.each { |source| verify_contract!(source) }
+        sources
+      end
+
+      def sources_for(config, store)
         case config.source
         when Xbookmark::Config::SOURCE_BROWSER
           [browser_source(config)]
         when Xbookmark::Config::SOURCE_BOTH
           [api_source(config, store), browser_source(config)]
-        else
+        when Xbookmark::Config::SOURCE_API
           [api_source(config, store)]
+        else
+          # A post-load-mutated or otherwise unexpected source must fail loudly
+          # rather than silently defaulting to the API source.
+          raise Xbookmark::ConfigError,
+                "Unknown source #{config.source.inspect}; expected one of: " \
+                "#{Xbookmark::Config::VALID_SOURCES.join(", ")}."
         end
+      end
+
+      # Guards the never-nil/duck-typed source contract at construction so
+      # X::Client and Browser::Source can't silently drift on the interface the
+      # Runner trusts.
+      def verify_contract!(source)
+        missing = CONTRACT_METHODS.reject { |method| source.respond_to?(method) }
+        return if missing.empty?
+
+        raise Xbookmark::ConfigError,
+              "source #{source.class} does not satisfy the bookmark-source contract (missing: #{missing.join(", ")})"
       end
 
       def api_source(config, store)
