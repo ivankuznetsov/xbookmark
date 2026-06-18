@@ -157,7 +157,14 @@ module Xbookmark
 
       def exchange_url(exchange)
         exchange.request&.url
-      rescue StandardError
+      rescue StandardError => e
+        # A genuine next-page request whose url momentarily can't be read would
+        # otherwise be silently classified :ignore — invisible, and (if the round
+        # also settled cleanly) able to let walk_timeline reach a falsely-complete
+        # end-of-history and seal a truncated backfill. Warn and tally so it is
+        # observable, matching the sibling swallows (traffic/parse/missing-id).
+        warn "[xbookmark] browser capture could not read a GraphQL request url: #{e.class}: #{e.message}"
+        @failures += 1
         nil
       end
 

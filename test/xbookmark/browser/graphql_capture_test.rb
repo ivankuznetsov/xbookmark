@@ -106,14 +106,53 @@ describe Xbookmark::Browser::GraphqlCapture do
     capture_stderr { assert_empty capture.drain_bookmarks }
   end
 
-  it "tolerates an exchange whose request url raises" do
+  it "tallies an exchange whose request url cannot be read as a capture failure" do
+    # An unreadable request url on a genuine next-page request must not be
+    # silently classified :ignore — that could let a clean round look like
+    # end-of-history and seal a truncated backfill. Surface it like the siblings.
     exchanges = [FakeExchange.new(url: "x", body: gql("c1"), id: 1, request_raises: true)]
-    assert_empty described_class.new(page_with(exchanges)).drain_bookmarks
+    capture = described_class.new(page_with(exchanges))
+    err = capture_stderr { assert_empty capture.drain_bookmarks }
+    assert capture.failures?, "an unreadable request url is surfaced, not silently ignored"
+    assert_match(/could not read a GraphQL request url/, err)
   end
 
   it "returns nothing when reading network traffic raises" do
     capture = described_class.new(page_with([], raises: true))
     capture_stderr { assert_empty capture.drain_bookmarks }
+  end
+
+  it "flags observed? once a matching exchange is seen even with an empty body" do
+    # finish_walk's transient-vs-expired classification keys off observed?: a
+    # Bookmarks request seen but never filled is transient, not an expired
+    # session that issued no Bookmarks query at all.
+    capture = described_class.new(page_with([
+      FakeExchange.new(url: "https://x.com/i/api/graphql/abc/Bookmarks", body: "", id: 1)
+    ]))
+    refute capture.observed?, "nothing observed before the first drain"
+    assert_empty capture.drain_bookmarks
+    assert capture.observed?, "a matching exchange was observed even though its body was empty"
+    refute capture.failures?, "an empty body is not a failure"
+  end
+
+  it "sets pending? while a matching body is unfilled and clears it once filled" do
+    mutable = Class.new do
+      def initialize = @reads = 0
+      def request = Struct.new(:url).new("https://x.com/i/api/graphql/abc/Bookmarks")
+      def id = 5
+
+      def response
+        @reads += 1
+        Struct.new(:body).new(@reads >= 2 ? JSON.generate({ "cursor" => "c" }) : "")
+      end
+    end.new
+    capture = described_class.new(page_with([mutable]))
+
+    refute capture.pending?, "no drain has run yet"
+    assert_empty capture.drain_bookmarks
+    assert capture.pending?, "the unfilled matching exchange is pending"
+    assert_equal ["c"], capture.drain_bookmarks.map { |b| b["cursor"] }
+    refute capture.pending?, "pending clears once the body fills and is returned"
   end
 
   it "tracks parse and capture failures so the source can tell broken from empty" do
