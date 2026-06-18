@@ -57,6 +57,23 @@ describe Xbookmark::Render::PathBuilder do
     end
   end
 
+  it "shards under the epoch when both timestamps are absent instead of raising" do
+    Dir.mktmpdir do |vault|
+      builder = described_class.new(vault_path: vault)
+      # The normalizer drops an unparseable created_at, leaving both date fields
+      # nil. bookmark_date must fall back to the epoch so the bookmark still
+      # renders rather than raising uncaught and being lost as a permanent error.
+      bm = bookmark(id: "7")
+      bm.bookmarked_at = nil
+      bm.created_at = nil
+
+      path = builder.path_for(bm)
+
+      assert_includes path, "/bookmarks/1970/01/01/", path
+      assert path.end_with?("-7.md"), path
+    end
+  end
+
   it "produces filesystem-safe ascii names for unicode titles, preserving the suffix" do
     Dir.mktmpdir do |vault|
       builder = described_class.new(vault_path: vault)

@@ -1,0 +1,114 @@
+{
+  "data": {
+    "threaded_conversation_with_injections_v2": {
+      "instructions": [
+        {
+          "type": "TimelineAddEntries",
+          "entries": [
+            {
+              "entryId": "tweet-5000",
+              "content": {
+                "entryType": "TimelineTimelineItem",
+                "itemContent": {
+                  "itemType": "TimelineTweet",
+                  "tweet_results": {
+                    "result": {
+                      "__typename": "Tweet",
+                      "rest_id": "5000",
+                      "core": {
+                        "user_results": {
+                          "result": {
+                            "__typename": "User",
+                            "rest_id": "u1",
+                            "legacy": { "screen_name": "alice", "name": "Alice" }
+                          }
+                        }
+                      },
+                      "legacy": {
+                        "id_str": "5000",
+                        "user_id_str": "u1",
+                        "full_text": "thread root",
+                        "created_at": "Thu Jan 01 00:00:00 +0000 2026",
+                        "conversation_id_str": "5000"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "entryId": "cursor-top-8a",
+              "content": {
+                "entryType": "TimelineTimelineCursor",
+                "cursorType": "Top",
+                "value": "cursor-top-value"
+              }
+            },
+            {
+              "entryId": "tweet-5001",
+              "content": {
+                "entryType": "TimelineTimelineItem",
+                "itemContent": {
+                  "itemType": "TimelineTweet",
+                  "tweet_results": {
+                    "result": {
+                      "__typename": "Tweet",
+                      "rest_id": "5001",
+                      "core": {
+                        "user_results": {
+                          "result": {
+                            "__typename": "User",
+                            "rest_id": "u2",
+                            "legacy": { "screen_name": "bob", "name": "Bob" }
+                          }
+                        }
+                      },
+                      "legacy": {
+                        "id_str": "5001",
+                        "user_id_str": "u2",
+                        "full_text": "the focal reply",
+                        "created_at": "Thu Jan 01 00:01:00 +0000 2026",
+                        "conversation_id_str": "5000",
+                        "in_reply_to_status_id_str": "5000"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "entryId": "conversationthread-5002",
+              "content": {
+                "entryType": "TimelineTimelineModule",
+                "items": [
+                  {
+                    "item": {
+                      "itemContent": {
+                        "itemType": "TimelineTweet",
+                        "tweet_results": {
+                          "result": {
+                            "__typename": "Tweet",
+                            "rest_id": "5002",
+                            "legacy": { "id_str": "5002", "full_text": "a deeper reply in a module" }
+                          }
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "entryId": "cursor-bottom-9b",
+              "content": {
+                "entryType": "TimelineTimelineCursor",
+                "cursorType": "Bottom",
+                "value": "cursor-bottom-value"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

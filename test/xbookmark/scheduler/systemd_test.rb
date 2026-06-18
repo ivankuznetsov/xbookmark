@@ -25,6 +25,8 @@ describe Xbookmark::Scheduler::Systemd do
     assert_match(/ExecStart=.+xbookmark sync --from-scheduler/, out)
     assert_includes out, "Type=oneshot"
     assert_includes out, "StandardOutput=append:/var/log/xbookmark/sync.log"
+    assert_includes out, "RuntimeMaxSec=#{Xbookmark::Scheduler::Systemd::RUNTIME_MAX_SECONDS}",
+                     "a wall-clock cap keeps a wedged headless run from sitting resident"
   end
 
   it "renders the systemd .timer with OnCalendar and Persistent=true" do

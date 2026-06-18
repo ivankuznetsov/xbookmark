@@ -186,6 +186,60 @@ describe Xbookmark::Config do
     end
   end
 
+  it "defaults the source to api and requires the X keys" do
+    Dir.mktmpdir do |cwd|
+      File.write(File.join(cwd, ".env"), "X_CLIENT_ID=abc\nX_USER_ID=42\n")
+      assert_equal "api", described_class.load(cwd: cwd, env: {}).source
+    end
+  end
+
+  it "allows an empty .env in browser mode (no X credentials required)" do
+    Dir.mktmpdir do |cwd|
+      File.write(File.join(cwd, ".env"), "XBOOKMARK_SOURCE=browser\n")
+      config = described_class.load(cwd: cwd, env: {})
+      assert_equal "browser", config.source
+      assert_nil config.x_client_id
+      assert_nil config.x_user_id
+    end
+  end
+
+  it "still requires the X keys in both mode" do
+    Dir.mktmpdir do |cwd|
+      File.write(File.join(cwd, ".env"), "XBOOKMARK_SOURCE=both\n")
+      error = assert_raises(Xbookmark::ConfigError) { described_class.load(cwd: cwd, env: {}) }
+      assert_match(/X_CLIENT_ID/, error.message)
+    end
+  end
+
+  it "requires the X keys when the source is unset or api" do
+    Dir.mktmpdir do |cwd|
+      File.write(File.join(cwd, ".env"), "XBOOKMARK_SOURCE=api\n")
+      assert_raises(Xbookmark::ConfigError) { described_class.load(cwd: cwd, env: {}) }
+    end
+  end
+
+  it "rejects an unknown XBOOKMARK_SOURCE" do
+    Dir.mktmpdir do |cwd|
+      File.write(File.join(cwd, ".env"), "XBOOKMARK_SOURCE=carrier-pigeon\n")
+      error = assert_raises(Xbookmark::ConfigError) { described_class.load(cwd: cwd, env: {}) }
+      assert_match(/Invalid XBOOKMARK_SOURCE/, error.message)
+    end
+  end
+
+  it "normalizes source casing and whitespace" do
+    Dir.mktmpdir do |cwd|
+      File.write(File.join(cwd, ".env"), "XBOOKMARK_SOURCE=  Browser \n")
+      assert_equal "browser", described_class.load(cwd: cwd, env: {}).source
+    end
+  end
+
+  it "defaults load_offline to the api source" do
+    Dir.mktmpdir do |cwd|
+      File.write(File.join(cwd, ".env"), "XBOOKMARK_WIKI_PATH=/offline/wiki\n")
+      assert_equal "api", described_class.load_offline(cwd: cwd, env: {}).source
+    end
+  end
+
   it "hydrates from an explicitly supplied keystore object" do
     store = mock("keystore")
     env = {}

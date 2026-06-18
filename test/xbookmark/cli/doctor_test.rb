@@ -7,6 +7,8 @@ require "xbookmark/cli"
 require "xbookmark/system/runtime"
 require "xbookmark/system/package_manager"
 require "xbookmark/transcribe/whisper"
+require "xbookmark/browser/chromium"
+require "xbookmark/browser/session"
 
 describe Xbookmark::CLI::Doctor do
   before do
@@ -17,7 +19,9 @@ describe Xbookmark::CLI::Doctor do
   def run_doctor(opts = {})
     out = StringIO.new
     doctor = described_class.new([], opts.merge(output: out, input: StringIO.new))
-    doctor.execute
+    # Swallow the grep-able stderr tokens (BROWSER_SESSION_MISSING etc.) so they
+    # don't clutter test output; these cases assert on the stdout report.
+    capture_stderr { doctor.execute }
     out.string
   end
 
@@ -42,7 +46,7 @@ describe Xbookmark::CLI::Doctor do
 
   it "lists each missing tool with an install command for the host package manager" do
     Xbookmark::System::PackageManager.stubs(:detect).returns(:pacman)
-    described_class.any_instance.stubs(:which).returns(nil)
+    Xbookmark::Paths.stubs(:which).returns(nil)
     Xbookmark::Transcribe::Whisper.stubs(:detect).returns(nil)
 
     out = run_doctor
@@ -52,7 +56,7 @@ describe Xbookmark::CLI::Doctor do
 
   it "prints manual install guidance when no package manager is detected" do
     Xbookmark::System::PackageManager.stubs(:detect).returns(:unknown)
-    described_class.any_instance.stubs(:which).returns(nil)
+    Xbookmark::Paths.stubs(:which).returns(nil)
     Xbookmark::Transcribe::Whisper.stubs(:detect).returns(nil)
 
     out = run_doctor
@@ -71,8 +75,9 @@ describe Xbookmark::CLI::Doctor do
   it "prompts before running fix commands and skips declined commands" do
     out = StringIO.new
     input = StringIO.new("yes\nno\nyes\n")
+    def input.tty? = true # an interactive `doctor --fix` reads from a TTY
     doctor = described_class.new([], fix: true, output: out, input: input)
-    doctor.stubs(:which).returns(nil)
+    Xbookmark::Paths.stubs(:which).returns(nil)
     Xbookmark::Transcribe::Whisper.stubs(:detect).returns(nil)
     Xbookmark::System::PackageManager.stubs(:detect).returns(:pacman)
     Xbookmark::System::PackageManager.stubs(:install_command).with("codex", manager: :pacman).returns(["echo", "codex"])
@@ -89,11 +94,105 @@ describe Xbookmark::CLI::Doctor do
     assert_includes out.string, "skipped whisper"
   end
 
+  it "does not prompt for --fix when stdin is not a TTY (unattended)" do
+    out = StringIO.new
+    input = StringIO.new("") # a non-interactive pipe: tty? is false
+    doctor = described_class.new([], fix: true, output: out, input: input)
+    Xbookmark::Paths.stubs(:which).returns(nil)
+    Xbookmark::Transcribe::Whisper.stubs(:detect).returns(nil)
+    Xbookmark::System::PackageManager.stubs(:detect).returns(:pacman)
+    Xbookmark::System::PackageManager.stubs(:install_command).returns(["echo", "tool"])
+
+    doctor.expects(:system).never
+
+    capture_stderr { doctor.execute }
+
+    assert_includes out.string, "needs an interactive terminal"
+  end
+
   it "skips the fix-up section when no tools are missing" do
-    described_class.any_instance.stubs(:which).returns("/usr/bin/fake")
+    Xbookmark::Paths.stubs(:which).returns("/usr/bin/fake")
     Xbookmark::Transcribe::Whisper.stubs(:detect).returns("/usr/bin/whisper")
     out = run_doctor
     refute_match(/Missing tools:/, out)
+  end
+
+  it "reports browser source readiness: chromium, profile, session, source" do
+    ENV["XBOOKMARK_SOURCE"] = "browser"
+    Xbookmark::Browser::Chromium.stubs(:detect).returns("/usr/bin/chromium")
+    Xbookmark::Browser::Session.stubs(:profile_saved?).returns(true)
+
+    out = run_doctor
+
+    assert_match(/^source: browser/, out)
+    assert_match(%r{chromium: ok \(/usr/bin/chromium\)}, out)
+    assert_match(/browser profile: /, out)
+    assert_match(/browser session: profile saved but unverified/, out)
+    assert_match(/validity is confirmed at next sync/, out)
+  ensure
+    ENV.delete("XBOOKMARK_SOURCE")
+  end
+
+  it "omits the browser session line on an API-only host" do
+    # A grep-on-`browser session:` health check on an api-only host must not see a
+    # perpetual not-set-up line for a source it deliberately opted out of, just as
+    # report_x_auth gates the X-auth lines on api_source?.
+    Xbookmark::Browser::Chromium.stubs(:detect).returns("/usr/bin/chromium")
+    Xbookmark::Browser::Session.stubs(:profile_saved?).returns(false)
+
+    out = run_doctor
+
+    assert_match(/^source: api/, out)
+    refute_match(/browser session:/, out)
+  end
+
+  it "does not nag about API login when the source is browser-only" do
+    ENV["XBOOKMARK_SOURCE"] = "browser"
+    out = run_doctor
+    refute_match(/X auth: NOT logged in/, out)
+    assert_match(/X auth: not required \(source=browser\)/, out)
+  ensure
+    ENV.delete("XBOOKMARK_SOURCE")
+  end
+
+  it "reports a missing Chromium and an unconfigured browser session" do
+    ENV["XBOOKMARK_SOURCE"] = "browser"
+    Xbookmark::Browser::Chromium.stubs(:detect).returns(nil)
+    Xbookmark::Browser::Session.stubs(:profile_saved?).returns(false)
+
+    out = run_doctor
+
+    assert_match(/chromium: NOT FOUND/, out)
+    assert_match(/browser session: not set up/, out)
+  ensure
+    ENV.delete("XBOOKMARK_SOURCE")
+  end
+
+  it "lists chromium as a fixable missing tool when the browser source is active" do
+    ENV["XBOOKMARK_SOURCE"] = "browser"
+    Xbookmark::System::PackageManager.stubs(:detect).returns(:pacman)
+    Xbookmark::Paths.stubs(:which).returns(nil)
+    Xbookmark::Transcribe::Whisper.stubs(:detect).returns(nil)
+    Xbookmark::Browser::Chromium.stubs(:detect).returns(nil)
+
+    out = run_doctor
+
+    assert_match(/Missing tools: .*chromium/, out)
+    assert_match(/chromium: sudo pacman -S --needed chromium/, out)
+  ensure
+    ENV.delete("XBOOKMARK_SOURCE")
+  end
+
+  it "does not offer to install chromium when the source is API-only" do
+    Xbookmark::System::PackageManager.stubs(:detect).returns(:pacman)
+    Xbookmark::Paths.stubs(:which).returns(nil)
+    Xbookmark::Transcribe::Whisper.stubs(:detect).returns(nil)
+    Xbookmark::Browser::Chromium.stubs(:detect).returns(nil)
+
+    out = run_doctor
+
+    assert_match(/chromium: NOT FOUND/, out)
+    refute_match(/chromium: sudo pacman/, out)
   end
 end
 
@@ -152,5 +251,12 @@ describe Xbookmark::System::PackageManager do
     assert_nil described_class.install_command("qmd", manager: :pacman)
     assert_nil described_class.install_command("codex", manager: :brew)
     assert_nil described_class.install_command("missing", manager: :brew)
+  end
+
+  it "knows how to install chromium on each manager" do
+    assert_equal ["sudo", "pacman", "-S", "--needed", "chromium"], described_class.install_command("chromium", manager: :pacman)
+    assert_equal ["sudo", "apt-get", "install", "-y", "chromium"], described_class.install_command("chromium", manager: :apt)
+    assert_equal ["sudo", "dnf", "install", "-y", "chromium"], described_class.install_command("chromium", manager: :dnf)
+    assert_equal ["brew", "install", "chromium"], described_class.install_command("chromium", manager: :brew)
   end
 end

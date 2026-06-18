@@ -45,6 +45,58 @@ class MissingTweetClient
   end
 end
 
+class ExpiredBrowserSource
+  def bookmarks(user_id: nil, pagination_token: nil, max_results: 50)
+    raise Xbookmark::Browser::SessionExpired, "browser session expired; re-login"
+  end
+
+  def get_tweet(_id)
+    raise Xbookmark::Browser::SessionExpired, "browser session expired; re-login"
+  end
+end
+
+# A source that fails with a non-auth error (e.g. missing Chromium); must be
+# isolated like an auth block so a healthy source still finishes its run.
+class ConfigErrorSource
+  def bookmarks(user_id: nil, pagination_token: nil, max_results: 50)
+    raise Xbookmark::ConfigError, "No Chromium/Chrome found"
+  end
+
+  def get_tweet(_id)
+    raise Xbookmark::ConfigError, "No Chromium/Chrome found"
+  end
+end
+
+class TweetGoneSource
+  def bookmarks(user_id: nil, pagination_token: nil, max_results: 50)
+    enum_for(:bookmarks, user_id: user_id, pagination_token: pagination_token, max_results: max_results) unless block_given?
+  end
+
+  def get_tweet(_id)
+    raise Xbookmark::SourceUnavailable, "tweet gone via this source"
+  end
+end
+
+# A source that records #close calls so the Runner's close_sources backstop (the
+# only thing that quits Chromium after a resync/get_tweet-only run) is asserted.
+class CloseableSource
+  attr_reader :closes
+
+  def initialize(pages: [])
+    @pages = pages
+    @closes = 0
+  end
+
+  def bookmarks(user_id: nil, pagination_token: nil, max_results: 50)
+    return enum_for(:bookmarks, user_id: user_id, pagination_token: pagination_token, max_results: max_results) unless block_given?
+
+    @pages.each { |p| yield p }
+  end
+
+  def get_tweet(_id) = nil
+  def close = @closes += 1
+end
+
 class FakePipeline
   attr_reader :calls, :indexed_pages
 
@@ -694,7 +746,7 @@ describe Xbookmark::Sync::Runner do
                                  pipeline: pipeline, registrar: bad_registrar)
 
     err = capture_stderr { @report = runner.run(mode: :backfill_limited, limit: 1) }
-    assert_match(/qmd reindex failed: qmd down/, err)
+    assert_match(/qmd reindex failed: RuntimeError: qmd down/, err)
     assert_equal 1, @report.synced
   end
 
@@ -710,5 +762,353 @@ describe Xbookmark::Sync::Runner do
     assert_match(/source blocked during retry: expired/, err)
     assert_equal 1, @report.source_errors
     assert_equal 0, @report.permanent_errors
+  end
+
+  # ---- U1: multi-source Runner ----
+
+  it "keeps syncing a healthy source when an earlier source is blocked" do
+    page = {
+      "data" => [{ "id" => "t1", "author_id" => "u1", "text" => "x", "created_at" => "2026-01-01T00:00:00Z", "conversation_id" => "t1" }],
+      "includes" => { "users" => [{ "id" => "u1", "username" => "alice" }] },
+      "meta" => {}
+    }
+    blocked = SourceBlockedClient.new
+    healthy = FakeXClient.new(pages: [page])
+    pipeline = FakePipeline.new(->(_) { Xbookmark::Sync::Pipeline::Outcome.new(status: :done, markdown_path: "/x", digest: "d") })
+    runner = described_class.new(config: config, store: store, sources: [blocked, healthy],
+                                 pipeline: pipeline, registrar: registrar)
+
+    err = capture_stderr { @report = runner.run(mode: :backfill_limited, limit: 10) }
+
+    assert_equal 1, @report.synced, "the healthy source still syncs"
+    assert_equal 1, @report.source_errors, "the blocked source is recorded once"
+    assert_equal ["t1"], pipeline.calls
+    assert_match(/source blocked during new bookmark fetch/, err)
+  end
+
+  it "isolates a source raising a non-auth error so a healthy later source still syncs (AC3)" do
+    page = {
+      "data" => [{ "id" => "h1", "author_id" => "u1", "text" => "x", "created_at" => "2026-01-01T00:00:00Z", "conversation_id" => "h1" }],
+      "includes" => { "users" => [{ "id" => "u1", "username" => "alice" }] },
+      "meta" => {}
+    }
+    pipeline = FakePipeline.new(->(_) { Xbookmark::Sync::Pipeline::Outcome.new(status: :done, markdown_path: "/x", digest: "d") })
+    # The misconfigured (ConfigError) source runs first; its failure must not
+    # abort the run or discard the healthy source's work.
+    runner = described_class.new(config: config, store: store,
+                                 sources: [ConfigErrorSource.new, FakeXClient.new(pages: [page])],
+                                 pipeline: pipeline, registrar: registrar)
+
+    err = capture_stderr { @report = runner.run(mode: :backfill_limited, limit: 10) }
+
+    assert_equal 1, @report.synced, "the healthy source still syncs after the non-auth failure"
+    assert @report.source_errors.positive?, "the misconfigured source is recorded as a source error"
+    assert_equal ["h1"], pipeline.calls
+    assert_match(/source blocked during new bookmark fetch/, err)
+  end
+
+  it "surfaces a consumer/pipeline error as a real failure and still runs the next source (AC3)" do
+    # The per-page consumer work runs inside the source's yield. A non-source-block
+    # error there must not be laundered into a tolerated exit-0 source block (the
+    # browser source's broad rescue) nor abort the whole run (the unwrapped API
+    # source) — it must surface as a real failure while a healthy later source
+    # still syncs.
+    bad_page = {
+      "data" => [{ "id" => "t1", "author_id" => "u1", "text" => "x", "created_at" => "2026-01-01T00:00:00Z", "conversation_id" => "t1" }],
+      "includes" => { "users" => [{ "id" => "u1", "username" => "alice" }] },
+      "meta" => {}
+    }
+    healthy_page = {
+      "data" => [{ "id" => "h1", "author_id" => "u1", "text" => "x", "created_at" => "2026-01-01T00:00:00Z", "conversation_id" => "h1" }],
+      "includes" => { "users" => [{ "id" => "u1", "username" => "alice" }] },
+      "meta" => {}
+    }
+    pipeline = FakePipeline.new(lambda { |bm|
+      raise "pipeline boom" if bm.tweet_id == "t1"
+
+      Xbookmark::Sync::Pipeline::Outcome.new(status: :done, markdown_path: "/x", digest: "d")
+    })
+    runner = described_class.new(config: config, store: store,
+                                 sources: [FakeXClient.new(pages: [bad_page]), FakeXClient.new(pages: [healthy_page])],
+                                 pipeline: pipeline, registrar: registrar)
+
+    err = capture_stderr { @report = runner.run(mode: :backfill_full, from_scheduler: true) }
+
+    assert_equal 1, @report.synced, "the healthy source still syncs after a consumer error isolates the bad source"
+    assert @report.permanent_errors.positive?, "a consumer/pipeline error surfaces as a real (non-tolerated) failure"
+    assert @report.source_errors.positive?, "and is recorded as a source error so the backfill is not sealed complete"
+    assert_equal %w[t1 h1], pipeline.calls
+    assert_match(/failed while processing a source page: RuntimeError: pipeline boom/, err)
+    refute_equal Xbookmark::State::Store::MODE_FULLY_BACKFILLED, store.mode,
+                 "a consumer error must not seal a full backfill complete"
+  end
+
+  it "treats a source-block error raised from consumer work as a tolerated source block" do
+    # A SOURCE_BLOCK_ERROR raised while consuming a page (e.g. a rate-limit
+    # surfacing mid-page) is still the source-block contract — it must flow to
+    # source_blocked, not be reclassified as a hard consumer failure.
+    page = {
+      "data" => [{ "id" => "t1", "author_id" => "u1", "text" => "x", "created_at" => "2026-01-01T00:00:00Z", "conversation_id" => "t1" }],
+      "includes" => { "users" => [{ "id" => "u1", "username" => "alice" }] },
+      "meta" => {}
+    }
+    pipeline = FakePipeline.new(->(_) { raise Xbookmark::TransientError, "rate limited mid-page" })
+    runner = described_class.new(config: config, store: store, x_client: FakeXClient.new(pages: [page]),
+                                 pipeline: pipeline, registrar: registrar)
+
+    err = capture_stderr { @report = runner.run(mode: :backfill_full, from_scheduler: true) }
+
+    assert_equal 1, @report.source_errors
+    assert_equal 0, @report.permanent_errors, "a source-block error from consumer work stays a tolerated source block"
+    assert_match(/source blocked during new bookmark fetch: rate limited mid-page/, err)
+  end
+
+  it "does not re-process a tweet an earlier source already attempted in the same run (both mode)" do
+    # The same not-yet-done tweet appears in both sources' pages. Once the first
+    # source has attempted it (needs_retry, so it never becomes done), a later
+    # source must skip it via attempted_ids — re-running it would double the
+    # attempt count and march a still-recoverable row toward a false
+    # permanent_error.
+    shared = {
+      "data" => [{ "id" => "dup", "author_id" => "u1", "text" => "x", "created_at" => "2026-01-01T00:00:00Z", "conversation_id" => "dup" }],
+      "includes" => { "users" => [{ "id" => "u1", "username" => "alice" }] },
+      "meta" => {}
+    }
+    pipeline = FakePipeline.new(->(_) { Xbookmark::Sync::Pipeline::Outcome.new(status: :needs_retry, error: StandardError.new("still down")) })
+    runner = described_class.new(config: config, store: store,
+                                 sources: [FakeXClient.new(pages: [shared]), FakeXClient.new(pages: [shared])],
+                                 pipeline: pipeline, registrar: registrar)
+
+    report = runner.run(mode: :backfill_limited, limit: 10)
+
+    assert_equal ["dup"], pipeline.calls, "the duplicate tweet is processed once across both sources"
+    assert_equal 1, store.find_bookmark("dup")[:attempts], "a later source must not inflate the attempt count"
+    assert_equal 1, report.failed
+    assert_equal 0, report.permanent_errors
+  end
+
+  it "caps total items across sources at the requested limit" do
+    page_a = {
+      "data" => Array.new(3) { |i| { "id" => "a#{i}", "author_id" => "u1", "text" => "x", "created_at" => "2026-01-01T00:00:00Z", "conversation_id" => "a#{i}" } },
+      "includes" => { "users" => [{ "id" => "u1", "username" => "alice" }] },
+      "meta" => {}
+    }
+    page_b = {
+      "data" => Array.new(3) { |i| { "id" => "b#{i}", "author_id" => "u1", "text" => "x", "created_at" => "2026-01-01T00:00:00Z", "conversation_id" => "b#{i}" } },
+      "includes" => { "users" => [{ "id" => "u1", "username" => "alice" }] },
+      "meta" => {}
+    }
+    pipeline = FakePipeline.new(->(_) { Xbookmark::Sync::Pipeline::Outcome.new(status: :done, markdown_path: "/x", digest: "d") })
+    runner = described_class.new(config: config, store: store,
+                                 sources: [FakeXClient.new(pages: [page_a]), FakeXClient.new(pages: [page_b])],
+                                 pipeline: pipeline, registrar: registrar)
+
+    report = runner.run(mode: :backfill_limited, limit: 4)
+
+    assert_equal 4, report.synced
+  end
+
+  it "falls back to a second source's get_tweet when the first is blocked (resync)" do
+    single = {
+      "data" => { "id" => "1", "author_id" => "u1", "text" => "x", "created_at" => "2026-01-01T00:00:00Z", "conversation_id" => "1" },
+      "includes" => { "users" => [{ "id" => "u1", "username" => "alice" }] }
+    }
+    pipeline = FakePipeline.new(->(_) { Xbookmark::Sync::Pipeline::Outcome.new(status: :done, markdown_path: "/x", digest: "d") })
+    runner = described_class.new(config: config, store: store,
+                                 sources: [SourceBlockedClient.new, FakeXClient.new(single_tweet: single)],
+                                 pipeline: pipeline, registrar: registrar)
+
+    report = runner.run(mode: :resync, tweet_id: "1")
+
+    assert_equal 1, report.synced
+    assert_equal "1", store.payload_for("1")["data"].first["id"]
+  end
+
+  it "skips a source whose get_tweet reports the tweet gone and tries the next (resync)" do
+    single = {
+      "data" => { "id" => "1", "author_id" => "u1", "text" => "x", "created_at" => "2026-01-01T00:00:00Z", "conversation_id" => "1" },
+      "includes" => { "users" => [{ "id" => "u1", "username" => "alice" }] }
+    }
+    pipeline = FakePipeline.new(->(_) { Xbookmark::Sync::Pipeline::Outcome.new(status: :done, markdown_path: "/x", digest: "d") })
+    runner = described_class.new(config: config, store: store,
+                                 sources: [TweetGoneSource.new, FakeXClient.new(single_tweet: single)],
+                                 pipeline: pipeline, registrar: registrar)
+
+    report = runner.run(mode: :resync, tweet_id: "1")
+
+    assert_equal 1, report.synced, "a SourceUnavailable from one source falls through to the next"
+    assert_equal "1", store.payload_for("1")["data"].first["id"]
+  end
+
+  it "falls through a tweet-gone source to a healthy source on the backfill retry path (both mode)" do
+    # The resync path's SourceUnavailable fallthrough is covered above; this
+    # exercises the *other* get_tweet_any caller — retry_first → fetch_bookmark —
+    # so a regression dropping the `next` would mark a recoverable retry row as a
+    # permanent error instead of fetching it from the healthy second source.
+    single = {
+      "data" => { "id" => "1", "author_id" => "u1", "text" => "x", "created_at" => "2026-01-01T00:00:00Z", "conversation_id" => "1" },
+      "includes" => { "users" => [{ "id" => "u1", "username" => "alice" }] }
+    }
+    store.upsert_pending(tweet_id: "1", author_handle: "alice", bookmarked_at: "2026-01-01T00:00:00Z")
+    store.record_failure(tweet_id: "1", error: "temporary")
+    pipeline = FakePipeline.new(->(_) { Xbookmark::Sync::Pipeline::Outcome.new(status: :done, markdown_path: "/x", digest: "d") })
+    runner = described_class.new(config: config, store: store,
+                                 sources: [TweetGoneSource.new, FakeXClient.new(single_tweet: single)],
+                                 pipeline: pipeline, registrar: registrar)
+
+    capture_stderr { @report = runner.run(mode: :backfill_limited, limit: 10) }
+
+    assert_equal 1, @report.synced, "the retry row falls through SourceUnavailable to the healthy source"
+    assert_equal 0, @report.permanent_errors, "a recoverable retry row is not marked permanently failed"
+    assert_equal "1", store.payload_for("1")["data"].first["id"]
+  end
+
+  it "re-raises a trailing source block past an earlier tweet-gone source (resync)" do
+    # source1 reports the tweet gone (SourceUnavailable → try next), source2 is
+    # blocked. get_tweet_any must re-raise the block — not let the earlier
+    # SourceUnavailable swallow it and mark the still-existing tweet permanently
+    # gone. The block is isolated by resync's source_blocked, not a permanent error.
+    runner = described_class.new(config: config, store: store,
+                                 sources: [TweetGoneSource.new, SourceBlockedClient.new],
+                                 pipeline: FakePipeline.new(->(_) { }), registrar: registrar)
+
+    capture_stderr { @report = runner.run(mode: :resync, tweet_id: "1") }
+
+    assert @report.source_errors.positive?, "the trailing block is recorded, not swallowed by the earlier tweet-gone"
+    assert_equal 0, @report.permanent_errors, "a blocked source must not mark the tweet permanently gone"
+  end
+
+  it "re-raises the last source block when every source's get_tweet is blocked" do
+    store.upsert_pending(tweet_id: "1", author_handle: "alice", bookmarked_at: "2026-01-01T00:00:00Z")
+    store.record_failure(tweet_id: "1", error: "temporary")
+    runner = described_class.new(config: config, store: store,
+                                 sources: [SourceBlockedClient.new, SourceBlockedClient.new],
+                                 pipeline: FakePipeline.new(->(_) { }), registrar: registrar)
+
+    capture_stderr { @report = runner.run(mode: :backfill_limited, limit: 1) }
+
+    # Each blocked source attempt is recorded; the retry row is never lost to a
+    # permanent error just because the sources were blocked.
+    assert @report.source_errors.positive?
+    assert_equal 0, @report.permanent_errors
+    assert_equal "needs_retry", store.find_bookmark("1")[:status]
+  end
+
+  it "fails fast when constructed with no sources instead of sealing an empty run as complete" do
+    error = assert_raises(ArgumentError) do
+      described_class.new(config: config, store: store,
+                          pipeline: FakePipeline.new(->(_) { }), registrar: registrar)
+    end
+    assert_match(/at least one source/, error.message)
+  end
+
+  it "raises SourceUnavailable on resync when no source can return the tweet" do
+    runner = described_class.new(config: config, store: store, sources: [MissingTweetClient.new],
+                                 pipeline: FakePipeline.new(->(_) { }), registrar: registrar)
+
+    error = assert_raises(Xbookmark::SourceUnavailable) { runner.run(mode: :resync, tweet_id: "999") }
+    assert_match(/unavailable from all sources/, error.message)
+  end
+
+  # ---- U5: browser session-expiry signaling ----
+
+  it "flags session_expired when a source raises Browser::SessionExpired" do
+    store.mode = Xbookmark::State::Store::MODE_FULLY_BACKFILLED
+    runner = described_class.new(config: config, store: store, sources: [ExpiredBrowserSource.new],
+                                 pipeline: FakePipeline.new(->(_) { }), registrar: registrar)
+
+    capture_stderr { @report = runner.run(mode: :sync, from_scheduler: true) }
+
+    assert @report.session_expired?
+    assert_equal "browser", @report.expired_source
+    assert @report.source_errors.positive?
+  end
+
+  it "isolates an expired browser session during resync instead of crashing" do
+    runner = described_class.new(config: config, store: store, sources: [ExpiredBrowserSource.new],
+                                 pipeline: FakePipeline.new(->(_) { }), registrar: registrar)
+
+    capture_stderr { @report = runner.run(mode: :resync, tweet_id: "1") }
+
+    assert @report.session_expired?, "resync routes the expiry through source_blocked"
+    assert_equal "browser", @report.expired_source
+    assert @report.source_errors.positive?
+    assert_nil store.last_sync_finished_at
+  end
+
+  it "does not flag session_expired for a generic API source block" do
+    store.mode = Xbookmark::State::Store::MODE_FULLY_BACKFILLED
+    runner = described_class.new(config: config, store: store, sources: [SourceBlockedClient.new],
+                                 pipeline: FakePipeline.new(->(_) { }), registrar: registrar)
+
+    capture_stderr { @report = runner.run(mode: :sync, from_scheduler: true) }
+
+    refute @report.session_expired?
+    assert @report.source_errors.positive?
+  end
+
+  it "syncs a healthy API source while flagging the expired browser source (AC3)" do
+    page = {
+      "data" => [{ "id" => "n1", "author_id" => "u1", "text" => "x", "created_at" => "2026-01-01T00:00:00Z", "conversation_id" => "n1" }],
+      "includes" => { "users" => [{ "id" => "u1", "username" => "alice" }] },
+      "meta" => {}
+    }
+    store.mode = Xbookmark::State::Store::MODE_FULLY_BACKFILLED
+    pipeline = FakePipeline.new(->(_) { Xbookmark::Sync::Pipeline::Outcome.new(status: :done, markdown_path: "/x", digest: "d") })
+    runner = described_class.new(config: config, store: store,
+                                 sources: [FakeXClient.new(pages: [page]), ExpiredBrowserSource.new],
+                                 pipeline: pipeline, registrar: registrar)
+
+    capture_stderr { @report = runner.run(mode: :sync, from_scheduler: true) }
+
+    assert_equal 1, @report.synced, "the API source still syncs its bookmarks"
+    assert @report.session_expired?, "the expired browser source is flagged for re-login"
+    assert @report.source_errors.positive?
+    assert_equal ["n1"], pipeline.calls
+  end
+
+  # ---- source lifecycle: close_sources is the sole post-run quit ----
+
+  it "closes each source after a run" do
+    source = CloseableSource.new(pages: [])
+    runner = described_class.new(config: config, store: store, sources: [source],
+                                 pipeline: FakePipeline.new(->(_) { }), registrar: registrar)
+
+    runner.run(mode: :backfill_limited, limit: 1)
+
+    assert_equal 1, source.closes, "the run must quit the source via close_sources"
+  end
+
+  it "closes every source in a multi-source list (no orphaned Chromium)" do
+    source_a = CloseableSource.new(pages: [])
+    source_b = CloseableSource.new(pages: [])
+    runner = described_class.new(config: config, store: store, sources: [source_a, source_b],
+                                 pipeline: FakePipeline.new(->(_) { }), registrar: registrar)
+
+    runner.run(mode: :backfill_limited, limit: 1)
+
+    assert_equal 1, source_a.closes, "the first source is quit"
+    assert_equal 1, source_b.closes, "the second source is quit too — close_sources must walk every source"
+  end
+
+  it "closes each source even when the run raises (ensure path)" do
+    source = CloseableSource.new
+    pipeline = FakePipeline.new(->(_) { raise "unused" })
+    pipeline.stubs(:prepare_run!).raises("boom mid-run")
+    runner = described_class.new(config: config, store: store, sources: [source],
+                                 pipeline: pipeline, registrar: registrar)
+
+    assert_raises(RuntimeError) { runner.run(mode: :backfill_limited, limit: 1) }
+
+    assert_equal 1, source.closes, "the ensure block must still quit Chromium when the run blows up"
+  end
+
+  it "rejects a source missing a contract method at construction" do
+    incomplete = Object.new # responds to neither bookmarks nor get_tweet
+    error = assert_raises(Xbookmark::ConfigError) do
+      described_class.new(config: config, store: store, sources: [incomplete],
+                          pipeline: FakePipeline.new(->(_) { }), registrar: registrar)
+    end
+    assert_match(/does not satisfy the bookmark-source contract/, error.message)
   end
 end

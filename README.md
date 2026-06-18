@@ -70,7 +70,7 @@ If you prefer to run the steps yourself, jump to [Installation](#installation) a
 - Local Whisper transcription of audio and video linked from a bookmark, with
   LLM-produced transcript summaries and readable dialogue-style formatting.
 - Obsidian graph landing pages for authors, canonical concepts, concept hierarchy, real multi-bookmark threads, and explicit post lists on topic/concept pages.
-- Official X API v2 only, via OAuth 2.0 with PKCE.
+- Two ingest sources: the official X API v2 (default, via OAuth 2.0 with PKCE), or an opt-in [browser source](#browser-source-no-dev-api) that reads your own bookmarks through a real logged-in Chromium with no dev API.
 - MIT-licensed and runs entirely on your machine.
 
 ## Installation
@@ -181,6 +181,59 @@ secrets.
 4. Copy the Client ID into `X_CLIENT_ID` and your numeric X user ID into `X_USER_ID`. `X_CLIENT_SECRET` is only required if your app type is a confidential client that issues a secret; PKCE public-client apps leave it blank.
 5. Run `bin/xbookmark auth login`. The CLI opens your browser, completes the PKCE handshake, and stores tokens back into the loaded env file with file mode `0600`.
 
+### Browser source (no dev API)
+
+If you would rather not configure the paid X developer API, xbookmark can ingest
+your own bookmarks by logging into X in a real browser once. Set the source in
+your env file:
+
+```bash
+XBOOKMARK_SOURCE=browser   # api (default) | browser | both
+```
+
+In `browser` mode the `X_*` credentials are optional — an otherwise empty `.env`
+is valid. The browser path feeds the exact same pipeline as the API path
+(render → enrich → transcribe → QMD), so the resulting notes are identical.
+
+Requirements and one-time setup:
+
+- **System Chromium is required but never bundled.** Install one (e.g.
+  `sudo pacman -S chromium` or `sudo apt-get install -y chromium`). Run
+  `bin/xbookmark doctor` to confirm it is detected.
+- Run `bin/xbookmark auth login --browser`. The first run shows a one-time
+  consent prompt, then opens a visible browser window. Log in to X there; the
+  command continues automatically once you are signed in. Cookies persist in a
+  **dedicated, isolated profile** under `~/.config/xbookmark/browser-profile` —
+  never your everyday browser profile.
+- Later syncs, backfills, and scheduled runs reuse that profile **headlessly**;
+  no window opens.
+
+Reading your own account through X's web endpoints rather than the official API
+may violate X's Terms of Service and carries a real risk of rate-limiting or
+suspension — the consent prompt makes you accept that risk before the first run.
+
+When a scheduled run finds the browser session expired or checkpointed, it
+fails fast: it logs the reason, fires a desktop notification, and exits
+non-zero. Restore it with the same `bin/xbookmark auth login --browser`. With
+`XBOOKMARK_SOURCE=both`, a configured API source still syncs during that same
+run, so only the browser half needs re-login.
+
+#### Agent-readable stderr tokens
+
+The browser surface emits a stable, grep-able stderr token on each failure so a
+wrapper or agent can branch on the failure mode without scraping prose. Every
+case below exits non-zero.
+
+| Token | Emitting command | Exit | Remediation |
+| --- | --- | --- | --- |
+| `SESSION_EXPIRED source=browser` | `sync` / `backfill` / `resync` | `1` (even under `--from-scheduler`) | Re-run `bin/xbookmark auth login --browser` |
+| `BROWSER_SESSION_MISSING source=browser\|both` | `auth status` | `1` | Re-run `bin/xbookmark auth login --browser` |
+| `CHROMIUM_MISSING` | `auth login --browser` | `1` | Install a system Chromium/Chrome, then re-run |
+| `CONFIG_ERROR` | `auth login --browser` | `1` | Fix the offending config (e.g. an invalid `XBOOKMARK_SOURCE`), then re-run |
+| `LOGIN_TIMEOUT` | `auth login --browser` | `1` | Re-run `bin/xbookmark auth login --browser` and finish signing in |
+| `CONSENT_REQUIRED` | `auth login --browser` | `1` | Re-run interactively, or pass `--accept-risk` to accept non-interactively |
+| `CONSENT_DECLINED` | `auth login --browser` | `1` | Re-run and accept the ToS/account-risk consent prompt |
+
 ### What this will cost
 
 xbookmark uses the official paid X API. The README intentionally uses the
@@ -217,9 +270,10 @@ aliases. Prefer `XBOOKMARK_WIKI_PATH` and `--wiki` in new setups.
 Manage X API credentials.
 
 ```bash
-bin/xbookmark auth login   # browser PKCE flow, stores tokens locally
-bin/xbookmark auth status  # show whether the access token is present and still current
-bin/xbookmark auth refresh # test and rotate the saved refresh token now
+bin/xbookmark auth login           # browser PKCE flow, stores tokens locally
+bin/xbookmark auth login --browser # log in via a real browser (no dev API) — see "Browser source"
+bin/xbookmark auth status          # show the active source and whether auth is present and current
+bin/xbookmark auth refresh         # test and rotate the saved refresh token now
 ```
 
 Example output:
@@ -433,6 +487,8 @@ The artifact written depends on your OS:
 | Linux | `~/.config/systemd/user/xbookmark-sync.{service,timer}` | `~/.local/state/xbookmark/sync.log` |
 
 If X is unreachable or the saved OAuth refresh token is rejected during a scheduled run, the job still exits successfully when no local bookmark processing failed. It logs `source blocked`, continues local taxonomy cleanup, QMD maintenance, and cached retry/enrichment work, and does not stamp the run as completed so the next timer can fetch new bookmarks after auth is repaired. A manual `bin/xbookmark sync` still exits non-zero on source errors. Re-run `bin/xbookmark auth login` to re-issue a rejected refresh token.
+
+**Exception — browser session expiry.** The above exit-0-on-source-error rule does *not* apply to an expired browser session (`XBOOKMARK_SOURCE=browser` or `both`). When the browser session is expired or checkpointed, the run exits **1 even under `--from-scheduler`** (this is the one deliberate divergence from the rule above), fires a desktop notification, and logs a stable, grep-able token: `SESSION_EXPIRED source=browser`. A wrapper should match that token to distinguish "needs interactive re-login" from a generic failure, then run `bin/xbookmark auth login --browser` (add `--accept-risk` to accept the consent prompt non-interactively). Healthy sources in the same run still sync and finalize before the non-zero exit.
 
 `bin/xbookmark install --uninstall` removes whichever artifact was created on this machine. Log files are preserved.
 

@@ -8,6 +8,9 @@ module Xbookmark
     class Systemd < Base
       SERVICE = "xbookmark-sync.service"
       TIMER   = "xbookmark-sync.timer"
+      # Hard wall-clock cap on a single scheduled run (2h) so a wedged run can
+      # never sit resident until the next timer fires.
+      RUNTIME_MAX_SECONDS = 7200
 
       # Compute lazily — capturing Dir.home at load time would lock in the
       # original $HOME and ignore subsequent test setup that re-points it.
@@ -71,6 +74,9 @@ module Xbookmark
           ExecStart=#{bin} sync --from-scheduler
           StandardOutput=append:#{log_file}
           StandardError=append:#{log_file}
+          # Outer backstop: kill a run that hangs (e.g. a wedged headless
+          # Chromium walk) so the daily timer can never get stuck running.
+          RuntimeMaxSec=#{RUNTIME_MAX_SECONDS}
           Nice=10
           IOSchedulingClass=best-effort
           IOSchedulingPriority=5

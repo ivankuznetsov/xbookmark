@@ -10,8 +10,14 @@ module Xbookmark
       class_option :vault, type: :string
       class_option :verbose, type: :boolean, default: false
 
-      desc "login", "Run the OAuth 2.0 PKCE flow against X"
+      desc "login", "Run the OAuth 2.0 PKCE flow against X (or --browser for the no-dev-API browser source)"
+      method_option :browser, type: :boolean, default: false,
+                              desc: "Log in via a real browser instead of the dev API (no X_* credentials needed)"
+      method_option :"accept-risk", type: :boolean, default: false,
+                                    desc: "Accept the browser-source ToS/account-risk consent non-interactively (for scripts/agents)"
       def login
+        return browser_login if options[:browser]
+
         require_relative "../config"
         require_relative "../x/auth"
         config = Xbookmark::Config.load(wiki_override: options[:wiki], vault_override: options[:vault], verbose: options[:verbose])
@@ -31,23 +37,50 @@ module Xbookmark
       def status
         require_relative "../config"
         config = Xbookmark::Config.load(wiki_override: options[:wiki], vault_override: options[:vault], verbose: options[:verbose])
-        unless config.x_access_token && !config.x_access_token.empty?
-          puts "Not logged in. Run: xbookmark auth login"
-          exit 1
-        end
+        source = Xbookmark::Config.source_of(config)
+        puts "source: #{source}"
 
-        expires_at = config.x_token_expires_at
-        if expires_at && expires_at <= Time.now.to_i
-          puts "Access token expired at: #{format_timestamp(expires_at)}"
-          if config.x_refresh_token && !config.x_refresh_token.empty?
-            puts "Refresh token present. Run: xbookmark auth refresh"
-          else
-            puts "No refresh token. Run: xbookmark auth login"
+        degraded_browser = false
+        if Xbookmark::Config.browser_source?(source)
+          degraded_browser = !browser_status
+          if degraded_browser
+            # The browser session IS the credential for the browser/both source.
+            # Emit a stable, grep-able token (mirroring sync's SESSION_EXPIRED) so a
+            # wrapper can detect "browser needs re-login" without scraping prose —
+            # including in `both` mode, where the API half may still be healthy and
+            # would otherwise leave this exiting 0 with prose-only output.
+            warn "[xbookmark] BROWSER_SESSION_MISSING source=#{source}; re-run `xbookmark auth login --browser`."
           end
-          exit 1
         end
 
-        puts "Logged in. Token expires at: #{expires_at ? format_timestamp(expires_at) : "unknown"}"
+        if Xbookmark::Config.api_source?(source)
+          unless config.x_access_token && !config.x_access_token.empty?
+            # Symmetric grep-able token to the browser half's BROWSER_SESSION_MISSING
+            # so an agent acting on `both` mode fixes the right half rather than
+            # scraping prose.
+            warn "[xbookmark] API_TOKEN_MISSING source=#{source}; run `xbookmark auth login`."
+            puts "Not logged in. Run: xbookmark auth login"
+            exit 1
+          end
+
+          expires_at = config.x_token_expires_at
+          if expires_at && expires_at <= Time.now.to_i
+            warn "[xbookmark] API_TOKEN_EXPIRED source=#{source}; run `xbookmark auth refresh` (or login)."
+            puts "Access token expired at: #{format_timestamp(expires_at)}"
+            if config.x_refresh_token && !config.x_refresh_token.empty?
+              puts "Refresh token present. Run: xbookmark auth refresh"
+            else
+              puts "No refresh token. Run: xbookmark auth login"
+            end
+            exit 1
+          end
+
+          puts "Logged in. Token expires at: #{expires_at ? format_timestamp(expires_at) : "unknown"}"
+        end
+
+        # A degraded browser half exits non-zero even when the API half is fine, so
+        # `browser` and `both` share the same non-zero "needs re-login" contract.
+        exit 1 if degraded_browser
       end
 
       desc "refresh", "Refresh the saved X OAuth token"
@@ -69,6 +102,50 @@ module Xbookmark
       end
 
       private
+
+      def browser_login
+        require_relative "../config"
+        require_relative "../state/store"
+        require_relative "../browser/login"
+        # Browser login never needs the dev-API credentials, so load offline
+        # (no required-key validation) regardless of the configured source.
+        config = Xbookmark::Config.load_offline(wiki_override: options[:wiki], vault_override: options[:vault], verbose: options[:verbose])
+        store = Xbookmark::State::Store.new(config.state_db_path)
+        login = Xbookmark::Browser::Login.new(config: config, store: store, accept_risk: options[:"accept-risk"])
+        exit 1 unless login.call
+      rescue Xbookmark::Browser::ChromiumMissing => e
+        # A missing system Chromium is the most common browser-login config error;
+        # emit a grep-able token so an agent can branch straight to "install a
+        # browser". The `source=browser` field matches the SESSION_EXPIRED /
+        # BROWSER_SESSION_MISSING shape so one parse contract covers every token.
+        warn "[xbookmark] CHROMIUM_MISSING source=browser; #{e.message}"
+        exit 1
+      rescue Xbookmark::ConfigError => e
+        # Any other ConfigError here is NOT a missing browser — load_offline also
+        # parses XBOOKMARK_SOURCE and raises ConfigError for an invalid value, so
+        # emit a distinct token rather than mislabeling it as CHROMIUM_MISSING.
+        warn "[xbookmark] CONFIG_ERROR source=browser; #{e.message}"
+        exit 1
+      rescue StandardError => e
+        # Chromium present but won't start (Ferrum::ProcessTimeoutError), a CDP
+        # failure, or a held profile lock would otherwise escape Thor as a raw
+        # stacktrace with no grep-able token — unlike the sync path, which wraps
+        # StandardError. Emit a stable token so an agent can branch on the
+        # failure instead of parsing a backtrace.
+        warn "[xbookmark] LOGIN_FAILED source=browser; #{e.class}: #{e.message}"
+        exit 1
+      end
+
+      # Returns true when a browser session profile has been persisted. This is a
+      # browser-free file check (Session.describe_profile), so it cannot vouch the
+      # session is still logged in — the message says so rather than implying
+      # readiness. Shares the check + 0700 re-harden + report policy with `doctor`.
+      def browser_status
+        require_relative "../browser/session"
+        saved, message = Xbookmark::Browser::Session.describe_profile
+        puts "browser session: #{message}"
+        saved
+      end
 
       SECRET_LIKE_VALUE = /[A-Za-z0-9_\-.~+\/=]{32,}/
       SECRET_FIELD = /

@@ -8,6 +8,17 @@ module Xbookmark
       RbConfig::CONFIG["host_os"] =~ /darwin/i ? true : false
     end
 
+    # Neutral PATH scan: the first executable (non-directory) file named `cmd`
+    # on PATH, or nil. Single home for the byte-identical scan that `doctor`
+    # (codex/qmd/ffmpeg) and Chromium detection both need.
+    def which(cmd)
+      ENV.fetch("PATH", "").split(File::PATH_SEPARATOR).each do |dir|
+        full = File.join(dir, cmd)
+        return full if File.executable?(full) && !File.directory?(full)
+      end
+      nil
+    end
+
     def linux?
       RbConfig::CONFIG["host_os"] =~ /linux/i ? true : false
     end
@@ -30,6 +41,19 @@ module Xbookmark
 
     def default_config_dir
       File.join(xdg_config_home, "xbookmark")
+    end
+
+    # Dedicated, isolated Chromium profile for the browser bookmark source.
+    # Deliberately under the xbookmark config dir — never the user's everyday
+    # browser profile — so logging into X here cannot touch normal browsing. On
+    # macOS (with no XDG override) it lands under ~/Library/Application Support,
+    # the native equivalent, mirroring default_wiki_dir/default_logs_dir.
+    def browser_profile_dir
+      if macos? && ENV["XDG_CONFIG_HOME"].to_s.empty?
+        File.join(home, "Library", "Application Support", "xbookmark", "browser-profile")
+      else
+        File.join(default_config_dir, "browser-profile")
+      end
     end
 
     def default_wiki_dir

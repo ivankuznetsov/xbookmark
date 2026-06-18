@@ -38,6 +38,7 @@ module Xbookmark
 
       PACKAGE_TABLE = {
         "ffmpeg"      => { default: "ffmpeg" },
+        "chromium"    => { default: "chromium" },
         "whisper"     => { brew: "whisper-cpp", pacman: "whisper-cpp" },
         "secret-tool" => { pacman: "libsecret", apt: "libsecret-tools", dnf: "libsecret", zypper: "libsecret-tools" },
         # qmd / codex have no standard package; users install manually.

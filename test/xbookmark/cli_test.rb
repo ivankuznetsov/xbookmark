@@ -9,6 +9,10 @@ require "xbookmark/scheduler/base"
 require "xbookmark/scheduler/factory"
 require "xbookmark/sync/runner"
 require "xbookmark/sync/reenricher"
+require "xbookmark/sync/report"
+require "xbookmark/notify"
+require "xbookmark/browser/login"
+require "xbookmark/browser/session"
 require "xbookmark/transcribe/whisper"
 require "xbookmark/x/auth"
 require "xbookmark/x/client"
@@ -21,6 +25,14 @@ describe Xbookmark::CLI do
 
     def maintenance_errors
       self[:maintenance_errors] || 0
+    end
+
+    # The real Sync::Report always answers session_expired?; mirror it so this
+    # double stays a faithful stand-in now that exit_with calls it directly
+    # (no respond_to? guard). These FakeReport-based cases are never the
+    # expiry case — that one uses a real Report.
+    def session_expired?
+      false
     end
 
     def to_s
@@ -48,6 +60,9 @@ describe Xbookmark::CLI do
       daily_sync_time: "06:00",
       min_run_interval_hours: 20.0,
       aux_summaries: false,
+      # Config.load always resolves a concrete source (default "api"); mirror that
+      # so Sources::Factory (which now rejects an unknown/nil source) builds.
+      source: "api",
       env_file: "/tmp/.env",
       verbose: false
     }.merge(overrides))
@@ -108,7 +123,9 @@ describe Xbookmark::CLI do
   end
 
   it "passes --wiki to auth subcommands" do
-    config = Struct.new(:x_access_token, :x_token_expires_at).new("", nil)
+    # A faithful Config stand-in always carries :source (Config.load resolves it),
+    # which Config.source_of now reads directly without a respond_to? guard.
+    config = Struct.new(:x_access_token, :x_token_expires_at, :source).new("", nil, "api")
     Xbookmark::Config.expects(:load).with(wiki_override: "/auth/wiki", vault_override: nil, verbose: false).returns(config)
 
     assert_raises(SystemExit) do
@@ -276,6 +293,167 @@ describe Xbookmark::CLI do
     $stderr = old_stderr
   end
 
+  it "routes auth login --browser to the browser login flow instead of OAuth" do
+    Xbookmark::Config.stubs(:load_offline).returns(test_config(source: "browser"))
+    Xbookmark::State::Store.stubs(:new).returns(stub)
+    browser_login = mock("browser login")
+    browser_login.expects(:call).returns(true)
+    Xbookmark::Browser::Login.expects(:new).returns(browser_login)
+    Xbookmark::X::Auth.expects(:new).never
+
+    Xbookmark::CLI::Auth.start(%w[login --browser])
+  end
+
+  it "wires --accept-risk through to the browser login as accept_risk: true" do
+    # End-to-end guard: a regression dropping/renaming the dasherized option would
+    # pass accept_risk: nil and silently re-enable the consent prompt that hangs
+    # unattended runs, with green unit tests.
+    Xbookmark::Config.stubs(:load_offline).returns(test_config(source: "browser"))
+    Xbookmark::State::Store.stubs(:new).returns(stub)
+    browser_login = mock("browser login")
+    browser_login.expects(:call).returns(true)
+    Xbookmark::Browser::Login.expects(:new).with(has_entry(accept_risk: true)).returns(browser_login)
+
+    Xbookmark::CLI::Auth.start(%w[login --browser --accept-risk])
+  end
+
+  it "exits non-zero when browser login is not completed" do
+    Xbookmark::Config.stubs(:load_offline).returns(test_config(source: "browser"))
+    Xbookmark::State::Store.stubs(:new).returns(stub)
+    Xbookmark::Browser::Login.stubs(:new).returns(stub(call: false))
+
+    error = assert_raises(SystemExit) { Xbookmark::CLI::Auth.start(%w[login --browser]) }
+    assert_equal 1, error.status
+  end
+
+  it "reports a clear error when browser login finds no Chromium" do
+    Xbookmark::Config.stubs(:load_offline).returns(test_config(source: "browser"))
+    Xbookmark::State::Store.stubs(:new).returns(stub)
+    Xbookmark::Browser::Login.stubs(:new).raises(Xbookmark::Browser::ChromiumMissing, "No Chromium/Chrome found")
+
+    old_stderr = $stderr
+    $stderr = StringIO.new
+    error = assert_raises(SystemExit) { Xbookmark::CLI::Auth.start(%w[login --browser]) }
+    assert_equal 1, error.status
+    assert_includes $stderr.string, "No Chromium"
+    assert_includes $stderr.string, "CHROMIUM_MISSING"
+  ensure
+    $stderr = old_stderr
+  end
+
+  it "does not mislabel a non-Chromium config error as CHROMIUM_MISSING" do
+    # load_offline parses XBOOKMARK_SOURCE and raises a plain ConfigError for a
+    # bad value; that must surface as CONFIG_ERROR, not CHROMIUM_MISSING.
+    Xbookmark::Config.stubs(:load_offline).raises(Xbookmark::ConfigError, "Invalid XBOOKMARK_SOURCE=\"nonsense\"")
+
+    old_stderr = $stderr
+    $stderr = StringIO.new
+    error = assert_raises(SystemExit) { Xbookmark::CLI::Auth.start(%w[login --browser]) }
+    assert_equal 1, error.status
+    assert_includes $stderr.string, "CONFIG_ERROR"
+    refute_includes $stderr.string, "CHROMIUM_MISSING"
+  ensure
+    $stderr = old_stderr
+  end
+
+  it "reports a present browser session in browser mode without requiring a token" do
+    Xbookmark::Config.stubs(:load).returns(test_config(source: "browser", x_access_token: ""))
+    Xbookmark::Browser::Session.stubs(:profile_saved?).returns(true)
+
+    out = capture_stdout { Xbookmark::CLI::Auth.start(%w[status]) }
+
+    assert_includes out, "source: browser"
+    assert_includes out, "browser session: profile saved but unverified"
+    assert_includes out, "validity is confirmed at next sync"
+    refute_includes out, "Not logged in"
+  end
+
+  it "exits non-zero for an unconfigured browser session and points at the browser login" do
+    Xbookmark::Config.stubs(:load).returns(test_config(source: "browser"))
+    Xbookmark::Browser::Session.stubs(:profile_saved?).returns(false)
+
+    old_stdout = $stdout
+    $stdout = StringIO.new
+    error = assert_raises(SystemExit) { Xbookmark::CLI::Auth.start(%w[status]) }
+    assert_equal 1, error.status, "browser-only with no session must exit non-zero so a wrapper can branch"
+    assert_includes $stdout.string, "auth login --browser"
+  ensure
+    $stdout = old_stdout
+  end
+
+  it "still reports the API token status in both mode but signals the degraded browser half" do
+    Xbookmark::Config.stubs(:load).returns(test_config(source: "both", x_access_token: "token",
+                                                       x_token_expires_at: 2_000_000_000))
+    Xbookmark::Browser::Session.stubs(:profile_saved?).returns(false)
+    Time.stubs(:now).returns(Time.at(1_000_000_000))
+
+    old_stdout = $stdout
+    $stdout = StringIO.new
+    err = capture_stderr do
+      error = assert_raises(SystemExit) { Xbookmark::CLI::Auth.start(%w[status]) }
+      assert_equal 1, error.status, "a degraded browser half exits non-zero even when the API token is fine"
+    end
+
+    assert_includes $stdout.string, "source: both"
+    assert_includes $stdout.string, "Logged in. Token expires at"
+    assert_includes err, "BROWSER_SESSION_MISSING source=both",
+                    "both mode emits a grep-able token so a wrapper can detect the degraded browser half"
+  ensure
+    $stdout = old_stdout
+  end
+
+  it "emits a grep-able API_TOKEN_MISSING token when the API token is absent" do
+    # Symmetric with the browser half's BROWSER_SESSION_MISSING so an agent in
+    # `both` mode can detect which half needs fixing without scraping prose.
+    Xbookmark::Config.stubs(:load).returns(test_config(source: "api", x_access_token: ""))
+
+    old_stdout = $stdout
+    $stdout = StringIO.new
+    err = capture_stderr do
+      error = assert_raises(SystemExit) { Xbookmark::CLI::Auth.start(%w[status]) }
+      assert_equal 1, error.status
+    end
+    assert_includes err, "API_TOKEN_MISSING source=api"
+  ensure
+    $stdout = old_stdout
+  end
+
+  it "emits a grep-able API_TOKEN_EXPIRED token when the API token is expired" do
+    Xbookmark::Config.stubs(:load).returns(test_config(source: "api", x_access_token: "token",
+                                                       x_refresh_token: "refresh", x_token_expires_at: 999))
+    Time.stubs(:now).returns(Time.at(1_000))
+
+    old_stdout = $stdout
+    $stdout = StringIO.new
+    err = capture_stderr do
+      error = assert_raises(SystemExit) { Xbookmark::CLI::Auth.start(%w[status]) }
+      assert_equal 1, error.status
+    end
+    assert_includes err, "API_TOKEN_EXPIRED source=api"
+  ensure
+    $stdout = old_stdout
+  end
+
+  it "emits a grep-able LOGIN_FAILED token when browser login raises unexpectedly" do
+    # Chromium present but won't start (Ferrum::ProcessTimeoutError) escapes
+    # Login#call, which has no rescue; the StandardError backstop must surface a
+    # stable token rather than a raw Thor stacktrace.
+    Xbookmark::Config.stubs(:load_offline).returns(test_config(source: "browser"))
+    Xbookmark::State::Store.stubs(:new).returns(stub)
+    failing = stub
+    failing.stubs(:call).raises(RuntimeError, "Ferrum::ProcessTimeoutError: chromium did not start")
+    Xbookmark::Browser::Login.stubs(:new).returns(failing)
+
+    old_stderr = $stderr
+    $stderr = StringIO.new
+    error = assert_raises(SystemExit) { Xbookmark::CLI::Auth.start(%w[login --browser]) }
+    assert_equal 1, error.status
+    assert_includes $stderr.string, "LOGIN_FAILED"
+    refute_includes $stderr.string, "cli/auth.rb"
+  ensure
+    $stderr = old_stderr
+  end
+
   it "prints auth status without exiting when a token is present" do
     Xbookmark::Config.stubs(:load).returns(test_config(x_access_token: "token", x_token_expires_at: 2_000_000_000))
     Time.stubs(:now).returns(Time.at(1_000_000_000))
@@ -409,7 +587,7 @@ describe Xbookmark::CLI do
   it "runs backfill, sync, and resync with real stores and runner wiring" do
     config = test_config
     Xbookmark::Config.stubs(:load).returns(config)
-    Xbookmark::X::Client.stubs(:new).returns(stub)
+    Xbookmark::X::Client.stubs(:new).returns(stub(bookmarks: nil, get_tweet: nil))
 
     reports = [
       FakeReport.new(failed: 0, permanent_errors: 0, message: "backfilled"),
@@ -465,6 +643,66 @@ describe Xbookmark::CLI do
       capture_stdout { Xbookmark::CLI::Sync.new([], {}).sync_run }
     end
     assert_equal 1, error.status
+  end
+
+  it "does not notify and exits zero for a non-expired source block under --from-scheduler" do
+    # The mutual exclusion to the expiry case: a generic source outage on a
+    # scheduled run degrades to exit 0 and must NOT fire the re-login notification.
+    # Use a real Report (not a FakeReport) so exit_with's `respond_to?(:session_expired?)`
+    # guard actually evaluates the predicate — a FakeReport lacking it would
+    # short-circuit the notify branch and make `expects(:deliver).never` pass vacuously.
+    Xbookmark::Config.stubs(:load).returns(test_config)
+    report = Xbookmark::Sync::Report.new
+    report.source_errors = 1
+    Xbookmark::Sync::Runner.stubs(:new).returns(stub(run: report))
+    Xbookmark::Notify.expects(:deliver).never
+
+    out = capture_stdout { Xbookmark::CLI::Sync.new([], { "from-scheduler": true }).sync_run }
+    assert_includes out, "source blocked"
+  end
+
+  it "notifies and exits non-zero on browser session expiry even from the scheduler" do
+    Xbookmark::Config.stubs(:load).returns(test_config)
+    report = Xbookmark::Sync::Report.new
+    report.synced = 3
+    report.source_errors = 1
+    report.mark_session_expired
+    Xbookmark::Sync::Runner.stubs(:new).returns(stub(run: report))
+    Xbookmark::Notify.expects(:deliver).once.returns(true)
+
+    old_stderr = $stderr
+    $stderr = StringIO.new
+    error = assert_raises(SystemExit) do
+      capture_stdout { Xbookmark::CLI::Sync.new([], { "from-scheduler": true }).sync_run }
+    end
+
+    assert_equal 1, error.status
+    assert_match(/SESSION_EXPIRED source=browser/, $stderr.string,
+                 "emits a stable, grep-able token so wrappers can branch without scraping prose")
+  ensure
+    $stderr = old_stderr
+  end
+
+  it "notifies and exits non-zero on browser session expiry on a manual (non-scheduler) sync" do
+    # exit_with checks session_expired? before the scheduler early-return, so a
+    # manual sync must also notify and exit 1. A regression moving that check after
+    # the early-return would silently drop the manual-path notification.
+    Xbookmark::Config.stubs(:load).returns(test_config)
+    report = Xbookmark::Sync::Report.new
+    report.mark_session_expired
+    Xbookmark::Sync::Runner.stubs(:new).returns(stub(run: report))
+    Xbookmark::Notify.expects(:deliver).once.returns(true)
+
+    old_stderr = $stderr
+    $stderr = StringIO.new
+    error = assert_raises(SystemExit) do
+      capture_stdout { Xbookmark::CLI::Sync.new([], {}).sync_run }
+    end
+
+    assert_equal 1, error.status
+    assert_match(/SESSION_EXPIRED source=browser/, $stderr.string)
+  ensure
+    $stderr = old_stderr
   end
 
   it "tolerates transient pipeline failures on a scheduled run but still fails manual sync" do

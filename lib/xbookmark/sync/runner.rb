@@ -5,8 +5,10 @@ require "json"
 require "time"
 require_relative "report"
 require_relative "pipeline"
+require_relative "../sources/factory"
 require_relative "../x/client"
 require_relative "../x/expansions"
+require_relative "../browser/errors"
 require_relative "../enrich/codex"
 require_relative "../enrich/orchestrator"
 require_relative "../render/bookmark_renderer"
@@ -22,10 +24,35 @@ module Xbookmark
       TAXONOMY_CURATION_BATCH_SIZE = 50
       TAXONOMY_CURATION_TIMEOUT_SECONDS = 60
 
-      def initialize(config:, store:, x_client:, orchestrator: nil, renderer: nil, pipeline: nil, registrar: nil)
+      # Errors that block a single source without being a hard run failure: the
+      # Runner isolates each via #source_blocked so the remaining sources keep
+      # syncing (AC3). SessionExpired is an AuthError subclass (so it is covered
+      # here) and ConfigError covers a misconfigured browser source, e.g. missing
+      # Chromium. SourceUnavailable is intentionally excluded — it means a single
+      # tweet is gone, not that the source is blocked.
+      SOURCE_BLOCK_ERRORS = [
+        Xbookmark::AuthError, Xbookmark::RateLimited, Xbookmark::TransientError, Xbookmark::ConfigError
+      ].freeze
+
+      def initialize(config:, store:, sources: nil, x_client: nil, orchestrator: nil, renderer: nil, pipeline: nil, registrar: nil)
         @config = config
         @store = store
-        @x_client = x_client
+        # Generalized from a single x_client to an ordered list of sources so an
+        # API source keeps syncing in the same run even when the browser session
+        # has expired. `x_client:` stays as a back-compat single-element shim.
+        @sources = sources ? Array(sources) : [x_client].compact
+        # A run with zero sources fetches no pages yet still walks the
+        # mark-backfilled / stamp-last_sync paths, sealing an empty store as a
+        # successful backfill. Fail fast at construction instead — the Factory
+        # always returns at least one source (or raises), so an empty list is a
+        # wiring bug, not a valid configuration.
+        raise ArgumentError, "Sync::Runner requires at least one source" if @sources.empty?
+
+        # Validate the source contract at the boundary that trusts it (get_tweet_any
+        # has no respond_to? guard), so a source missing a method surfaces as a
+        # clear ConfigError here rather than a raw NoMethodError mid-run.
+        @sources.each { |source| verify_source_contract!(source) }
+
         @renderer = renderer || Xbookmark::Render::BookmarkRenderer.new(vault_path: config.vault_path)
         @orch = orchestrator || default_orchestrator
         @pipeline = pipeline || Xbookmark::Sync::Pipeline.new(config: config, store: store, orchestrator: @orch,
@@ -58,9 +85,9 @@ module Xbookmark
           @pipeline.prepare_run! if @pipeline.respond_to?(:prepare_run!)
 
           case mode
-          when :backfill_limited then backfill(report, limit: limit || 100, from_scheduler: from_scheduler)
-          when :backfill_full    then backfill(report, limit: nil, from_scheduler: from_scheduler)
-          when :sync             then incremental_sync(report, from_scheduler: from_scheduler)
+          when :backfill_limited then backfill(report, limit: limit || 100)
+          when :backfill_full    then backfill(report, limit: nil)
+          when :sync             then incremental_sync(report)
           when :resync           then resync_one(report, tweet_id: tweet_id)
           else
             raise ArgumentError, "unknown mode: #{mode}"
@@ -75,6 +102,7 @@ module Xbookmark
           run_maintenance(force: from_scheduler || report.synced.positive?, report: report)
         ensure
           Xbookmark::Taxonomy::Lock.release(lock)
+          close_sources
         end
         report
       end
@@ -154,7 +182,9 @@ module Xbookmark
         registrar.ensure_registered! if registrar.respond_to?(:ensure_registered!)
         registrar.index!
       rescue StandardError => e
-        warn "[xbookmark] qmd reindex failed: #{e.message}"
+        # Match the #{e.class}: #{e.message} convention used by the other swallows
+        # in this file so a generic message (e.g. an Errno path) is triageable.
+        warn "[xbookmark] qmd reindex failed: #{e.class}: #{e.message}"
       end
 
       def default_orchestrator
@@ -181,13 +211,18 @@ module Xbookmark
         end
       end
 
-      def backfill(report, limit:, from_scheduler:)
-        if limit && @store.mode == Xbookmark::State::Store::MODE_FRESH
-          @store.mode = Xbookmark::State::Store::MODE_FRESH # noop, but keep flow visible
-        end
-        attempted = retry_first(report, tolerate_source_errors: from_scheduler)
+      def backfill(report, limit:)
+        attempted = retry_first(report)
         # New pages from API
-        process_new_pages(report, limit: limit, tolerate_source_errors: from_scheduler, attempted_ids: attempted)
+        process_new_pages(report, limit: limit, attempted_ids: attempted)
+        # By-design `both`-mode limitation: a backfill seals as complete only when
+        # NO source raised an error this run. If the API source fully paginated the
+        # timeline but the browser half raised (e.g. SessionExpired), source_errors
+        # is positive and the store stays un-sealed, so every scheduled run re-walks
+        # the whole API timeline (and re-fires the expiry signal) until the human
+        # re-logs in. This is the safe direction — it never seals a possibly
+        # truncated history — at the cost of redundant API walks while one source
+        # is blocked.
         return if report.source_errors.positive?
 
         if limit
@@ -198,7 +233,7 @@ module Xbookmark
         end
       end
 
-      def incremental_sync(report, from_scheduler:)
+      def incremental_sync(report)
         if @store.mode == Xbookmark::State::Store::MODE_FRESH
           puts "[xbookmark] bookmark wiki is empty. Run `xbookmark backfill --limit 100` first to seed it."
           report.permanent_errors += 1
@@ -209,24 +244,29 @@ module Xbookmark
           report.permanent_errors += 1
           return
         end
-        attempted = retry_first(report, tolerate_source_errors: from_scheduler)
-        process_new_pages(report, limit: nil, only_new: true, tolerate_source_errors: from_scheduler,
-                          attempted_ids: attempted)
+        attempted = retry_first(report)
+        process_new_pages(report, limit: nil, only_new: true, attempted_ids: attempted)
         @store.mode = Xbookmark::State::Store::MODE_INCREMENTAL
       end
 
       def resync_one(report, tweet_id:)
         raise ArgumentError, "resync requires a tweet_id" if tweet_id.to_s.empty?
-        page = @x_client.get_tweet(tweet_id)
+        page = get_tweet_any(tweet_id)
+        raise Xbookmark::SourceUnavailable, "tweet #{tweet_id} was unavailable from all sources" unless page && page["data"]
         bookmarks = Xbookmark::X::Expansions.new({ "data" => [page["data"]], "includes" => page["includes"] || {}, "meta" => {} }).bookmarks
         bm = bookmarks.first
         @store.upsert_pending(tweet_id: bm.tweet_id, author_handle: bm.author_handle, bookmarked_at: bm.bookmarked_at,
                               payload: payload_for_bookmark(page, bm))
         @store.reset_to_pending!(bm.tweet_id)
         run_one(bm, report)
+      rescue *SOURCE_BLOCK_ERRORS => e
+        # An expired browser session (or any source block) during resync must be
+        # isolated like the sync/retry paths — record it and signal re-login
+        # rather than escaping uncaught as a raw stacktrace.
+        source_blocked(report, e, context: "resync")
       end
 
-      def retry_first(report, tolerate_source_errors:)
+      def retry_first(report)
         rows = @store.bookmarks_to_process(limit: 200)
         attempted = {}
         uncached = []
@@ -253,42 +293,80 @@ module Xbookmark
           report.permanent_errors += 1
         end
         attempted
-      rescue Xbookmark::AuthError, Xbookmark::RateLimited, Xbookmark::TransientError => e
-        source_blocked(report, e, context: "retry", tolerate: tolerate_source_errors)
+      rescue *SOURCE_BLOCK_ERRORS => e
+        source_blocked(report, e, context: "retry")
         attempted || {}
       end
 
-      def process_new_pages(report, limit:, only_new: false, tolerate_source_errors:, attempted_ids: {})
+      def process_new_pages(report, limit:, only_new: false, attempted_ids: {})
         collected = 0
-        @x_client.bookmarks(user_id: @config.x_user_id,
-                            max_results: Xbookmark::X::Client::BOOKMARK_PAGE_SIZE) do |payload|
-          report.api_pages += 1
-          page_bookmarks = Xbookmark::X::Expansions.new(payload).bookmarks
-          @pipeline.index_thread_bookmarks(page_bookmarks) if @pipeline.respond_to?(:index_thread_bookmarks)
-          page_new = 0
-
-          page_bookmarks.each do |bm|
-            break if limit && collected >= limit
-            @store.upsert_pending(tweet_id: bm.tweet_id, author_handle: bm.author_handle, bookmarked_at: bm.bookmarked_at,
-                                  payload: payload_for_bookmark(payload, bm))
-            if @store.already_done?(bm.tweet_id)
-              report.skipped += 1
-              next
-            end
-            next if attempted_ids[bm.tweet_id.to_s]
-
-            run_one(bm, report)
-            collected += 1
-            page_new += 1
-          end
-
-          next_token = (payload["meta"] || {})["next_token"]
-          break if only_new && page_new.zero?
+        @sources.each do |source|
           break if limit && collected >= limit
-          break unless next_token
+
+          collected = fetch_new_pages(source, report, limit: limit, only_new: only_new,
+                                      attempted_ids: attempted_ids, collected: collected)
         end
-      rescue Xbookmark::AuthError, Xbookmark::RateLimited, Xbookmark::TransientError => e
-        source_blocked(report, e, context: "new bookmark fetch", tolerate: tolerate_source_errors)
+      end
+
+      # Drives one source's pagination. Any source block — auth, rate-limit, a
+      # transient browser/CDP failure, or a missing-Chromium ConfigError — is
+      # isolated via source_blocked so the remaining sources still run. Returns
+      # the running `collected` count so `limit` caps total items across sources.
+      def fetch_new_pages(source, report, limit:, only_new:, attempted_ids:, collected:)
+        consumer_error = nil
+        source.bookmarks(user_id: @config.x_user_id,
+                         max_results: Xbookmark::X::Client::BOOKMARK_PAGE_SIZE) do |payload|
+          begin
+            report.source_pages += 1
+            page_bookmarks = Xbookmark::X::Expansions.new(payload).bookmarks
+            @pipeline.index_thread_bookmarks(page_bookmarks) if @pipeline.respond_to?(:index_thread_bookmarks)
+            page_new = 0
+
+            page_bookmarks.each do |bm|
+              break if limit && collected >= limit
+              @store.upsert_pending(tweet_id: bm.tweet_id, author_handle: bm.author_handle, bookmarked_at: bm.bookmarked_at,
+                                    payload: payload_for_bookmark(payload, bm))
+              if @store.already_done?(bm.tweet_id)
+                report.skipped += 1
+                next
+              end
+              next if attempted_ids[bm.tweet_id.to_s]
+
+              # Mark attempted before processing so a later source in the same run
+              # (the `both` mode threads attempted_ids across sources) can't
+              # re-process the same not-yet-done tweet and advance its attempts
+              # toward permanent_error. Mirrors retry_first.
+              attempted_ids[bm.tweet_id.to_s] = true
+              run_one(bm, report)
+              collected += 1
+              page_new += 1
+            end
+
+            next_token = (payload["meta"] || {})["next_token"]
+            break if only_new && page_new.zero?
+            break if limit && collected >= limit
+            break unless next_token
+          rescue *SOURCE_BLOCK_ERRORS
+            # A genuine source block raised while consuming a page is still the
+            # source-block contract — let it reach the rescue below.
+            raise
+          rescue StandardError => e
+            # The per-page consumer work (Expansions, the store, the pipeline) ran
+            # inside the source's yield, so a non-source-block error here is the
+            # consumer's, not the source's. Capture it and stop driving this source
+            # cleanly so it is handled here — outside the source's own rescue —
+            # rather than the browser source laundering it into a tolerated
+            # TransientError, or a malformed API page (which X::Client does not
+            # wrap) aborting the whole multi-source run with a raw stacktrace.
+            consumer_error = e
+            break
+          end
+        end
+        consumer_failed(report, consumer_error, context: "new bookmark fetch") if consumer_error
+        collected
+      rescue *SOURCE_BLOCK_ERRORS => e
+        source_blocked(report, e, context: "new bookmark fetch")
+        collected
       end
 
       def run_one(bookmark, report)
@@ -323,13 +401,38 @@ module Xbookmark
       end
 
       def fetch_bookmark(tweet_id)
-        page = @x_client.get_tweet(tweet_id)
-        raise Xbookmark::SourceUnavailable, "tweet #{tweet_id} was unavailable from X" unless page && page["data"]
+        page = get_tweet_any(tweet_id)
+        raise Xbookmark::SourceUnavailable, "tweet #{tweet_id} was unavailable from any source" unless page && page["data"]
 
         payload = { "data" => [page["data"]], "includes" => page["includes"] || {}, "meta" => {} }
         bookmark = Xbookmark::X::Expansions.new(payload).bookmarks.first
         @store.store_payload!(tweet_id: tweet_id, payload: payload)
         bookmark
+      end
+
+      # Tries each source's get_tweet until one returns the tweet. A source
+      # block (auth/rate-limit/transient) on one source does not abort the
+      # others; if every source is blocked, the last block is re-raised so the
+      # caller's source_blocked path records it.
+      def get_tweet_any(tweet_id)
+        last_block = nil
+        @sources.each do |source|
+          # get_tweet is a mandatory part of the source contract (enforced by
+          # Sources::Factory#verify_contract!), so every source answers it — no
+          # respond_to? guard, which would only mask a future contract violation.
+          begin
+            page = source.get_tweet(tweet_id)
+            return page if page && page["data"]
+          rescue Xbookmark::SourceUnavailable
+            # This source does not have the tweet; try the next source.
+            next
+          rescue *SOURCE_BLOCK_ERRORS => e
+            last_block = e
+          end
+        end
+        raise last_block if last_block
+
+        nil
       end
 
       def payload_for_bookmark(payload, bookmark)
@@ -367,9 +470,44 @@ module Xbookmark
         nil
       end
 
-      def source_blocked(report, error, context:, tolerate:)
+      def source_blocked(report, error, context:)
         warn "[xbookmark] source blocked during #{context}: #{error.message}"
         report.source_errors += 1
+        # A browser session expiry is the one source block that needs a human:
+        # set expired_source so the CLI fires a notification and exits non-zero
+        # even under --from-scheduler (report.session_expired? derives from it).
+        # A generic API token block leaves expired_source nil → exit-0 + degraded.
+        report.mark_session_expired if error.is_a?(Xbookmark::Browser::SessionExpired)
+      end
+
+      # A consumer/store/pipeline error raised while processing a source's page is
+      # neither a tolerated source block (it must not silently exit 0 and self-
+      # retry forever under --from-scheduler) nor a reason to abort the sibling
+      # sources (AC3). Record it as a source error so a backfill is not sealed
+      # complete over an unprocessed tail, AND as a permanent error so the run
+      # fails loudly even under --from-scheduler, then let the caller move on to
+      # the next source.
+      def consumer_failed(report, error, context:)
+        warn "[xbookmark] #{context} failed while processing a source page: #{error.class}: #{error.message}"
+        report.source_errors += 1
+        report.permanent_errors += 1
+      end
+
+      # The Factory enforces the duck-typed source contract at build time, but the
+      # Runner also accepts arbitrary sources:/x_client: objects (and get_tweet_any
+      # trusts them with no respond_to? guard), so it validates here too —
+      # delegating to the Factory's single check so the two trust boundaries can
+      # never enforce different contracts.
+      def verify_source_contract!(source)
+        Xbookmark::Sources::Factory.verify_contract!(source)
+      end
+
+      # Releases each source's resources once the run is done. The browser source
+      # keeps Chromium alive across get_tweet/bookmarks calls for reuse, so the
+      # single quit happens here (covers the resync path, which only calls
+      # get_tweet). The API source has no #close.
+      def close_sources
+        @sources.each { |source| source.close if source.respond_to?(:close) }
       end
     end
   end

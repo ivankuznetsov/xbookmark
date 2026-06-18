@@ -56,7 +56,19 @@ module Xbookmark
       def bookmark_date(bookmark)
         Time.parse(bookmark.bookmarked_at.to_s).utc
       rescue ArgumentError
-        Time.parse(bookmark.created_at.to_s).utc
+        begin
+          Time.parse(bookmark.created_at.to_s).utc
+        rescue ArgumentError
+          # Both timestamps are absent or unparseable — e.g. X served a tweet
+          # with no created_at, so the normalizer dropped the field and
+          # Expansions set both bookmarked_at and created_at to nil. Fall back to
+          # the epoch sentinel so the bookmark still renders into a YYYY/MM/DD
+          # shard. Without this, Time.parse("") would re-raise here uncaught,
+          # Pipeline#guard would record a permanent error, and the bookmark would
+          # be dropped forever — the silent, permanent data loss this guard exists
+          # to prevent.
+          Time.at(0).utc
+        end
       end
 
       def collision?(filename, taken_paths, dir)

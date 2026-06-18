@@ -1,0 +1,40 @@
+{
+  "data": {
+    "tweetResult": {
+      "result": {
+        "__typename": "Tweet",
+        "rest_id": "1001",
+        "core": {
+          "user_results": {
+            "result": {
+              "__typename": "User",
+              "rest_id": "u1",
+              "legacy": {
+                "screen_name": "alice",
+                "name": "Alice",
+                "profile_image_url_https": "https://x/p1.jpg"
+              }
+            }
+          }
+        },
+        "legacy": {
+          "id_str": "1001",
+          "user_id_str": "u1",
+          "full_text": "first tweet about ozempic",
+          "created_at": "Thu Jan 01 00:00:00 +0000 2026",
+          "conversation_id_str": "1001",
+          "extended_entities": {
+            "media": [
+              {
+                "media_key": "m1",
+                "type": "photo",
+                "media_url_https": "https://x/img.jpg",
+                "original_info": { "width": 800, "height": 600 }
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

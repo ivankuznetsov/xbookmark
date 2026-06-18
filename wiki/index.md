@@ -3,14 +3,14 @@ title: xbookmark Wiki
 type: index
 source: wiki/**/*.md
 created: 2026-05-14
-updated: 2026-06-15
+updated: 2026-06-17
 tags: [index, wiki]
 ---
 
 **TLDR**: Catalog of the LLM-maintained wiki for `xbookmark`.
 
-Page count: 11
-Updated: 2026-06-15
+Page count: 12
+Updated: 2026-06-17
 
 ## Core Pages
 
@@ -19,6 +19,7 @@ Updated: 2026-06-15
 - [[commands]] - CLI command surface, fresh setup contract, first-run setup wizard, doctor fixes, taxonomy repair, install, and uninstall behavior.
 - [[data-model]] - SQLite state schema, bookmark wiki layout, statuses, modes, and transactional behavior.
 - [[dependencies]] - Ruby gem dependencies, external CLIs, Codex/QMD/Whisper tools, scheduler tools, and contributor checks.
+- [[browser-source]] - Opt-in browser bookmark source: Ferrum + system Chromium, GraphQL→API-v2 envelope parity, multi-source Runner, and unattended expiry signaling.
 - [[decisions]] - Repository, workflow, runtime, setup, service-tier, and coverage decisions grounded in code/history.
 - [[active-areas]] - Production hardening state, 50-item page-size landing, local coverage gate, and service-tier follow-up.
 - [[live-production-learnings]] - Production backfill lessons, source limits, media/transcript fixes, Codex/QMD behavior, and reusable verification commands.

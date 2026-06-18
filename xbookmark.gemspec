@@ -25,6 +25,7 @@ Gem::Specification.new do |spec|
   spec.add_dependency "oauth2", "~> 2.0"
   spec.add_dependency "nokogiri", "~> 1.16"
   spec.add_dependency "down", "~> 5.4"
+  spec.add_dependency "ferrum", "~> 0.17"
   spec.add_dependency "json-schema", "~> 5.0"
   spec.add_dependency "base64", "~> 0.2"
   spec.add_dependency "ostruct", "~> 0.6"
