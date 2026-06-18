@@ -95,6 +95,16 @@ module Xbookmark
           capture = GraphqlCapture.new(page)
           gql = capture.drain_tweets.last
           unless gql
+            # The initial guard only saw the session state at navigation time. A
+            # session that expires *after* go_to (X completes a login/checkpoint
+            # redirect while the page settles) captures no tweet and can settle
+            # cleanly — which would otherwise fall through to the permanent
+            # SourceUnavailable below and let a retry/resync mark the row gone
+            # instead of firing SESSION_EXPIRED. Re-check the settled URL so a
+            # redirect that appeared after the initial guard is reclassified as
+            # SessionExpired (re-login) rather than an unavailable tweet.
+            guard_session!(page)
+
             # A captured tweet is returned even when the settle stalled (the body
             # was already drained), but with nothing captured a stalled/failed
             # load is transient — reserve the permanent SourceUnavailable for a

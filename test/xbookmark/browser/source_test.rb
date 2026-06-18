@@ -119,6 +119,29 @@ class MidWalkExpiringPage
   end
 end
 
+# A single-tweet load whose session expires *after* the initial guard: the URL
+# is a clean tweet URL when go_to's guard runs, no tweet traffic is captured, and
+# X has redirected to login by the time the page settles. Exercises get_tweet's
+# re-guard that runs after settle, before the permanent SourceUnavailable.
+class TweetExpiringAfterSettlePage
+  def initialize
+    @current_url = "https://x.com/i/web/status/1"
+  end
+
+  def go_to(_) = nil
+  def current_url = @current_url
+  def execute(_) = nil
+  def network = self
+  def wait_for_idle = nil
+
+  def traffic
+    # Draining (after the clean settle) reveals the post-redirect state, so the
+    # initial guard saw a clean URL and only the re-guard catches the expiry.
+    @current_url = "https://x.com/i/flow/login"
+    []
+  end
+end
+
 # A timeline whose Bottom cursor strictly advances on every scroll and never
 # repeats, so the walk can only terminate by hitting MAX_TIMELINE_ITERATIONS.
 # Traffic is cumulative (append-only), mirroring the real CDP buffer.
@@ -543,5 +566,14 @@ describe Xbookmark::Browser::Source do
 
     assert_raises(Xbookmark::Browser::SessionExpired) { source.get_tweet("1") }
     assert_equal 0, session.quits, "the Runner owns closing the reused session"
+  end
+
+  it "raises SessionExpired (not SourceUnavailable) from get_tweet when the session expires after settle" do
+    # A clean settle that captured no tweet because X redirected to login *after*
+    # the initial guard must surface as SessionExpired (re-login) — never the
+    # permanent SourceUnavailable that a retry/resync would treat as a gone tweet.
+    source = described_class.new(config: config, session: StubSession.new(TweetExpiringAfterSettlePage.new))
+
+    assert_raises(Xbookmark::Browser::SessionExpired) { source.get_tweet("1") }
   end
 end
