@@ -35,17 +35,11 @@ module Xbookmark
 
         missing = []
         missing << "codex"   unless check_bin("codex",   config.codex_bin)
-        unless whisper_ok?(config)
-          missing << "whisper"
-        end
+        missing << "whisper" unless whisper_ok?(config)
         missing << "qmd"     unless check_bin("qmd",     config.qmd_bin)
         missing << "ffmpeg"  unless check_bin("ffmpeg",  "ffmpeg")
 
-        if config.x_access_token.to_s.empty?
-          say "X auth: NOT logged in (run: xbookmark auth login)"
-        else
-          say "X auth: token present (expires_at=#{config.x_token_expires_at || "unknown"})"
-        end
+        report_x_auth(config)
 
         report_browser(config)
 
@@ -59,6 +53,22 @@ module Xbookmark
       end
 
       private
+
+      # In browser-only mode no X API token is expected, so don't nag the user to
+      # run the dev-API OAuth login they deliberately opted out of.
+      def report_x_auth(config)
+        source = (config.respond_to?(:source) && config.source) || Xbookmark::Config::SOURCE_API
+        unless Xbookmark::Config.api_source?(source)
+          say "X auth: not required (source=#{source})"
+          return
+        end
+
+        if config.x_access_token.to_s.empty?
+          say "X auth: NOT logged in (run: xbookmark auth login)"
+        else
+          say "X auth: token present (expires_at=#{config.x_token_expires_at || "unknown"})"
+        end
+      end
 
       # Browser bookmark source readiness. Chromium is required-but-not-bundled,
       # so this is the runtime check that it is present; nothing here launches a
@@ -150,7 +160,7 @@ module Xbookmark
           say ""
           say "Run `#{cmd.join(' ')}`? [y/N]"
           answer = @input.gets.to_s.strip.downcase
-          if answer == "y" || answer == "yes"
+          if %w[y yes].include?(answer)
             system(*cmd)
           else
             say "  skipped #{tool}"

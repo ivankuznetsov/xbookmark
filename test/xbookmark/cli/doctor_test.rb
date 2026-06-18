@@ -110,6 +110,15 @@ describe Xbookmark::CLI::Doctor do
     assert_match(/browser session: saved/, out)
   end
 
+  it "does not nag about API login when the source is browser-only" do
+    ENV["XBOOKMARK_SOURCE"] = "browser"
+    out = run_doctor
+    refute_match(/X auth: NOT logged in/, out)
+    assert_match(/X auth: not required \(source=browser\)/, out)
+  ensure
+    ENV.delete("XBOOKMARK_SOURCE")
+  end
+
   it "reports a missing Chromium and an unconfigured browser session" do
     Xbookmark::Browser::Chromium.stubs(:detect).returns(nil)
     Xbookmark::Browser::Session.stubs(:profile_saved?).returns(false)

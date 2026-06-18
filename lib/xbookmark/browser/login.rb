@@ -31,7 +31,7 @@ module Xbookmark
       TEXT
 
       def initialize(config:, store:, session: nil, input: $stdin, output: $stdout,
-                     clock: Time, sleeper: DEFAULT_SLEEPER)
+                     clock: Time, sleeper: DEFAULT_SLEEPER, accept_risk: false)
         @config = config
         @store = store
         @session = session
@@ -39,6 +39,7 @@ module Xbookmark
         @output = output
         @clock = clock
         @sleeper = sleeper
+        @accept_risk = accept_risk
       end
 
       # Returns true on a confirmed login, false on declined consent or timeout.
@@ -62,6 +63,17 @@ module Xbookmark
 
       def ensure_consent!
         return true if @store.get_meta(CONSENT_KEY)
+        return record_consent! if @accept_risk
+
+        # Never block on consent when stdin is not interactive (an unattended
+        # scheduler/agent shell): an open-but-silent pipe would hang on `gets`
+        # forever. Decline with an actionable pointer instead. Mirrors the
+        # tty? guard in cli/setup.rb.
+        unless interactive?
+          say "Browser-source consent needs an interactive terminal. Re-run interactively, " \
+              "or pass `--accept-risk` to accept the ToS/account risk non-interactively."
+          return false
+        end
 
         @output.print(CONSENT_WARNING)
         answer = @input.gets.to_s.strip.downcase
@@ -70,8 +82,16 @@ module Xbookmark
           return false
         end
 
+        record_consent!
+      end
+
+      def record_consent!
         @store.set_meta(CONSENT_KEY, @clock.now.utc.iso8601)
         true
+      end
+
+      def interactive?
+        @input.respond_to?(:tty?) && @input.tty?
       end
 
       def wait_for_login

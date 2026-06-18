@@ -4,6 +4,12 @@ require "test_helper"
 require "xbookmark/browser/login"
 require "xbookmark/state/store"
 
+# StringIO that reports as an interactive terminal so the consent-prompt path is
+# exercised (a real `auth login --browser` runs with a TTY).
+class TtyStringIO < StringIO
+  def tty? = true
+end
+
 class FakeLoginSession
   attr_reader :opened, :quits, :login_checks
 
@@ -32,7 +38,7 @@ describe Xbookmark::Browser::Login do
 
   def build(session, input: "y\n")
     described_class.new(config: config, store: store, session: session,
-                        input: StringIO.new(input), output: @out = StringIO.new,
+                        input: TtyStringIO.new(input), output: @out = StringIO.new,
                         clock: clock, sleeper: ->(_) { })
   end
 
@@ -86,9 +92,33 @@ describe Xbookmark::Browser::Login do
     assert_equal 1, session.quits
   end
 
+  it "declines non-interactively when stdin is not a tty and no flag is given" do
+    session = FakeLoginSession.new([true])
+    login = described_class.new(config: config, store: store, session: session,
+                                input: StringIO.new("y\n"), output: out = StringIO.new,
+                                clock: clock, sleeper: ->(_) { })
+
+    refute login.call, "must not block on `gets` for a non-interactive stdin"
+    assert_includes out.string, "--accept-risk"
+    assert_empty session.opened
+    assert_nil store.get_meta("browser_consent_at")
+    assert_equal 1, session.quits
+  end
+
+  it "accepts consent non-interactively with accept_risk and never prompts" do
+    session = FakeLoginSession.new([true])
+    login = described_class.new(config: config, store: store, session: session, accept_risk: true,
+                                input: StringIO.new(""), output: out = StringIO.new,
+                                clock: clock, sleeper: ->(_) { })
+
+    assert login.call
+    refute_includes out.string, "Browser bookmark source"
+    refute_nil store.get_meta("browser_consent_at")
+  end
+
   it "defaults to a real headless-false Session when none is injected" do
     Xbookmark::Browser::Session.expects(:new).with(config: config, headless: false).returns(FakeLoginSession.new([true]))
-    login = described_class.new(config: config, store: store, input: StringIO.new("y\n"),
+    login = described_class.new(config: config, store: store, input: TtyStringIO.new("y\n"),
                                 output: StringIO.new, clock: clock, sleeper: ->(_) { })
     assert login.call
   end

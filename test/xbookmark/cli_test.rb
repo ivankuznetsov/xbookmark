@@ -325,13 +325,17 @@ describe Xbookmark::CLI do
     refute_includes out, "Not logged in"
   end
 
-  it "points an unconfigured browser session at the browser login command" do
+  it "exits non-zero for an unconfigured browser session and points at the browser login" do
     Xbookmark::Config.stubs(:load).returns(test_config(source: "browser"))
     Xbookmark::Browser::Session.stubs(:profile_saved?).returns(false)
 
-    out = capture_stdout { Xbookmark::CLI::Auth.start(%w[status]) }
-
-    assert_includes out, "auth login --browser"
+    old_stdout = $stdout
+    $stdout = StringIO.new
+    error = assert_raises(SystemExit) { Xbookmark::CLI::Auth.start(%w[status]) }
+    assert_equal 1, error.status, "browser-only with no session must exit non-zero so a wrapper can branch"
+    assert_includes $stdout.string, "auth login --browser"
+  ensure
+    $stdout = old_stdout
   end
 
   it "still reports the API token status in both mode" do
@@ -542,16 +546,21 @@ describe Xbookmark::CLI do
     report = Xbookmark::Sync::Report.new
     report.synced = 3
     report.source_errors = 1
-    report.session_expired = true
     report.expired_source = "browser"
     Xbookmark::Sync::Runner.stubs(:new).returns(stub(run: report))
-    Xbookmark::Notify.expects(:send).once.returns(true)
+    Xbookmark::Notify.expects(:deliver).once.returns(true)
 
+    old_stderr = $stderr
+    $stderr = StringIO.new
     error = assert_raises(SystemExit) do
-      capture_stderr { capture_stdout { Xbookmark::CLI::Sync.new([], { "from-scheduler": true }).sync_run } }
+      capture_stdout { Xbookmark::CLI::Sync.new([], { "from-scheduler": true }).sync_run }
     end
 
     assert_equal 1, error.status
+    assert_match(/SESSION_EXPIRED source=browser/, $stderr.string,
+                 "emits a stable, grep-able token so wrappers can branch without scraping prose")
+  ensure
+    $stderr = old_stderr
   end
 
   it "tolerates transient pipeline failures on a scheduled run but still fails manual sync" do
