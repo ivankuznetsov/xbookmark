@@ -3,7 +3,7 @@ title: Browser Bookmark Source
 type: feature
 source: lib/xbookmark/browser/*, lib/xbookmark/sources/factory.rb, lib/xbookmark/config.rb, lib/xbookmark/sync/runner.rb, lib/xbookmark/notify.rb
 created: 2026-06-17
-updated: 2026-06-17
+updated: 2026-06-18
 tags: [browser, source, ferrum, graphql, parity]
 ---
 
@@ -74,8 +74,10 @@ API source keeps syncing in the same run even when the browser session expired.
 
 ## Unattended expiry (AC3)
 
-On a scheduled headless run, a `SessionExpired` sets `report.expired_source`
-(from which `report.session_expired?` derives; `source_errors` is also bumped).
+On a scheduled headless run, a `SessionExpired` is recorded via
+`report.mark_session_expired("browser")` — the only writer of the read-only
+`expired_source` field (`report.expired_source = …` would raise, by design), from
+which `report.session_expired?` derives; `source_errors` is also bumped.
 This is isolated on every path — sync, retry, **and resync** — via
 `source_blocked`. The CLI then fires `Notify.deliver` (notify-send on Linux,
 osascript on macOS; spawned detached so a stuck D-Bus can't hang the run),

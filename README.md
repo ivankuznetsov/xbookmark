@@ -218,6 +218,21 @@ non-zero. Restore it with the same `bin/xbookmark auth login --browser`. With
 `XBOOKMARK_SOURCE=both`, a configured API source still syncs during that same
 run, so only the browser half needs re-login.
 
+#### Agent-readable stderr tokens
+
+The browser surface emits a stable, grep-able stderr token on each failure so a
+wrapper or agent can branch on the failure mode without scraping prose. Every
+case below exits non-zero.
+
+| Token | Emitting command | Exit | Remediation |
+| --- | --- | --- | --- |
+| `SESSION_EXPIRED source=browser` | `sync` / `backfill` / `resync` | `1` (even under `--from-scheduler`) | Re-run `bin/xbookmark auth login --browser` |
+| `CHROMIUM_MISSING` | `auth login --browser` | `1` | Install a system Chromium/Chrome, then re-run |
+| `CONFIG_ERROR` | `auth login --browser` | `1` | Fix the offending config (e.g. an invalid `XBOOKMARK_SOURCE`), then re-run |
+| `LOGIN_TIMEOUT` | `auth login --browser` | `1` | Re-run `bin/xbookmark auth login --browser` and finish signing in |
+| `CONSENT_REQUIRED` | `auth login --browser` | `1` | Re-run interactively, or pass `--accept-risk` to accept non-interactively |
+| `CONSENT_DECLINED` | `auth login --browser` | `1` | Re-run and accept the ToS/account-risk consent prompt |
+
 ### What this will cost
 
 xbookmark uses the official paid X API. The README intentionally uses the
