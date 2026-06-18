@@ -109,14 +109,37 @@ module Xbookmark
         klass.new(ferrum_options)
       end
 
+      # Generous bounds so the unattended daily walk can never hang Chromium
+      # indefinitely (the OS-level RuntimeMaxSec on the systemd unit is the outer
+      # backstop; these cap individual CDP ops and the process launch).
+      FERRUM_TIMEOUT_SECONDS = 60
+      FERRUM_PROCESS_TIMEOUT_SECONDS = 30
+
       def ferrum_options
-        FileUtils.mkdir_p(profile_dir)
+        prepare_profile_dir!
         {
           headless: @headless,
           browser_path: chromium_path,
           save_path: profile_dir,
+          # incognito: false keeps the browser context on-disk so the X login
+          # cookies persist into later headless runs — without it Ferrum defaults
+          # to an off-the-record context and `auth login --browser` would succeed
+          # but save no reusable session.
+          incognito: false,
+          timeout: FERRUM_TIMEOUT_SECONDS,
+          process_timeout: FERRUM_PROCESS_TIMEOUT_SECONDS,
           browser_options: { "user-data-dir" => profile_dir }
         }
+      end
+
+      # The profile holds the live X session cookies — strictly more powerful
+      # than the OAuth token — so lock it (and its parent config dir) to 0700 so
+      # another local user on a shared host cannot read or hijack the session.
+      def prepare_profile_dir!
+        FileUtils.mkdir_p(profile_dir, mode: 0o700)
+        parent = File.dirname(profile_dir)
+        FileUtils.chmod(0o700, parent) if File.directory?(parent)
+        FileUtils.chmod(0o700, profile_dir)
       end
 
       def raise_missing_chromium

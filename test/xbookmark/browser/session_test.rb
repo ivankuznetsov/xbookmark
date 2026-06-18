@@ -70,6 +70,20 @@ describe Xbookmark::Browser::Session do
     end
   end
 
+  it "persists an on-disk profile and locks it (and the config dir) to 0700" do
+    with_tmp_home do |home|
+      browser = build_session.start
+
+      refute browser.options[:incognito], "must use an on-disk (non-incognito) context so X cookies persist"
+      assert_equal Xbookmark::Browser::Session::FERRUM_TIMEOUT_SECONDS, browser.options[:timeout]
+      assert_equal Xbookmark::Browser::Session::FERRUM_PROCESS_TIMEOUT_SECONDS, browser.options[:process_timeout]
+
+      profile = File.join(home, ".config", "xbookmark", "browser-profile")
+      assert_equal "700", format("%o", File.stat(profile).mode & 0o777), "profile holds live cookies; must be private"
+      assert_equal "700", format("%o", File.stat(File.dirname(profile)).mode & 0o777)
+    end
+  end
+
   it "builds a headed browser for one-time login" do
     with_tmp_home do
       browser = build_session(headless: false).start
