@@ -302,33 +302,51 @@ module Xbookmark
       # isolated via source_blocked so the remaining sources still run. Returns
       # the running `collected` count so `limit` caps total items across sources.
       def fetch_new_pages(source, report, limit:, only_new:, tolerate_source_errors:, attempted_ids:, collected:)
+        consumer_error = nil
         source.bookmarks(user_id: @config.x_user_id,
                          max_results: Xbookmark::X::Client::BOOKMARK_PAGE_SIZE) do |payload|
-          report.source_pages += 1
-          page_bookmarks = Xbookmark::X::Expansions.new(payload).bookmarks
-          @pipeline.index_thread_bookmarks(page_bookmarks) if @pipeline.respond_to?(:index_thread_bookmarks)
-          page_new = 0
+          begin
+            report.source_pages += 1
+            page_bookmarks = Xbookmark::X::Expansions.new(payload).bookmarks
+            @pipeline.index_thread_bookmarks(page_bookmarks) if @pipeline.respond_to?(:index_thread_bookmarks)
+            page_new = 0
 
-          page_bookmarks.each do |bm|
-            break if limit && collected >= limit
-            @store.upsert_pending(tweet_id: bm.tweet_id, author_handle: bm.author_handle, bookmarked_at: bm.bookmarked_at,
-                                  payload: payload_for_bookmark(payload, bm))
-            if @store.already_done?(bm.tweet_id)
-              report.skipped += 1
-              next
+            page_bookmarks.each do |bm|
+              break if limit && collected >= limit
+              @store.upsert_pending(tweet_id: bm.tweet_id, author_handle: bm.author_handle, bookmarked_at: bm.bookmarked_at,
+                                    payload: payload_for_bookmark(payload, bm))
+              if @store.already_done?(bm.tweet_id)
+                report.skipped += 1
+                next
+              end
+              next if attempted_ids[bm.tweet_id.to_s]
+
+              run_one(bm, report)
+              collected += 1
+              page_new += 1
             end
-            next if attempted_ids[bm.tweet_id.to_s]
 
-            run_one(bm, report)
-            collected += 1
-            page_new += 1
+            next_token = (payload["meta"] || {})["next_token"]
+            break if only_new && page_new.zero?
+            break if limit && collected >= limit
+            break unless next_token
+          rescue *SOURCE_BLOCK_ERRORS
+            # A genuine source block raised while consuming a page is still the
+            # source-block contract — let it reach the rescue below.
+            raise
+          rescue StandardError => e
+            # The per-page consumer work (Expansions, the store, the pipeline) ran
+            # inside the source's yield, so a non-source-block error here is the
+            # consumer's, not the source's. Capture it and stop driving this source
+            # cleanly so it is handled here — outside the source's own rescue —
+            # rather than the browser source laundering it into a tolerated
+            # TransientError, or a malformed API page (which X::Client does not
+            # wrap) aborting the whole multi-source run with a raw stacktrace.
+            consumer_error = e
+            break
           end
-
-          next_token = (payload["meta"] || {})["next_token"]
-          break if only_new && page_new.zero?
-          break if limit && collected >= limit
-          break unless next_token
         end
+        consumer_failed(report, consumer_error, context: "new bookmark fetch") if consumer_error
         collected
       rescue *SOURCE_BLOCK_ERRORS => e
         source_blocked(report, e, context: "new bookmark fetch", tolerate: tolerate_source_errors)
@@ -444,6 +462,19 @@ module Xbookmark
         # even under --from-scheduler (report.session_expired? derives from it).
         # A generic API token block leaves expired_source nil → exit-0 + degraded.
         report.mark_session_expired("browser") if error.is_a?(Xbookmark::Browser::SessionExpired)
+      end
+
+      # A consumer/store/pipeline error raised while processing a source's page is
+      # neither a tolerated source block (it must not silently exit 0 and self-
+      # retry forever under --from-scheduler) nor a reason to abort the sibling
+      # sources (AC3). Record it as a source error so a backfill is not sealed
+      # complete over an unprocessed tail, AND as a permanent error so the run
+      # fails loudly even under --from-scheduler, then let the caller move on to
+      # the next source.
+      def consumer_failed(report, error, context:)
+        warn "[xbookmark] #{context} failed while processing a source page: #{error.class}: #{error.message}"
+        report.source_errors += 1
+        report.permanent_errors += 1
       end
 
       # Releases each source's resources once the run is done. The browser source

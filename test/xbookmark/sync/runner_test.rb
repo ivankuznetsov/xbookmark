@@ -787,6 +787,62 @@ describe Xbookmark::Sync::Runner do
     assert_match(/source blocked during new bookmark fetch/, err)
   end
 
+  it "surfaces a consumer/pipeline error as a real failure and still runs the next source (AC3)" do
+    # The per-page consumer work runs inside the source's yield. A non-source-block
+    # error there must not be laundered into a tolerated exit-0 source block (the
+    # browser source's broad rescue) nor abort the whole run (the unwrapped API
+    # source) — it must surface as a real failure while a healthy later source
+    # still syncs.
+    bad_page = {
+      "data" => [{ "id" => "t1", "author_id" => "u1", "text" => "x", "created_at" => "2026-01-01T00:00:00Z", "conversation_id" => "t1" }],
+      "includes" => { "users" => [{ "id" => "u1", "username" => "alice" }] },
+      "meta" => {}
+    }
+    healthy_page = {
+      "data" => [{ "id" => "h1", "author_id" => "u1", "text" => "x", "created_at" => "2026-01-01T00:00:00Z", "conversation_id" => "h1" }],
+      "includes" => { "users" => [{ "id" => "u1", "username" => "alice" }] },
+      "meta" => {}
+    }
+    pipeline = FakePipeline.new(lambda { |bm|
+      raise "pipeline boom" if bm.tweet_id == "t1"
+
+      Xbookmark::Sync::Pipeline::Outcome.new(status: :done, markdown_path: "/x", digest: "d")
+    })
+    runner = described_class.new(config: config, store: store,
+                                 sources: [FakeXClient.new(pages: [bad_page]), FakeXClient.new(pages: [healthy_page])],
+                                 pipeline: pipeline, registrar: registrar)
+
+    err = capture_stderr { @report = runner.run(mode: :backfill_full, from_scheduler: true) }
+
+    assert_equal 1, @report.synced, "the healthy source still syncs after a consumer error isolates the bad source"
+    assert @report.permanent_errors.positive?, "a consumer/pipeline error surfaces as a real (non-tolerated) failure"
+    assert @report.source_errors.positive?, "and is recorded as a source error so the backfill is not sealed complete"
+    assert_equal %w[t1 h1], pipeline.calls
+    assert_match(/failed while processing a source page: RuntimeError: pipeline boom/, err)
+    refute_equal Xbookmark::State::Store::MODE_FULLY_BACKFILLED, store.mode,
+                 "a consumer error must not seal a full backfill complete"
+  end
+
+  it "treats a source-block error raised from consumer work as a tolerated source block" do
+    # A SOURCE_BLOCK_ERROR raised while consuming a page (e.g. a rate-limit
+    # surfacing mid-page) is still the source-block contract — it must flow to
+    # source_blocked, not be reclassified as a hard consumer failure.
+    page = {
+      "data" => [{ "id" => "t1", "author_id" => "u1", "text" => "x", "created_at" => "2026-01-01T00:00:00Z", "conversation_id" => "t1" }],
+      "includes" => { "users" => [{ "id" => "u1", "username" => "alice" }] },
+      "meta" => {}
+    }
+    pipeline = FakePipeline.new(->(_) { raise Xbookmark::TransientError, "rate limited mid-page" })
+    runner = described_class.new(config: config, store: store, x_client: FakeXClient.new(pages: [page]),
+                                 pipeline: pipeline, registrar: registrar)
+
+    err = capture_stderr { @report = runner.run(mode: :backfill_full, from_scheduler: true) }
+
+    assert_equal 1, @report.source_errors
+    assert_equal 0, @report.permanent_errors, "a source-block error from consumer work stays a tolerated source block"
+    assert_match(/source blocked during new bookmark fetch: rate limited mid-page/, err)
+  end
+
   it "caps total items across sources at the requested limit" do
     page_a = {
       "data" => Array.new(3) { |i| { "id" => "a#{i}", "author_id" => "u1", "text" => "x", "created_at" => "2026-01-01T00:00:00Z", "conversation_id" => "a#{i}" } },
