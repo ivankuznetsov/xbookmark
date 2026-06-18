@@ -229,7 +229,28 @@ class StubSession
 end
 
 describe Xbookmark::Browser::Source do
+  include SourceContractTest
+
   let(:config) { Struct.new(:vault_path).new("/tmp/wiki") }
+
+  # ---- shared source-contract hooks (see test/support/source_contract.rb) ----
+  def contract_present_id = "555"
+  def contract_missing_id = "404"
+
+  def build_contract_bookmarks_source
+    described_class.new(config: config,
+                        session: StubSession.new(StubTimelinePage.new([bookmarks_body(ids: %w[1], cursor: "c1")])))
+  end
+
+  def build_contract_present_source
+    described_class.new(config: config,
+                        session: StubSession.new(StubTimelinePage.new([tweet_detail_body("555")], url_kind: :tweet)))
+  end
+
+  def build_contract_missing_source
+    described_class.new(config: config,
+                        session: StubSession.new(StubTimelinePage.new([JSON.generate({ "data" => {} })], url_kind: :tweet)))
+  end
 
   def bookmarks_body(ids:, cursor:)
     entries = ids.map do |id|

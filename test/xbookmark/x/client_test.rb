@@ -5,6 +5,29 @@ require "test_helper"
 require "xbookmark/x/client"
 
 describe Xbookmark::X::Client do
+  include SourceContractTest
+
+  # ---- shared source-contract hooks (see test/support/source_contract.rb) ----
+  def contract_present_id = "123"
+  def contract_missing_id = "deleted"
+
+  def build_contract_bookmarks_source
+    stub_request(:get, %r{api.twitter.com/2/users/42/bookmarks})
+      .to_return(status: 200, body: Fixtures.bookmarks_page.to_json, headers: { "Content-Type" => "application/json" })
+    described_class.new(config: config_with)
+  end
+
+  def build_contract_present_source
+    stub_request(:get, %r{api.twitter.com/2/tweets/123})
+      .to_return(status: 200, body: { "data" => { "id" => "123" } }.to_json, headers: { "Content-Type" => "application/json" })
+    described_class.new(config: config_with)
+  end
+
+  def build_contract_missing_source
+    stub_request(:get, %r{api.twitter.com/2/tweets/deleted}).to_return(status: 404, body: "not found")
+    described_class.new(config: config_with)
+  end
+
   def config_with(access_token: "TOKEN", expires_at: Time.now.to_i + 3600, refresh_token: nil)
     Struct::XbookmarkConfig.new(
       vault_path: "/tmp/v",

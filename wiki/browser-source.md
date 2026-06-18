@@ -74,10 +74,11 @@ API source keeps syncing in the same run even when the browser session expired.
 
 ## Unattended expiry (AC3)
 
-On a scheduled headless run, a `SessionExpired` is recorded via
-`report.mark_session_expired("browser")` — the only writer of the read-only
-`expired_source` field (`report.expired_source = …` would raise, by design), from
-which `report.session_expired?` derives; `source_errors` is also bumped.
+On a scheduled headless run, a `SessionExpired` is recorded via the parameterless
+`report.mark_session_expired` (the browser is the only source that raises it) —
+the only writer of the read-only `expired_source` field (`report.expired_source =
+…` would raise, by design), from which `report.session_expired?` derives;
+`source_errors` is also bumped.
 This is isolated on every path — sync, retry, **and resync** — via
 `source_blocked`. The CLI then fires `Notify.deliver` (notify-send on Linux,
 osascript on macOS; spawned detached so a stuck D-Bus can't hang the run),

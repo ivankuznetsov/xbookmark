@@ -53,4 +53,20 @@ describe Xbookmark::Notify do
   it "spawns the notifier detached so it never blocks the run" do
     assert_equal true, described_class.invoke(["true"])
   end
+
+  it "raises a real ENOENT from invoke when the binary genuinely does not exist" do
+    # The swallow test above stubs invoke; this drives the real Process.spawn
+    # ENOENT path that the deliver swallow below is built to absorb.
+    missing = "/nonexistent/xbookmark-notifier-#{Process.pid}"
+    assert_raises(Errno::ENOENT) { described_class.invoke([missing]) }
+  end
+
+  it "swallows a real missing-binary spawn failure in deliver instead of raising" do
+    # End-to-end (no stubbed invoke): a genuinely missing notifier binary makes
+    # Process.spawn raise ENOENT, and deliver must absorb it to false.
+    stub_platform_linux
+    missing = "/nonexistent/xbookmark-notifier-#{Process.pid}"
+    described_class.stubs(:command_for).returns([missing, "t", "b"])
+    refute described_class.deliver("t", "b"), "a real spawn ENOENT must be swallowed to false, not raised"
+  end
 end
