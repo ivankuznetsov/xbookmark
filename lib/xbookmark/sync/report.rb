@@ -6,9 +6,9 @@ module Xbookmark
       attr_accessor :synced, :skipped, :failed, :permanent_errors, :source_errors, :elapsed, :source_pages,
                     :bookmark_attempts, :partial, :maintenance_errors
       # expired_source is read-only from the outside: it can only be set through
-      # #mark_session_expired, which rejects a blank/non-String source so
-      # session_expired? can never be true with no source (the illegal state the
-      # derived predicate exists to forbid).
+      # #mark_session_expired, which records the browser source so session_expired?
+      # can never be true with no source (the illegal state the derived predicate
+      # exists to forbid).
       attr_reader :expired_source
 
       def initialize
@@ -24,21 +24,20 @@ module Xbookmark
         @partial = 0
         @maintenance_errors = 0
         @elapsed = 0.0
-        # nil = not expired. Set (via #mark_session_expired) to the source name
-        # (e.g. "browser") only when that source raises Browser::SessionExpired on
-        # the sync / retry / resync paths — the one source-block case that needs a
-        # human and a notification. `session_expired?` derives from this single
-        # field so the two can never disagree.
+        # nil = not expired. Set (via #mark_session_expired) to "browser" only
+        # when the browser source raises Browser::SessionExpired on the sync /
+        # retry / resync paths — the one source-block case that needs a human and
+        # a notification. `session_expired?` derives from this single field so the
+        # two can never disagree.
         @expired_source = nil
       end
 
-      # Records the source whose session expired. First-wins (so a later block
-      # can't overwrite the original culprit) and rejects a blank/non-String
-      # source so the notification can never print an empty source name.
-      def mark_session_expired(source)
-        return unless source.is_a?(String) && !source.strip.empty?
-
-        @expired_source ||= source
+      # Records that the browser session expired. The browser is the only source
+      # that raises Browser::SessionExpired (the one source block needing a human),
+      # so this is a parameterless marker; first-wins via ||= so a later block
+      # can't change the culprit, and session_expired? derives from it.
+      def mark_session_expired
+        @expired_source ||= "browser"
       end
 
       def session_expired?

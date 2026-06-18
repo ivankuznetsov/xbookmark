@@ -77,6 +77,26 @@ class TweetGoneSource
   end
 end
 
+# A source that records #close calls so the Runner's close_sources backstop (the
+# only thing that quits Chromium after a resync/get_tweet-only run) is asserted.
+class CloseableSource
+  attr_reader :closes
+
+  def initialize(pages: [])
+    @pages = pages
+    @closes = 0
+  end
+
+  def bookmarks(user_id: nil, pagination_token: nil, max_results: 50)
+    return enum_for(:bookmarks, user_id: user_id, pagination_token: pagination_token, max_results: max_results) unless block_given?
+
+    @pages.each { |p| yield p }
+  end
+
+  def get_tweet(_id) = nil
+  def close = @closes += 1
+end
+
 class FakePipeline
   attr_reader :calls, :indexed_pages
 
@@ -1006,5 +1026,38 @@ describe Xbookmark::Sync::Runner do
     assert @report.session_expired?, "the expired browser source is flagged for re-login"
     assert @report.source_errors.positive?
     assert_equal ["n1"], pipeline.calls
+  end
+
+  # ---- source lifecycle: close_sources is the sole post-run quit ----
+
+  it "closes each source after a run" do
+    source = CloseableSource.new(pages: [])
+    runner = described_class.new(config: config, store: store, sources: [source],
+                                 pipeline: FakePipeline.new(->(_) { }), registrar: registrar)
+
+    runner.run(mode: :backfill_limited, limit: 1)
+
+    assert_equal 1, source.closes, "the run must quit the source via close_sources"
+  end
+
+  it "closes each source even when the run raises (ensure path)" do
+    source = CloseableSource.new
+    pipeline = FakePipeline.new(->(_) { raise "unused" })
+    pipeline.stubs(:prepare_run!).raises("boom mid-run")
+    runner = described_class.new(config: config, store: store, sources: [source],
+                                 pipeline: pipeline, registrar: registrar)
+
+    assert_raises(RuntimeError) { runner.run(mode: :backfill_limited, limit: 1) }
+
+    assert_equal 1, source.closes, "the ensure block must still quit Chromium when the run blows up"
+  end
+
+  it "rejects a source missing a contract method at construction" do
+    incomplete = Object.new # responds to neither bookmarks nor get_tweet
+    error = assert_raises(Xbookmark::ConfigError) do
+      described_class.new(config: config, store: store, sources: [incomplete],
+                          pipeline: FakePipeline.new(->(_) { }), registrar: registrar)
+    end
+    assert_match(/does not satisfy the bookmark-source contract/, error.message)
   end
 end

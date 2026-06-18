@@ -33,6 +33,12 @@ module Xbookmark
         Xbookmark::AuthError, Xbookmark::RateLimited, Xbookmark::TransientError, Xbookmark::ConfigError
       ].freeze
 
+      # The duck-typed source contract get_tweet_any fully trusts (it drops its
+      # respond_to? guard on the basis these are always present). Sources::Factory
+      # enforces this at build time, but the Runner also accepts arbitrary
+      # sources:/x_client: objects, so it must validate here too.
+      CONTRACT_METHODS = %i[bookmarks get_tweet].freeze
+
       def initialize(config:, store:, sources: nil, x_client: nil, orchestrator: nil, renderer: nil, pipeline: nil, registrar: nil)
         @config = config
         @store = store
@@ -46,6 +52,11 @@ module Xbookmark
         # always returns at least one source (or raises), so an empty list is a
         # wiring bug, not a valid configuration.
         raise ArgumentError, "Sync::Runner requires at least one source" if @sources.empty?
+
+        # Validate the source contract at the boundary that trusts it (get_tweet_any
+        # has no respond_to? guard), so a source missing a method surfaces as a
+        # clear ConfigError here rather than a raw NoMethodError mid-run.
+        @sources.each { |source| verify_source_contract!(source) }
 
         @renderer = renderer || Xbookmark::Render::BookmarkRenderer.new(vault_path: config.vault_path)
         @orch = orchestrator || default_orchestrator
@@ -79,9 +90,9 @@ module Xbookmark
           @pipeline.prepare_run! if @pipeline.respond_to?(:prepare_run!)
 
           case mode
-          when :backfill_limited then backfill(report, limit: limit || 100, from_scheduler: from_scheduler)
-          when :backfill_full    then backfill(report, limit: nil, from_scheduler: from_scheduler)
-          when :sync             then incremental_sync(report, from_scheduler: from_scheduler)
+          when :backfill_limited then backfill(report, limit: limit || 100)
+          when :backfill_full    then backfill(report, limit: nil)
+          when :sync             then incremental_sync(report)
           when :resync           then resync_one(report, tweet_id: tweet_id)
           else
             raise ArgumentError, "unknown mode: #{mode}"
@@ -203,13 +214,13 @@ module Xbookmark
         end
       end
 
-      def backfill(report, limit:, from_scheduler:)
+      def backfill(report, limit:)
         if limit && @store.mode == Xbookmark::State::Store::MODE_FRESH
           @store.mode = Xbookmark::State::Store::MODE_FRESH # noop, but keep flow visible
         end
-        attempted = retry_first(report, tolerate_source_errors: from_scheduler)
+        attempted = retry_first(report)
         # New pages from API
-        process_new_pages(report, limit: limit, tolerate_source_errors: from_scheduler, attempted_ids: attempted)
+        process_new_pages(report, limit: limit, attempted_ids: attempted)
         return if report.source_errors.positive?
 
         if limit
@@ -220,7 +231,7 @@ module Xbookmark
         end
       end
 
-      def incremental_sync(report, from_scheduler:)
+      def incremental_sync(report)
         if @store.mode == Xbookmark::State::Store::MODE_FRESH
           puts "[xbookmark] bookmark wiki is empty. Run `xbookmark backfill --limit 100` first to seed it."
           report.permanent_errors += 1
@@ -231,9 +242,8 @@ module Xbookmark
           report.permanent_errors += 1
           return
         end
-        attempted = retry_first(report, tolerate_source_errors: from_scheduler)
-        process_new_pages(report, limit: nil, only_new: true, tolerate_source_errors: from_scheduler,
-                          attempted_ids: attempted)
+        attempted = retry_first(report)
+        process_new_pages(report, limit: nil, only_new: true, attempted_ids: attempted)
         @store.mode = Xbookmark::State::Store::MODE_INCREMENTAL
       end
 
@@ -251,10 +261,10 @@ module Xbookmark
         # An expired browser session (or any source block) during resync must be
         # isolated like the sync/retry paths — record it and signal re-login
         # rather than escaping uncaught as a raw stacktrace.
-        source_blocked(report, e, context: "resync", tolerate: false)
+        source_blocked(report, e, context: "resync")
       end
 
-      def retry_first(report, tolerate_source_errors:)
+      def retry_first(report)
         rows = @store.bookmarks_to_process(limit: 200)
         attempted = {}
         uncached = []
@@ -282,17 +292,16 @@ module Xbookmark
         end
         attempted
       rescue *SOURCE_BLOCK_ERRORS => e
-        source_blocked(report, e, context: "retry", tolerate: tolerate_source_errors)
+        source_blocked(report, e, context: "retry")
         attempted || {}
       end
 
-      def process_new_pages(report, limit:, only_new: false, tolerate_source_errors:, attempted_ids: {})
+      def process_new_pages(report, limit:, only_new: false, attempted_ids: {})
         collected = 0
         @sources.each do |source|
           break if limit && collected >= limit
 
           collected = fetch_new_pages(source, report, limit: limit, only_new: only_new,
-                                      tolerate_source_errors: tolerate_source_errors,
                                       attempted_ids: attempted_ids, collected: collected)
         end
       end
@@ -301,7 +310,7 @@ module Xbookmark
       # transient browser/CDP failure, or a missing-Chromium ConfigError — is
       # isolated via source_blocked so the remaining sources still run. Returns
       # the running `collected` count so `limit` caps total items across sources.
-      def fetch_new_pages(source, report, limit:, only_new:, tolerate_source_errors:, attempted_ids:, collected:)
+      def fetch_new_pages(source, report, limit:, only_new:, attempted_ids:, collected:)
         consumer_error = nil
         source.bookmarks(user_id: @config.x_user_id,
                          max_results: Xbookmark::X::Client::BOOKMARK_PAGE_SIZE) do |payload|
@@ -349,7 +358,7 @@ module Xbookmark
         consumer_failed(report, consumer_error, context: "new bookmark fetch") if consumer_error
         collected
       rescue *SOURCE_BLOCK_ERRORS => e
-        source_blocked(report, e, context: "new bookmark fetch", tolerate: tolerate_source_errors)
+        source_blocked(report, e, context: "new bookmark fetch")
         collected
       end
 
@@ -454,14 +463,14 @@ module Xbookmark
         nil
       end
 
-      def source_blocked(report, error, context:, tolerate:)
+      def source_blocked(report, error, context:)
         warn "[xbookmark] source blocked during #{context}: #{error.message}"
         report.source_errors += 1
         # A browser session expiry is the one source block that needs a human:
         # set expired_source so the CLI fires a notification and exits non-zero
         # even under --from-scheduler (report.session_expired? derives from it).
         # A generic API token block leaves expired_source nil → exit-0 + degraded.
-        report.mark_session_expired("browser") if error.is_a?(Xbookmark::Browser::SessionExpired)
+        report.mark_session_expired if error.is_a?(Xbookmark::Browser::SessionExpired)
       end
 
       # A consumer/store/pipeline error raised while processing a source's page is
@@ -475,6 +484,14 @@ module Xbookmark
         warn "[xbookmark] #{context} failed while processing a source page: #{error.class}: #{error.message}"
         report.source_errors += 1
         report.permanent_errors += 1
+      end
+
+      def verify_source_contract!(source)
+        missing = CONTRACT_METHODS.reject { |method| source.respond_to?(method) }
+        return if missing.empty?
+
+        raise Xbookmark::ConfigError,
+              "source #{source.class} does not satisfy the bookmark-source contract (missing: #{missing.join(", ")})"
       end
 
       # Releases each source's resources once the run is done. The browser source

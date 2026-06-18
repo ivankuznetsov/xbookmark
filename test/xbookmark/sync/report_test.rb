@@ -26,27 +26,18 @@ describe Xbookmark::Sync::Report do
     refute_includes report.to_s, "session expired"
   end
 
-  it "derives session_expired? from a marked expiry and summarizes it" do
+  it "derives session_expired? from a marked browser expiry and summarizes it" do
     report = described_class.new
-    report.mark_session_expired("browser")
+    report.mark_session_expired
     assert report.session_expired?, "session_expired? derives from a marked expiry"
+    assert_equal "browser", report.expired_source
     assert_includes report.to_s, "browser session expired (re-login)"
   end
 
-  it "keeps the first marked expiry source (first-wins) and ignores later ones" do
+  it "is idempotent so a later block can't change the culprit (first-wins)" do
     report = described_class.new
-    report.mark_session_expired("browser")
-    report.mark_session_expired("api")
+    report.mark_session_expired
+    report.mark_session_expired
     assert_equal "browser", report.expired_source
-  end
-
-  it "rejects a blank or non-String expiry so session_expired? can't be true with no source" do
-    report = described_class.new
-    report.mark_session_expired("")
-    report.mark_session_expired("   ")
-    report.mark_session_expired(nil)
-    report.mark_session_expired(:browser)
-    refute report.session_expired?
-    assert_nil report.expired_source
   end
 end
