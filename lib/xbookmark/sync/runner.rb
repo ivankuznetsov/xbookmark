@@ -435,7 +435,7 @@ module Xbookmark
         # set expired_source so the CLI fires a notification and exits non-zero
         # even under --from-scheduler (report.session_expired? derives from it).
         # A generic API token block leaves expired_source nil → exit-0 + degraded.
-        report.expired_source ||= "browser" if error.is_a?(Xbookmark::Browser::SessionExpired)
+        report.mark_session_expired("browser") if error.is_a?(Xbookmark::Browser::SessionExpired)
       end
 
       # Releases each source's resources once the run is done. The browser source

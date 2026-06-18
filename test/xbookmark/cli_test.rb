@@ -547,7 +547,7 @@ describe Xbookmark::CLI do
     report = Xbookmark::Sync::Report.new
     report.synced = 3
     report.source_errors = 1
-    report.expired_source = "browser"
+    report.mark_session_expired("browser")
     Xbookmark::Sync::Runner.stubs(:new).returns(stub(run: report))
     Xbookmark::Notify.expects(:deliver).once.returns(true)
 
