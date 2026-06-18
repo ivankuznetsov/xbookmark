@@ -23,6 +23,16 @@ module Xbookmark
       TAXONOMY_CURATION_BATCH_SIZE = 50
       TAXONOMY_CURATION_TIMEOUT_SECONDS = 60
 
+      # Errors that block a single source without being a hard run failure: the
+      # Runner isolates each via #source_blocked so the remaining sources keep
+      # syncing (AC3). SessionExpired is an AuthError subclass (so it is covered
+      # here) and ConfigError covers a misconfigured browser source, e.g. missing
+      # Chromium. SourceUnavailable is intentionally excluded — it means a single
+      # tweet is gone, not that the source is blocked.
+      SOURCE_BLOCK_ERRORS = [
+        Xbookmark::AuthError, Xbookmark::RateLimited, Xbookmark::TransientError, Xbookmark::ConfigError
+      ].freeze
+
       def initialize(config:, store:, sources: nil, x_client: nil, orchestrator: nil, renderer: nil, pipeline: nil, registrar: nil)
         @config = config
         @store = store
@@ -79,6 +89,7 @@ module Xbookmark
           run_maintenance(force: from_scheduler || report.synced.positive?, report: report)
         ensure
           Xbookmark::Taxonomy::Lock.release(lock)
+          close_sources
         end
         report
       end
@@ -229,6 +240,11 @@ module Xbookmark
                               payload: payload_for_bookmark(page, bm))
         @store.reset_to_pending!(bm.tweet_id)
         run_one(bm, report)
+      rescue *SOURCE_BLOCK_ERRORS => e
+        # An expired browser session (or any source block) during resync must be
+        # isolated like the sync/retry paths — record it and signal re-login
+        # rather than escaping uncaught as a raw stacktrace.
+        source_blocked(report, e, context: "resync", tolerate: false)
       end
 
       def retry_first(report, tolerate_source_errors:)
@@ -258,7 +274,7 @@ module Xbookmark
           report.permanent_errors += 1
         end
         attempted
-      rescue Xbookmark::AuthError, Xbookmark::RateLimited, Xbookmark::TransientError => e
+      rescue *SOURCE_BLOCK_ERRORS => e
         source_blocked(report, e, context: "retry", tolerate: tolerate_source_errors)
         attempted || {}
       end
@@ -274,13 +290,14 @@ module Xbookmark
         end
       end
 
-      # Drives one source's pagination. A block on this source is isolated via
-      # source_blocked so any remaining sources still run. Returns the running
-      # `collected` count so `limit` caps total items across sources.
+      # Drives one source's pagination. Any source block — auth, rate-limit, a
+      # transient browser/CDP failure, or a missing-Chromium ConfigError — is
+      # isolated via source_blocked so the remaining sources still run. Returns
+      # the running `collected` count so `limit` caps total items across sources.
       def fetch_new_pages(source, report, limit:, only_new:, tolerate_source_errors:, attempted_ids:, collected:)
         source.bookmarks(user_id: @config.x_user_id,
                          max_results: Xbookmark::X::Client::BOOKMARK_PAGE_SIZE) do |payload|
-          report.api_pages += 1
+          report.source_pages += 1
           page_bookmarks = Xbookmark::X::Expansions.new(payload).bookmarks
           @pipeline.index_thread_bookmarks(page_bookmarks) if @pipeline.respond_to?(:index_thread_bookmarks)
           page_new = 0
@@ -306,7 +323,7 @@ module Xbookmark
           break unless next_token
         end
         collected
-      rescue Xbookmark::AuthError, Xbookmark::RateLimited, Xbookmark::TransientError => e
+      rescue *SOURCE_BLOCK_ERRORS => e
         source_blocked(report, e, context: "new bookmark fetch", tolerate: tolerate_source_errors)
         collected
       end
@@ -364,7 +381,10 @@ module Xbookmark
           begin
             page = source.get_tweet(tweet_id)
             return page if page && page["data"]
-          rescue Xbookmark::AuthError, Xbookmark::RateLimited, Xbookmark::TransientError => e
+          rescue Xbookmark::SourceUnavailable
+            # This source does not have the tweet; try the next source.
+            next
+          rescue *SOURCE_BLOCK_ERRORS => e
             last_block = e
           end
         end
@@ -412,12 +432,18 @@ module Xbookmark
         warn "[xbookmark] source blocked during #{context}: #{error.message}"
         report.source_errors += 1
         # A browser session expiry is the one source block that needs a human:
-        # flag it so the CLI fires a notification and exits non-zero even under
-        # --from-scheduler. A generic API token block stays exit-0 + degraded.
-        if error.is_a?(Xbookmark::Browser::SessionExpired)
-          report.session_expired = true
-          report.expired_source ||= "browser"
-        end
+        # set expired_source so the CLI fires a notification and exits non-zero
+        # even under --from-scheduler (report.session_expired? derives from it).
+        # A generic API token block leaves expired_source nil → exit-0 + degraded.
+        report.expired_source ||= "browser" if error.is_a?(Xbookmark::Browser::SessionExpired)
+      end
+
+      # Releases each source's resources once the run is done. The browser source
+      # keeps Chromium alive across get_tweet/bookmarks calls for reuse, so the
+      # single quit happens here (covers the resync path, which only calls
+      # get_tweet). The API source has no #close.
+      def close_sources
+        @sources.each { |source| source.close if source.respond_to?(:close) }
       end
     end
   end

@@ -5,7 +5,7 @@ require "test_helper"
 require "xbookmark/sync/report"
 
 describe Xbookmark::Sync::Report do
-  it "summarizes skipped, transient, permanent, elapsed, and API page counts" do
+  it "summarizes skipped, transient, permanent, elapsed, and source page counts" do
     report = described_class.new
     report.synced = 2
     report.skipped = 1
@@ -13,23 +13,23 @@ describe Xbookmark::Sync::Report do
     report.permanent_errors = 4
     report.source_errors = 6
     report.elapsed = 1.24
-    report.api_pages = 5
+    report.source_pages = 5
 
-    assert_equal "synced 2, skipped 1, failed 3, retrying next run, permanent errors 4, source blocked 6, elapsed 1.2s, api pages 5",
+    assert_equal "synced 2, skipped 1, failed 3, retrying next run, permanent errors 4, source blocked 6, elapsed 1.2s, source pages 5",
                  report.to_s
   end
 
-  it "defaults session_expired to false and omits it from the summary" do
+  it "defaults to not-expired (nil source) and omits it from the summary" do
     report = described_class.new
-    refute report.session_expired
+    refute report.session_expired?
     assert_nil report.expired_source
     refute_includes report.to_s, "session expired"
   end
 
-  it "summarizes a browser session expiry" do
+  it "derives session_expired? from expired_source and summarizes the expiry" do
     report = described_class.new
-    report.session_expired = true
     report.expired_source = "browser"
+    assert report.session_expired?, "session_expired? derives from a set expired_source"
     assert_includes report.to_s, "browser session expired (re-login)"
   end
 end

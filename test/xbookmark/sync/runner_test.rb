@@ -46,12 +46,34 @@ class MissingTweetClient
 end
 
 class ExpiredBrowserSource
-  def bookmarks(user_id: nil, max_results: 50)
+  def bookmarks(user_id: nil, pagination_token: nil, max_results: 50)
     raise Xbookmark::Browser::SessionExpired, "browser session expired; re-login"
   end
 
   def get_tweet(_id)
     raise Xbookmark::Browser::SessionExpired, "browser session expired; re-login"
+  end
+end
+
+# A source that fails with a non-auth error (e.g. missing Chromium); must be
+# isolated like an auth block so a healthy source still finishes its run.
+class ConfigErrorSource
+  def bookmarks(user_id: nil, pagination_token: nil, max_results: 50)
+    raise Xbookmark::ConfigError, "No Chromium/Chrome found"
+  end
+
+  def get_tweet(_id)
+    raise Xbookmark::ConfigError, "No Chromium/Chrome found"
+  end
+end
+
+class TweetGoneSource
+  def bookmarks(user_id: nil, pagination_token: nil, max_results: 50)
+    enum_for(:bookmarks, user_id: user_id, pagination_token: pagination_token, max_results: max_results) unless block_given?
+  end
+
+  def get_tweet(_id)
+    raise Xbookmark::SourceUnavailable, "tweet gone via this source"
   end
 end
 
@@ -744,6 +766,27 @@ describe Xbookmark::Sync::Runner do
     assert_match(/source blocked during new bookmark fetch/, err)
   end
 
+  it "isolates a source raising a non-auth error so a healthy later source still syncs (AC3)" do
+    page = {
+      "data" => [{ "id" => "h1", "author_id" => "u1", "text" => "x", "created_at" => "2026-01-01T00:00:00Z", "conversation_id" => "h1" }],
+      "includes" => { "users" => [{ "id" => "u1", "username" => "alice" }] },
+      "meta" => {}
+    }
+    pipeline = FakePipeline.new(->(_) { Xbookmark::Sync::Pipeline::Outcome.new(status: :done, markdown_path: "/x", digest: "d") })
+    # The misconfigured (ConfigError) source runs first; its failure must not
+    # abort the run or discard the healthy source's work.
+    runner = described_class.new(config: config, store: store,
+                                 sources: [ConfigErrorSource.new, FakeXClient.new(pages: [page])],
+                                 pipeline: pipeline, registrar: registrar)
+
+    err = capture_stderr { @report = runner.run(mode: :backfill_limited, limit: 10) }
+
+    assert_equal 1, @report.synced, "the healthy source still syncs after the non-auth failure"
+    assert @report.source_errors.positive?, "the misconfigured source is recorded as a source error"
+    assert_equal ["h1"], pipeline.calls
+    assert_match(/source blocked during new bookmark fetch/, err)
+  end
+
   it "caps total items across sources at the requested limit" do
     page_a = {
       "data" => Array.new(3) { |i| { "id" => "a#{i}", "author_id" => "u1", "text" => "x", "created_at" => "2026-01-01T00:00:00Z", "conversation_id" => "a#{i}" } },
@@ -781,6 +824,22 @@ describe Xbookmark::Sync::Runner do
     assert_equal "1", store.payload_for("1")["data"].first["id"]
   end
 
+  it "skips a source whose get_tweet reports the tweet gone and tries the next (resync)" do
+    single = {
+      "data" => { "id" => "1", "author_id" => "u1", "text" => "x", "created_at" => "2026-01-01T00:00:00Z", "conversation_id" => "1" },
+      "includes" => { "users" => [{ "id" => "u1", "username" => "alice" }] }
+    }
+    pipeline = FakePipeline.new(->(_) { Xbookmark::Sync::Pipeline::Outcome.new(status: :done, markdown_path: "/x", digest: "d") })
+    runner = described_class.new(config: config, store: store,
+                                 sources: [TweetGoneSource.new, FakeXClient.new(single_tweet: single)],
+                                 pipeline: pipeline, registrar: registrar)
+
+    report = runner.run(mode: :resync, tweet_id: "1")
+
+    assert_equal 1, report.synced, "a SourceUnavailable from one source falls through to the next"
+    assert_equal "1", store.payload_for("1")["data"].first["id"]
+  end
+
   it "re-raises the last source block when every source's get_tweet is blocked" do
     store.upsert_pending(tweet_id: "1", author_handle: "alice", bookmarked_at: "2026-01-01T00:00:00Z")
     store.record_failure(tweet_id: "1", error: "temporary")
@@ -814,9 +873,21 @@ describe Xbookmark::Sync::Runner do
 
     capture_stderr { @report = runner.run(mode: :sync, from_scheduler: true) }
 
-    assert @report.session_expired
+    assert @report.session_expired?
     assert_equal "browser", @report.expired_source
     assert @report.source_errors.positive?
+  end
+
+  it "isolates an expired browser session during resync instead of crashing" do
+    runner = described_class.new(config: config, store: store, sources: [ExpiredBrowserSource.new],
+                                 pipeline: FakePipeline.new(->(_) { }), registrar: registrar)
+
+    capture_stderr { @report = runner.run(mode: :resync, tweet_id: "1") }
+
+    assert @report.session_expired?, "resync routes the expiry through source_blocked"
+    assert_equal "browser", @report.expired_source
+    assert @report.source_errors.positive?
+    assert_nil store.last_sync_finished_at
   end
 
   it "does not flag session_expired for a generic API source block" do
@@ -826,7 +897,7 @@ describe Xbookmark::Sync::Runner do
 
     capture_stderr { @report = runner.run(mode: :sync, from_scheduler: true) }
 
-    refute @report.session_expired
+    refute @report.session_expired?
     assert @report.source_errors.positive?
   end
 
@@ -845,7 +916,7 @@ describe Xbookmark::Sync::Runner do
     capture_stderr { @report = runner.run(mode: :sync, from_scheduler: true) }
 
     assert_equal 1, @report.synced, "the API source still syncs its bookmarks"
-    assert @report.session_expired, "the expired browser source is flagged for re-login"
+    assert @report.session_expired?, "the expired browser source is flagged for re-login"
     assert @report.source_errors.positive?
     assert_equal ["n1"], pipeline.calls
   end
