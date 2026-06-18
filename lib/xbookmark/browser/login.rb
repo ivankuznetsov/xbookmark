@@ -60,8 +60,9 @@ module Xbookmark
         else
           # Grep-able stderr token so an agent can pick the right remediation from
           # the failure rather than parsing prose (mirrors the SESSION_EXPIRED
-          # convention in cli/sync.rb).
-          warn "[xbookmark] LOGIN_TIMEOUT; login not detected within #{LOGIN_TIMEOUT_SECONDS}s; re-run `xbookmark auth login --browser`."
+          # convention in cli/sync.rb, including the source=browser field so one
+          # parse contract covers every browser token).
+          warn "[xbookmark] LOGIN_TIMEOUT source=browser; login not detected within #{LOGIN_TIMEOUT_SECONDS}s; re-run `xbookmark auth login --browser`."
           say "Login not detected within #{LOGIN_TIMEOUT_SECONDS}s. Re-run `xbookmark auth login --browser`."
           false
         end
@@ -80,7 +81,7 @@ module Xbookmark
         # forever. Decline with an actionable pointer instead. Mirrors the
         # tty? guard in cli/setup.rb.
         unless interactive?
-          warn "[xbookmark] CONSENT_REQUIRED; browser-source consent needs an interactive terminal or `--accept-risk`."
+          warn "[xbookmark] CONSENT_REQUIRED source=browser; browser-source consent needs an interactive terminal or `--accept-risk`."
           say "Browser-source consent needs an interactive terminal. Re-run interactively, " \
               "or pass `--accept-risk` to accept the ToS/account risk non-interactively."
           return false
@@ -89,7 +90,7 @@ module Xbookmark
         @output.print(CONSENT_WARNING)
         answer = @input.gets.to_s.strip.downcase
         unless %w[y yes].include?(answer)
-          warn "[xbookmark] CONSENT_DECLINED; browser login aborted."
+          warn "[xbookmark] CONSENT_DECLINED source=browser; browser login aborted."
           say "Consent declined; browser login aborted."
           return false
         end
@@ -112,8 +113,13 @@ module Xbookmark
         # would, because each poll adds a real logged_in? navigation to the sleep).
         deadline = @monotonic.call + LOGIN_TIMEOUT_SECONDS
         loop do
-          return true if session.logged_in?
+          # Check the deadline at the top, *before* the blocking logged_in?
+          # navigation: a poll started just under the deadline can itself block up
+          # to FERRUM_TIMEOUT_SECONDS, so checking afterwards would let the total
+          # overshoot LOGIN_TIMEOUT_SECONDS by a whole navigation. Bailing first
+          # bounds the overshoot to the in-flight poll already running.
           return false if @monotonic.call >= deadline
+          return true if session.logged_in?
 
           @sleeper.call(POLL_INTERVAL_SECONDS)
         end

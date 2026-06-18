@@ -115,14 +115,16 @@ module Xbookmark
         exit 1 unless login.call
       rescue Xbookmark::Browser::ChromiumMissing => e
         # A missing system Chromium is the most common browser-login config error;
-        # emit a grep-able token so an agent can branch straight to "install a browser".
-        warn "[xbookmark] CHROMIUM_MISSING; #{e.message}"
+        # emit a grep-able token so an agent can branch straight to "install a
+        # browser". The `source=browser` field matches the SESSION_EXPIRED /
+        # BROWSER_SESSION_MISSING shape so one parse contract covers every token.
+        warn "[xbookmark] CHROMIUM_MISSING source=browser; #{e.message}"
         exit 1
       rescue Xbookmark::ConfigError => e
         # Any other ConfigError here is NOT a missing browser — load_offline also
         # parses XBOOKMARK_SOURCE and raises ConfigError for an invalid value, so
         # emit a distinct token rather than mislabeling it as CHROMIUM_MISSING.
-        warn "[xbookmark] CONFIG_ERROR; #{e.message}"
+        warn "[xbookmark] CONFIG_ERROR source=browser; #{e.message}"
         exit 1
       rescue StandardError => e
         # Chromium present but won't start (Ferrum::ProcessTimeoutError), a CDP
@@ -130,7 +132,7 @@ module Xbookmark
         # stacktrace with no grep-able token — unlike the sync path, which wraps
         # StandardError. Emit a stable token so an agent can branch on the
         # failure instead of parsing a backtrace.
-        warn "[xbookmark] LOGIN_FAILED; #{e.class}: #{e.message}"
+        warn "[xbookmark] LOGIN_FAILED source=browser; #{e.class}: #{e.message}"
         exit 1
       end
 

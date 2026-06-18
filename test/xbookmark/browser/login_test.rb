@@ -102,13 +102,15 @@ describe Xbookmark::Browser::Login do
   it "stops polling once the wall-clock deadline passes" do
     session = FakeLoginSession.new([])
     tick = 0.0
-    # deadline = first read (120) + 300 = 420; reads 240, 360, 480 → stops on 480.
+    # deadline = first read (120) + 300 = 420. The deadline is checked at the top
+    # of each loop *before* the logged_in? poll, so reads 240 and 360 each admit a
+    # poll, then read 480 (>= 420) stops before a third poll runs.
     login = described_class.new(config: config, store: store, session: session,
                                 input: TtyStringIO.new("y\n"), output: StringIO.new,
                                 clock: clock, sleeper: ->(_) { }, monotonic: -> { tick += 120.0 })
 
     capture_stderr { refute login.call }
-    assert_equal 3, session.login_checks, "the wall-clock deadline bounds the poll count"
+    assert_equal 2, session.login_checks, "the deadline check bounds the poll count before the next navigation"
   end
 
   it "declines non-interactively when stdin is not a tty and no flag is given" do
