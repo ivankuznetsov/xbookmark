@@ -16,6 +16,15 @@ module Xbookmark
     # entity urls, author handle/name) with zero changes to the pipeline,
     # renderer, downloader, whisper, or enrichment code.
     class Normalizer
+      # Inline quoted tweets can form a cycle in a hostile/garbled GraphQL payload
+      # (A quotes B quotes A, or a self-quote), and the recursion into the inlined
+      # quote happens before the includes dedup could break it. Cap the inlining
+      # depth so such a cycle degrades to "stop inlining deeper" rather than a
+      # SystemStackError — which, being < Exception, escapes every
+      # `rescue StandardError` at the source/runner boundary and aborts a
+      # multi-source run with a raw stacktrace. X never inlines quotes this deep.
+      MAX_QUOTE_DEPTH = 20
+
       def initialize(graphql_payload)
         # X's internal GraphQL is an undocumented, hostile surface: a tombstone,
         # ad slot, or shape change can hand us anything. Treat a non-Hash payload
@@ -73,11 +82,16 @@ module Xbookmark
       end
 
       def timeline_entries
-        # Every array element is assumed to be a Hash below; X can return
-        # non-Hash slots, so filter defensively before indexing into them.
-        instructions = Array(dig_timeline&.dig("instructions")).select { |ins| ins.is_a?(Hash) }
-        add = instructions.find { |ins| ins["type"] == "TimelineAddEntries" } || {}
-        Array(add["entries"]).select { |entry| entry.is_a?(Hash) }
+        # @payload is fixed for the instance lifetime, so memoize: #envelope reads
+        # this once for `data` and again via #bottom_cursor, and a backfill builds
+        # one Normalizer per page — no need to re-walk the instructions twice.
+        @timeline_entries ||= begin
+          # Every array element is assumed to be a Hash below; X can return
+          # non-Hash slots, so filter defensively before indexing into them.
+          instructions = Array(dig_timeline&.dig("instructions")).select { |ins| ins.is_a?(Hash) }
+          add = instructions.find { |ins| ins["type"] == "TimelineAddEntries" } || {}
+          Array(add["entries"]).select { |entry| entry.is_a?(Hash) }
+        end
       end
 
       def dig_timeline
@@ -112,8 +126,9 @@ module Xbookmark
 
       # Returns the API v2 tweet hash and registers the author, media, and any
       # quoted tweet into includes. Also resolves the inner tweet of a
-      # visibility wrapper.
-      def normalize_tweet_result(result, includes)
+      # visibility wrapper. `depth` bounds the inline-quote recursion (see
+      # MAX_QUOTE_DEPTH).
+      def normalize_tweet_result(result, includes, depth: 0)
         return nil unless result.is_a?(Hash)
 
         tweet = unwrap(result)
@@ -126,7 +141,7 @@ module Xbookmark
 
         register_user(tweet, includes)
         media_keys = register_media(legacy, includes)
-        quoted_id = register_quoted(tweet, legacy, includes)
+        quoted_id = register_quoted(tweet, legacy, includes, depth)
 
         {
           "id" => id.to_s,
@@ -135,7 +150,7 @@ module Xbookmark
           "text" => full_text(tweet, legacy),
           "conversation_id" => legacy["conversation_id_str"],
           "referenced_tweets" => referenced_tweets(legacy, quoted_id),
-          "entities" => { "urls" => entity_urls(legacy) },
+          "entities" => { "urls" => entity_urls(tweet, legacy) },
           "attachments" => { "media_keys" => media_keys }
         }.compact
       end
@@ -152,10 +167,19 @@ module Xbookmark
 
       def register_user(tweet, includes)
         user = tweet.dig("core", "user_results", "result")
-        return unless user
+        rest_id = user && user["rest_id"]
 
-        rest_id = user["rest_id"]
-        return unless rest_id
+        # When X omits the embedded user object (a restricted/withheld author, or
+        # a tombstone with no rest_id) the tweet still carries the author id in its
+        # own legacy, which #author_id resolves. Without a matching users entry
+        # Expansions resolves the author to {} (nil handle/name) and Bookmark#url
+        # plus the path builder break, so register at least an id-only fallback
+        # keyed by that legacy id — parity with the author_id legacy fallback.
+        unless rest_id
+          legacy_user_id = tweet.dig("legacy", "user_id_str")
+          includes[:users][legacy_user_id] ||= { "id" => legacy_user_id.to_s } if legacy_user_id
+          return
+        end
 
         legacy = user["legacy"] || {}
         core = user["core"] || {}
@@ -180,12 +204,15 @@ module Xbookmark
         refs
       end
 
-      def register_quoted(tweet, legacy, includes)
+      def register_quoted(tweet, legacy, includes, depth = 0)
         quoted_result = tweet.dig("quoted_status_result", "result")
         quoted_id = legacy["quoted_status_id_str"]
 
-        if quoted_result
-          quoted_tweet = normalize_tweet_result(quoted_result, includes)
+        # Stop inlining past MAX_QUOTE_DEPTH so a quote cycle/self-quote cannot
+        # recurse to a SystemStackError; the legacy quoted_status_id_str (if any)
+        # still flows into referenced_tweets, so the link is preserved.
+        if quoted_result && depth < MAX_QUOTE_DEPTH
+          quoted_tweet = normalize_tweet_result(quoted_result, includes, depth: depth + 1)
           if quoted_tweet
             quoted_id ||= quoted_tweet["id"]
             includes[:tweets][quoted_tweet["id"]] ||= quoted_tweet
@@ -194,8 +221,12 @@ module Xbookmark
         quoted_id
       end
 
-      def entity_urls(legacy)
-        urls = legacy.dig("entities", "urls") || []
+      def entity_urls(tweet, legacy)
+        # When the text comes from a long-form note tweet, its URL entities live
+        # under note_tweet's entity_set, not the classic legacy.entities — read
+        # those so the links in a long tweet are not dropped from the envelope.
+        note_urls = tweet.dig("note_tweet", "note_tweet_results", "result", "entity_set", "urls")
+        urls = note_urls || legacy.dig("entities", "urls") || []
         Array(urls).select { |u| u.is_a?(Hash) }.map do |u|
           {
             "url" => u["url"],

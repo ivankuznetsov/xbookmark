@@ -129,6 +129,14 @@ describe Xbookmark::Browser::Normalizer do
     assert_equal %w[1001 1002 1003 1004 1005], envelope(payload)["data"].map { |t| t["id"] }
   end
 
+  it "parses a committed legacy bookmark_timeline fixture end to end" do
+    payload = fixture_json("browser", "bookmarks_page_legacy.json")
+    env = described_class.new(payload).envelope
+    assert_equal %w[3001], env["data"].map { |t| t["id"] }
+    assert_equal "cursor-legacy-bottom", env["meta"]["next_token"]
+    assert_equal %w[legacyuser], env["includes"]["users"].map { |u| u["username"] }
+  end
+
   it "returns an empty envelope for an unrecognized payload" do
     env = envelope({})
     assert_empty env["data"]
@@ -193,6 +201,54 @@ describe Xbookmark::Browser::Normalizer do
     env = single_entry_envelope(result)
     assert_equal "limited visibility", env["data"].first["text"]
     assert_equal "u1", env["data"].first["author_id"]
+  end
+
+  it "registers a legacy-only author when the embedded user object is absent" do
+    # A restricted/withheld author can arrive with no core.user_results.result,
+    # only the tweet legacy's user_id_str. Without a fallback users entry,
+    # Expansions resolves the author to {} and Bookmark#url breaks — so a minimal
+    # id-keyed user must still be registered (parity with author_id's fallback).
+    result = {
+      "__typename" => "Tweet",
+      "rest_id" => "2100",
+      "legacy" => { "id_str" => "2100", "user_id_str" => "u-legacy", "full_text" => "t",
+                    "created_at" => "Thu Jan 01 00:00:00 +0000 2026" }
+    }
+    env = single_entry_envelope(result)
+    assert_equal "u-legacy", env["data"].first["author_id"]
+    assert_equal %w[u-legacy], env["includes"]["users"].map { |u| u["id"] }
+  end
+
+  it "reads note_tweet entity_set urls when the text comes from a long-form note" do
+    result = {
+      "__typename" => "Tweet",
+      "rest_id" => "2200",
+      "note_tweet" => { "note_tweet_results" => { "result" => {
+        "text" => "a long-form note carrying a link",
+        "entity_set" => { "urls" => [
+          { "url" => "https://t.co/note", "expanded_url" => "https://example.com/note", "display_url" => "example.com/note" }
+        ] }
+      } } },
+      "legacy" => { "id_str" => "2200", "full_text" => "truncated note text…",
+                    "created_at" => "Thu Jan 01 00:00:00 +0000 2026" }
+    }
+    env = single_entry_envelope(result)
+    tweet = env["data"].first
+    assert_equal "a long-form note carrying a link", tweet["text"]
+    assert_equal ["https://example.com/note"], tweet["entities"]["urls"].map { |u| u["expanded_url"] }
+  end
+
+  it "does not overflow the stack on a self-referential quoted tweet" do
+    # A hostile payload where a tweet inline-quotes itself would recurse forever
+    # without the depth guard — and SystemStackError (< Exception) escapes every
+    # rescue StandardError at the source/runner boundary. It must degrade to a
+    # bounded result instead.
+    result = { "__typename" => "Tweet", "rest_id" => "3000",
+               "legacy" => { "id_str" => "3000", "full_text" => "loop",
+                             "created_at" => "Thu Jan 01 00:00:00 +0000 2026" } }
+    result["quoted_status_result"] = { "result" => result } # self-reference
+    env = single_entry_envelope(result)
+    assert_equal "3000", env["data"].first["id"]
   end
 
   it "drops a visibility wrapper with no inner tweet" do
