@@ -319,7 +319,7 @@ describe Xbookmark::CLI do
   it "reports a clear error when browser login finds no Chromium" do
     Xbookmark::Config.stubs(:load_offline).returns(test_config(source: "browser"))
     Xbookmark::State::Store.stubs(:new).returns(stub)
-    Xbookmark::Browser::Login.stubs(:new).raises(Xbookmark::ConfigError, "No Chromium/Chrome found")
+    Xbookmark::Browser::Login.stubs(:new).raises(Xbookmark::Browser::ChromiumMissing, "No Chromium/Chrome found")
 
     old_stderr = $stderr
     $stderr = StringIO.new
@@ -327,6 +327,21 @@ describe Xbookmark::CLI do
     assert_equal 1, error.status
     assert_includes $stderr.string, "No Chromium"
     assert_includes $stderr.string, "CHROMIUM_MISSING"
+  ensure
+    $stderr = old_stderr
+  end
+
+  it "does not mislabel a non-Chromium config error as CHROMIUM_MISSING" do
+    # load_offline parses XBOOKMARK_SOURCE and raises a plain ConfigError for a
+    # bad value; that must surface as CONFIG_ERROR, not CHROMIUM_MISSING.
+    Xbookmark::Config.stubs(:load_offline).raises(Xbookmark::ConfigError, "Invalid XBOOKMARK_SOURCE=\"nonsense\"")
+
+    old_stderr = $stderr
+    $stderr = StringIO.new
+    error = assert_raises(SystemExit) { Xbookmark::CLI::Auth.start(%w[login --browser]) }
+    assert_equal 1, error.status
+    assert_includes $stderr.string, "CONFIG_ERROR"
+    refute_includes $stderr.string, "CHROMIUM_MISSING"
   ensure
     $stderr = old_stderr
   end
@@ -562,10 +577,13 @@ describe Xbookmark::CLI do
   it "does not notify and exits zero for a non-expired source block under --from-scheduler" do
     # The mutual exclusion to the expiry case: a generic source outage on a
     # scheduled run degrades to exit 0 and must NOT fire the re-login notification.
+    # Use a real Report (not a FakeReport) so exit_with's `respond_to?(:session_expired?)`
+    # guard actually evaluates the predicate — a FakeReport lacking it would
+    # short-circuit the notify branch and make `expects(:deliver).never` pass vacuously.
     Xbookmark::Config.stubs(:load).returns(test_config)
-    Xbookmark::Sync::Runner.stubs(:new).returns(
-      stub(run: FakeReport.new(failed: 0, permanent_errors: 0, source_errors: 1, message: "source blocked"))
-    )
+    report = Xbookmark::Sync::Report.new
+    report.source_errors = 1
+    Xbookmark::Sync::Runner.stubs(:new).returns(stub(run: report))
     Xbookmark::Notify.expects(:deliver).never
 
     out = capture_stdout { Xbookmark::CLI::Sync.new([], { "from-scheduler": true }).sync_run }

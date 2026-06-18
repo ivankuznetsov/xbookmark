@@ -166,7 +166,7 @@ module Xbookmark
       end
 
       def raise_missing_chromium
-        raise Xbookmark::ConfigError,
+        raise Xbookmark::Browser::ChromiumMissing,
               "No Chromium/Chrome found. The browser bookmark source needs a system browser " \
               "(it is never bundled). Install one, e.g. `sudo pacman -S chromium` or " \
               "`sudo apt-get install -y chromium`, then re-run."

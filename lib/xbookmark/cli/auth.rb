@@ -97,10 +97,16 @@ module Xbookmark
         store = Xbookmark::State::Store.new(config.state_db_path)
         login = Xbookmark::Browser::Login.new(config: config, store: store, accept_risk: options[:"accept-risk"])
         exit 1 unless login.call
-      rescue Xbookmark::ConfigError => e
-        # The only ConfigError on the browser-login path is a missing system
-        # Chromium; emit a grep-able token so an agent can branch on it.
+      rescue Xbookmark::Browser::ChromiumMissing => e
+        # A missing system Chromium is the most common browser-login config error;
+        # emit a grep-able token so an agent can branch straight to "install a browser".
         warn "[xbookmark] CHROMIUM_MISSING; #{e.message}"
+        exit 1
+      rescue Xbookmark::ConfigError => e
+        # Any other ConfigError here is NOT a missing browser — load_offline also
+        # parses XBOOKMARK_SOURCE and raises ConfigError for an invalid value, so
+        # emit a distinct token rather than mislabeling it as CHROMIUM_MISSING.
+        warn "[xbookmark] CONFIG_ERROR; #{e.message}"
         exit 1
       end
 
