@@ -78,7 +78,7 @@ module Xbookmark
       Xbookmark::CLI::Find.new([], options).find_run(query.join(" "))
     end
 
-    desc "doctor", "Check that codex / whisper / qmd / X auth are wired up"
+    desc "doctor", "Check that codex / whisper / qmd / browser source / X auth are wired up"
     method_option :fix, type: :boolean, default: false, desc: "Prompt to run install commands for missing tools"
     def doctor
       Xbookmark::CLI::Doctor.new([], options).execute
