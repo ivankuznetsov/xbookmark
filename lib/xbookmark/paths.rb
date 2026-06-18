@@ -45,9 +45,15 @@ module Xbookmark
 
     # Dedicated, isolated Chromium profile for the browser bookmark source.
     # Deliberately under the xbookmark config dir — never the user's everyday
-    # browser profile — so logging into X here cannot touch normal browsing.
+    # browser profile — so logging into X here cannot touch normal browsing. On
+    # macOS (with no XDG override) it lands under ~/Library/Application Support,
+    # the native equivalent, mirroring default_wiki_dir/default_logs_dir.
     def browser_profile_dir
-      File.join(default_config_dir, "browser-profile")
+      if macos? && ENV["XDG_CONFIG_HOME"].to_s.empty?
+        File.join(home, "Library", "Application Support", "xbookmark", "browser-profile")
+      else
+        File.join(default_config_dir, "browser-profile")
+      end
     end
 
     def default_wiki_dir

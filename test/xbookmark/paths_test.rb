@@ -41,4 +41,27 @@ describe Xbookmark::Paths do
       assert_equal File.join(home, "state", "xbookmark"), described_class.default_logs_dir
     end
   end
+
+  it "puts the browser profile under ~/Library/Application Support on macOS, but honors XDG_CONFIG_HOME" do
+    with_tmp_home do |home|
+      described_class.stubs(:macos?).returns(true)
+      ENV.delete("XDG_CONFIG_HOME")
+      assert_equal File.join(home, "Library", "Application Support", "xbookmark", "browser-profile"),
+                   described_class.browser_profile_dir
+
+      ENV["XDG_CONFIG_HOME"] = File.join(home, "cfg")
+      assert_equal File.join(home, "cfg", "xbookmark", "browser-profile"), described_class.browser_profile_dir
+    ensure
+      ENV.delete("XDG_CONFIG_HOME")
+    end
+  end
+
+  it "puts the browser profile under the XDG config dir on Linux" do
+    with_tmp_home do |home|
+      described_class.stubs(:macos?).returns(false)
+      ENV.delete("XDG_CONFIG_HOME")
+      assert_equal File.join(home, ".config", "xbookmark", "browser-profile"),
+                   described_class.browser_profile_dir
+    end
+  end
 end
