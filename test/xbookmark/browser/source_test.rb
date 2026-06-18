@@ -2,6 +2,9 @@
 
 require "test_helper"
 require "xbookmark/browser/source"
+# Source no longer pulls in X::Client (it inlines its one constant), but the
+# contract-parity test below still compares against it, so load it explicitly.
+require "xbookmark/x/client"
 
 # Self-contained Ferrum-shaped fakes (no cross-file deps so this runs alone).
 class StubXchg
@@ -142,6 +145,33 @@ class TweetExpiringAfterSettlePage
   end
 end
 
+# Drains several single-tweet responses in one go (no scrolling), so get_tweet's
+# stray-rejection (matching_tweet_envelope) can be exercised with the focal tweet
+# and a stray quoted/hovercard tweet in either drain order. wait_raises stalls the
+# settle to drive the transient-vs-permanent no-match classification.
+class MultiTweetPage
+  def initialize(bodies, current_url: nil, wait_raises: false)
+    @current_url = current_url || "https://x.com/i/web/status/1"
+    @wait_raises = wait_raises
+    @exchanges = bodies.each_with_index.map do |body, i|
+      StubXchg.new("https://x.com/i/api/graphql/abc/TweetResultByRestId?p=#{i}", body, i)
+    end
+  end
+
+  def go_to(_) = nil
+  def current_url = @current_url
+  def execute(_) = nil
+  def network = self
+
+  def wait_for_idle
+    raise "network idle timeout" if @wait_raises
+
+    nil
+  end
+
+  def traffic = @exchanges
+end
+
 # A timeline whose Bottom cursor strictly advances on every scroll and never
 # repeats, so the walk can only terminate by hitting MAX_TIMELINE_ITERATIONS.
 # Traffic is cumulative (append-only), mirroring the real CDP buffer.
@@ -256,8 +286,10 @@ describe Xbookmark::Browser::Source do
 
   it "raises a transient error when a data-bearing page exposes no Bottom cursor" do
     # X always emits a Bottom cursor (it merely repeats at end-of-history), so a
-    # page that yielded tweets but exposed none is an untrustworthy stop — yield
-    # the data but surface a transient error so backfill is not sealed complete.
+    # page that carried tweets but exposed none is an untrustworthy stop. The
+    # transient error is surfaced *before* the page is yielded so a consumer that
+    # breaks on the cursorless envelope cannot bypass it and seal a truncated
+    # backfill (see the breaking-consumer test below).
     no_cursor = JSON.generate({ "data" => { "bookmark_timeline_v2" => { "timeline" => {
       "instructions" => [{ "type" => "TimelineAddEntries", "entries" => [
         { "content" => { "entryType" => "TimelineTimelineItem", "itemContent" => {
@@ -274,8 +306,39 @@ describe Xbookmark::Browser::Source do
 
     yielded = []
     assert_raises(Xbookmark::TransientError) { source.bookmarks { |env| yielded << env } }
-    assert_equal 1, yielded.size, "the page's data is still yielded before the transient stop"
+    assert_empty yielded, "the cursorless page raises before it is yielded, so a breaking consumer cannot seal a truncated backfill"
     assert_equal 0, page.scrolls, "a missing cursor stops the walk without further scrolling"
+    assert_equal 1, session.quits
+  end
+
+  it "raises the transient stop before a consumer that breaks on a cursorless page can bypass it" do
+    # The Runner drives pagination with `break unless next_token`. A cursorless
+    # page yields meta with no next_token, so that consumer would break —
+    # unwinding past the post-loop finish_walk guard and silently sealing a
+    # truncated backfill. The source must raise the transient stop before the
+    # page is ever yielded so the break never gets the chance.
+    no_cursor = JSON.generate({ "data" => { "bookmark_timeline_v2" => { "timeline" => {
+      "instructions" => [{ "type" => "TimelineAddEntries", "entries" => [
+        { "content" => { "entryType" => "TimelineTimelineItem", "itemContent" => {
+          "itemType" => "TimelineTweet", "tweet_results" => { "result" => {
+            "__typename" => "Tweet", "rest_id" => "9",
+            "legacy" => { "id_str" => "9", "full_text" => "t", "created_at" => "Thu Jan 01 00:00:00 +0000 2026" }
+          } } }
+        } }
+      ] }]
+    } } } })
+    page = StubTimelinePage.new([no_cursor])
+    session = StubSession.new(page)
+    source = described_class.new(config: config, session: session)
+
+    yielded = []
+    assert_raises(Xbookmark::TransientError) do
+      source.bookmarks do |env|
+        yielded << env
+        break unless (env["meta"] || {})["next_token"]
+      end
+    end
+    assert_empty yielded, "the transient stop fires before the cursorless page reaches the breaking consumer"
     assert_equal 1, session.quits
   end
 
@@ -321,8 +384,7 @@ describe Xbookmark::Browser::Source do
       assert_raises(Xbookmark::TransientError) { source.bookmarks { |env| yielded << env } }
     end
 
-    assert_equal 1, yielded.size, "the bad page is still yielded as an empty envelope so earlier good pages survive"
-    assert_empty yielded.first["data"]
+    assert_empty yielded, "the malformed page raises before it is yielded, so a breaking consumer cannot seal a truncated backfill"
     assert_match(/skipping a malformed bookmarks page/, err)
   end
 
@@ -608,5 +670,44 @@ describe Xbookmark::Browser::Source do
     source = described_class.new(config: config, session: StubSession.new(TweetExpiringAfterSettlePage.new))
 
     assert_raises(Xbookmark::Browser::SessionExpired) { source.get_tweet("1") }
+  end
+
+  it "get_tweet returns the requested tweet, not a stray that drained last" do
+    # The page fires an extra TweetResultByRestId/TweetDetail for a quoted or
+    # hovercard tweet (999) that drains AFTER the focal tweet (555). The reverse
+    # scan must still select 555 — returning whichever drained last would cache a
+    # stray tweet under the wrong tweet_id.
+    page = MultiTweetPage.new([tweet_detail_body("555"), tweet_detail_body("999")])
+    source = described_class.new(config: config, session: StubSession.new(page))
+
+    payload = source.get_tweet("555")
+    assert_equal "555", payload["data"]["id"]
+  end
+
+  it "get_tweet returns the requested tweet even when a stray drained first" do
+    page = MultiTweetPage.new([tweet_detail_body("999"), tweet_detail_body("555")])
+    source = described_class.new(config: config, session: StubSession.new(page))
+
+    payload = source.get_tweet("555")
+    assert_equal "555", payload["data"]["id"]
+  end
+
+  it "get_tweet raises SourceUnavailable when only a stray tweet is captured on a clean settle" do
+    # Only a stray (999) drained, never the focal 555, and the settle was clean —
+    # the requested tweet is genuinely absent, so this is a permanent miss.
+    page = MultiTweetPage.new([tweet_detail_body("999")])
+    source = described_class.new(config: config, session: StubSession.new(page))
+
+    assert_raises(Xbookmark::SourceUnavailable) { source.get_tweet("555") }
+  end
+
+  it "get_tweet treats a stray-only capture on a stalled settle as transient, not permanently gone" do
+    # A stray (999) drained but the focal TweetDetail timed out (stalled settle):
+    # the requested tweet may still exist, so this is a transient miss to retry —
+    # not the permanent SourceUnavailable that would drop a still-existing tweet.
+    page = MultiTweetPage.new([tweet_detail_body("999")], wait_raises: true)
+    source = described_class.new(config: config, session: StubSession.new(page))
+
+    assert_raises(Xbookmark::TransientError) { source.get_tweet("555") }
   end
 end
